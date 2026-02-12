@@ -1,15 +1,17 @@
-from fastapi import FastAPI
+from typing import Annotated
+from dotenv import load_dotenv
+from fastapi import FastAPI, UploadFile, File
+
+load_dotenv()
 
 api = FastAPI()
 
-@api.get("/hello_world")
-def hello_world():
-    return {"Hello": "World"}
-
 @api.post("/evaluate")
-def evaluate_document():
+async def evaluate_document(
+    document: Annotated[UploadFile, File(description="The document to be evaluated")],
+):
     # TODO: Implement document evaluation
-    return {"message": "Document evaluated successfully"}
+    return {"message": f"{document.filename} evaluated successfully"}
 
 if __name__ == "__main__":
     import uvicorn

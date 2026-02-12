@@ -1,5 +1,3 @@
-# This sample is taken from the LlamaIndex docs
-
 import asyncio
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.llms.ollama import Ollama  # type: ignore[import-untyped]
@@ -12,7 +10,10 @@ def separate(value: int) -> list[int]:
 
 async def main():
     load_dotenv()
-    
+
+    # TODO: abstract the model into a protocol
+    # TODO: add proper system prompt
+    # TODO: find a way to give this agent a scratchpad
     agent = FunctionAgent(
         llm=Ollama(
             base_url=os.getenv("OLLAMA_URL"),
