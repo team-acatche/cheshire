@@ -8,9 +8,9 @@ def read_root() -> dict:
     return {"message": "Welcome to the Cheshire Backend API!"}
 
 
-@api.get("/healthcheck")
-def healthcheck() -> dict:
-    return {"status": "ok"}
+@api.get("/healthcheck", status_code=200)
+def healthcheck() -> str:
+    return "Cheshire is running"
 
 
 if __name__ == "__main__":
