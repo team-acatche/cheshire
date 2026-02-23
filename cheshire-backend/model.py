@@ -1,30 +1,33 @@
 import asyncio
-from llama_index.core.agent.workflow import FunctionAgent
-from llama_index.llms.ollama import Ollama  # type: ignore[import-untyped]
+from agent_framework import ChatAgent
+from agent_framework.openai import OpenAIChatClient
 from dotenv import load_dotenv
 import os
 
-def separate(value: int) -> list[int]:
-    """ Separate a number into its individual digits """
-    return sorted([int(digit) for digit in str(value)])
+def get_secret_code(name: str) -> str:
+    """ Look up the secret code for a given person """
+    SECRET_CODES = {
+        "alice": "FOXTROT-8842",
+        "bob": "TANGO-3197",
+        "charlie": "ZULU-5503",
+    }
+    print(f"[TOOL CALLED] get_secret_code invoked with name='{name}'")
+    return SECRET_CODES.get(name.lower(), "UNKNOWN PERSON")
 
 async def main():
     load_dotenv()
 
-    # TODO: abstract the model into a protocol
-    # TODO: add proper system prompt
-    # TODO: find a way to give this agent a scratchpad
-    agent = FunctionAgent(
-        llm=Ollama(
-            base_url=os.getenv("OLLAMA_URL"),
-            model=os.getenv("OLLAMA_MODEL")
-        ),
-        tools=[separate],
-        system_prompt="You are a helpful assistant that can perform an operation called 'separate' on a number."
+    agent = ChatAgent(
+        chat_client=OpenAIChatClient(
+            base_url=os.environ["OLLAMA_URL"],
+            api_key="local_client",
+            model_id=os.environ["OLLAMA_MODEL"]),
+        instructions="You are an assistant that can look up secret codes for people. Use the get_secret_code tool to answer questions about secret codes.",
+        tools=[get_secret_code]
     )
-
-    result = await agent.run("Separate 49980")
-    print(str(result))
+    
+    result = await agent.run("What is Bob's secret code?")
+    print(result.text)
 
 if __name__ == "__main__":
     asyncio.run(main())
