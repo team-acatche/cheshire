@@ -1,0 +1,7 @@
+[project]
+name = "cheshire-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+test = ["pytest>=9.0", "httpx>=0.28"]
