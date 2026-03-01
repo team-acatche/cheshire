@@ -1,0 +1,38 @@
+[project]
+name = "cheshire-backend"
+version = "0.1.0"
+description = "The backend AI evaluation server for Cheshire."
+authors = [
+    {name = "Idontknow13",email = "curtmatthewgarcia@gmail.com"}
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "docling[easyocr,vlm] (>=2.75.0,<3.0.0)",
+    "docling-haystack (>=0.1.1,<0.2.0)",
+    "ollama-haystack (>=6.1.0,<7.0.0)",
+    "haystack-ai (>=2.25.0,<3.0.0)",
+    "dotenv (>=0.9.9,<0.10.0)",
+    "exa-haystack (>=1.0.2,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry]
+package-mode = false
+
+
+[tool.mypy]
+warn_return_any = true
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = [
+    "haystack_integrations.components.websearch.exa",
+    "haystack_integrations.components.websearch.exa.*",
+]
+ignore_missing_imports = true
+

@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 
 from llama_index.core import Settings
-from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.core.agent.workflow import AgentWorkflow
 from llama_index.core.workflow import Context
 from llama_index.llms.ollama import Ollama
 
@@ -25,16 +25,15 @@ async def main():
         base_url=os.environ["OLLAMA_URL"],
         context_window=4096,
     )
-    Settings.embed_model = HuggingFaceEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
-    agent = FunctionAgent(
+    agent = AgentWorkflow.from_tools_or_functions(
+        [get_secret_code],
         llm=Settings.llm,
-        tools=[get_secret_code],
         system_prompt="You are an assistant that can look up secret codes for people. Use the get_secret_code tool to answer questions about secret codes.",
     )
     ctx = Context(agent)
     
-    result = await agent.run("What is Bob's secret code?", context=ctx)
+    result = await agent.run("What is Charlie's secret code?", context=ctx)
     print(str(result))
 
 if __name__ == "__main__":
