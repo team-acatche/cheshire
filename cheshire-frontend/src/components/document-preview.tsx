@@ -1,16 +1,17 @@
 import { Button } from "@/components/ui/button";
 import { FileText } from "lucide-react";
-// 1. Import the function
-import { drawHighlight } from "@/components/ui/page-highlights";
+import { drawHighlight } from "@/lib/helpers/page-highlights";
 import { NamedFile } from "@/types/NamedFile";
-
+import { evaluateDocument } from "@/lib/helpers/evaluate_document";
+import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 
 interface DocumentPreviewProps {
   src: NamedFile,
   setFile: React.Dispatch<React.SetStateAction<NamedFile | null>>
+  setFindings: React.Dispatch<React.SetStateAction<VulnerabilityFinding[]>>
 }
 
-export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
+export function DocumentPreview({ src, setFile, setFindings }: DocumentPreviewProps) {
   return (
     <>
       <div className="inline-flex items-center justify-between text-sm">
@@ -30,7 +31,10 @@ export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
                 if (!file) return;
                 // 2. Use the function and set the result using `setFile`
                 if (file.type === "application/pdf") {
-                  const pdfDoc = await drawHighlight(file);
+                  const _findings = await evaluateDocument(file);
+                  setFindings(_findings);
+
+                  const pdfDoc = await drawHighlight(file, _findings);
                   const pdfBytes = await pdfDoc.save();
 
                   const newFile = new Blob([pdfBytes as BlobPart], { type: "application/pdf" });

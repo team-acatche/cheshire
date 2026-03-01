@@ -10,10 +10,14 @@ import {
 } from "./components/ui/sidebar"
 import DocumentPreview from "./components/document-preview"
 import { NamedFile } from "./types/NamedFile"
-import { drawHighlight } from "./components/ui/page-highlights"
+import { drawHighlight } from "./lib/helpers/page-highlights"
+import { evaluateDocument } from "./lib/helpers/evaluate_document"
+import { FindingsDisplay } from "./components/findings-display"
+import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 
 export function App() {
   const [file, setFile] = useState<NamedFile | null>(null)
+  const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
 
   return (
     <SidebarProvider>
@@ -26,7 +30,7 @@ export function App() {
               <CardContent className="size-full space-y-6 text-center">
                 <p className="font-bold text-xl">
                   Hi! Welcome to Cheshire. Please upload a document to evaluate.
-                  <br/>
+                  <br />
                   Thank you!
                 </p>
 
@@ -40,21 +44,23 @@ export function App() {
                         accept=".pdf,.docx"
                         className="hidden"
                         onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            // 2. Use the function and set the result using `setFile`
-                            if (file.type === "application/pdf") {
-                              const pdfDoc = await drawHighlight(file);
-                              const pdfBytes = await pdfDoc.save();
-                            
-                              const pdfBlob = new Blob([pdfBytes as BlobPart], { type: "application/pdf" })
-                              const newFile = new NamedFile(pdfBlob, file.name)
-                              setFile(newFile);
-                            } else {
-                              // fallback for non-PDF files
-                              setFile(new NamedFile(file))
-                            }
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (file.type === "application/pdf") {
+                            const _findings = await evaluateDocument(file);
+                            setFindings(_findings);
+
+                            const pdfDoc = await drawHighlight(file, _findings);
+                            const pdfBytes = await pdfDoc.save();
+
+                            const pdfBlob = new Blob([pdfBytes as BlobPart], { type: "application/pdf" })
+                            const newFile = new NamedFile(pdfBlob, file.name)
+                            setFile(newFile);
+                          } else {
+                            // fallback for non-PDF files
+                            setFile(new NamedFile(file))
                           }
+                        }
                         }
                       />
                     </label>
@@ -64,11 +70,12 @@ export function App() {
             ) : (
               // -------- PREVIEW STATE --------
               <CardContent className="flex flex-col gap-3 size-full">
-                <DocumentPreview src={file} setFile={setFile} />
+                <DocumentPreview src={file} setFile={setFile} setFindings={setFindings} />
               </CardContent>
             )}
           </Card>
-          {/* put chat component below this comment */}
+          {/* TODO: put chat component below this comment */}
+          <FindingsDisplay findings={findings} />
         </main>
       </SidebarInset>
     </SidebarProvider>
