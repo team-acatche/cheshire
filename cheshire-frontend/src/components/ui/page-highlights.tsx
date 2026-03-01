@@ -2,7 +2,9 @@ import { degrees, grayscale, PDFDocument, rgb } from 'pdf-lib';
 
 export async function drawHighlight(pdf: File): Promise<PDFDocument> {
     // 1. check if file is pdf
-    
+    if (pdf.type !== "application/pdf") {
+        throw new Error("File must be a PDF");
+    }
     // 2. load it as a PDFDocument
     const bytes = await pdf.arrayBuffer();
     const pdfDoc = await PDFDocument.load(bytes);

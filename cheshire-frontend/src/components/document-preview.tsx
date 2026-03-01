@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { FileText } from "lucide-react";
+// 1. Import the function
 
 interface DocumentPreviewProps {
   src: File,
@@ -22,6 +23,7 @@ export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
               className="hidden"
               accept=".pdf,.docx"
               onChange={(e) =>
+                // 2. Use the function and set the result using `setFile`
                 setFile(e.target.files?.[0] ?? null)
               }
             />
@@ -29,6 +31,7 @@ export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
         </Button>
       </div>
       {src.type === "application/pdf" && (
+        // 3. Embed the PDFDocument
         <iframe
           src={URL.createObjectURL(src)}
           className="grow rounded-xl"
