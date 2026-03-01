@@ -9,8 +9,8 @@ interface DocumentPreviewProps {
 export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
   return (
     <>
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-2">
+      <div className="inline-flex items-center justify-between text-sm">
+        <div className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4" />
           {src.name}
         </div>
@@ -31,7 +31,7 @@ export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
       {src.type === "application/pdf" && (
         <iframe
           src={URL.createObjectURL(src)}
-          className="grow"
+          className="grow rounded-xl"
         />
       )}
       {src.name.endsWith(".docx") && (

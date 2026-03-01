@@ -38,6 +38,7 @@ export function App() {
                         accept=".pdf,.docx"
                         className="hidden"
                         onChange={(e) =>
+                          // modify the file here
                           setFile(e.target.files?.[0] ?? null)
                         }
                       />
