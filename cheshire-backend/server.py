@@ -12,6 +12,7 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, granite_picture_description
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import Field
 from dataclasses import dataclass
 
@@ -22,6 +23,14 @@ load_dotenv()
 
 api = FastAPI()
 logger = logging.getLogger("uvicorn.error")
+
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 pdfconfig = PdfPipelineOptions()
 pdfconfig.do_picture_description = True
