@@ -9,9 +9,11 @@ import {
   SidebarInset,
 } from "./components/ui/sidebar"
 import DocumentPreview from "./components/document-preview"
+import { NamedFile } from "./types/NamedFile"
+import { drawHighlight } from "./components/ui/page-highlights"
 
 export function App() {
-  const [file, setFile] = useState<File | null>(null)
+  const [file, setFile] = useState<NamedFile | null>(null)
 
   return (
     <SidebarProvider>
@@ -37,9 +39,22 @@ export function App() {
                         type="file"
                         accept=".pdf,.docx"
                         className="hidden"
-                        onChange={(e) =>
-                          // modify the file here
-                          setFile(e.target.files?.[0] ?? null)
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            // 2. Use the function and set the result using `setFile`
+                            if (file.type === "application/pdf") {
+                              const pdfDoc = await drawHighlight(file);
+                              const pdfBytes = await pdfDoc.save();
+                            
+                              const pdfBlob = new Blob([pdfBytes as BlobPart], { type: "application/pdf" })
+                              const newFile = new NamedFile(pdfBlob, file.name)
+                              setFile(newFile);
+                            } else {
+                              // fallback for non-PDF files
+                              setFile(new NamedFile(file))
+                            }
+                          }
                         }
                       />
                     </label>

@@ -1,10 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { FileText } from "lucide-react";
 // 1. Import the function
+import { drawHighlight } from "@/components/ui/page-highlights";
+import { NamedFile } from "@/types/NamedFile";
+
 
 interface DocumentPreviewProps {
-  src: File,
-  setFile: React.Dispatch<React.SetStateAction<File | null>>
+  src: NamedFile,
+  setFile: React.Dispatch<React.SetStateAction<NamedFile | null>>
 }
 
 export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
@@ -22,18 +25,29 @@ export function DocumentPreview({ src, setFile }: DocumentPreviewProps) {
               type="file"
               className="hidden"
               accept=".pdf,.docx"
-              onChange={(e) =>
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
                 // 2. Use the function and set the result using `setFile`
-                setFile(e.target.files?.[0] ?? null)
-              }
+                if (file.type === "application/pdf") {
+                  const pdfDoc = await drawHighlight(file);
+                  const pdfBytes = await pdfDoc.save();
+
+                  const newFile = new Blob([pdfBytes as BlobPart], { type: "application/pdf" });
+                  setFile(new NamedFile(newFile, file.name));
+                } else {
+                  // fallback for non-PDF files
+                  setFile(new NamedFile(file));
+                }
+              }}
             />
           </label>
         </Button>
       </div>
-      {src.type === "application/pdf" && (
+      {src.contents.type === "application/pdf" && (
         // 3. Embed the PDFDocument
         <iframe
-          src={URL.createObjectURL(src)}
+          src={URL.createObjectURL(src.contents)}
           className="grow rounded-xl"
         />
       )}

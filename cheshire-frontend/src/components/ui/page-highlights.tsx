@@ -13,16 +13,12 @@ export async function drawHighlight(pdf: File): Promise<PDFDocument> {
 
     pages.forEach((page) => {
         page.drawRectangle({
-            x: 25,
-            y: 75,
-            width: 250,
-            height: 75,
-            rotate: degrees(-15),
+            x: 105,
+            y: 475,
+            width: 550,
+            height: 105,
             borderWidth: 5,
-            borderColor: grayscale(0.5),
             color: rgb(0.75, 0.2, 0.2),
-            opacity: 0.5,
-            borderOpacity: 0.75,
         });
     });
     // 4. return the modified document
