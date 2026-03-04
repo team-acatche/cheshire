@@ -74,8 +74,11 @@ export function App() {
               </CardContent>
             )}
           </Card>
-          {/* TODO: put chat component below this comment */}
-          <FindingsDisplay findings={findings} />
+          {
+            file && (
+              <FindingsDisplay findings={findings} />
+            )
+          }
         </main>
       </SidebarInset>
     </SidebarProvider>
