@@ -20,7 +20,7 @@ dependencies = [
     "fastapi (>=0.135.0,<0.136.0)",
     "types-aiofiles (>=25.1.0.20251011,<26.0.0.0)",
     "uvicorn (>=0.41.0,<0.42.0)",
-    "python-multipart (>=0.0.22,<0.0.23)",
+    "python-multipart (>=0.0.22,<0.0.23)"
 ]
 
 
