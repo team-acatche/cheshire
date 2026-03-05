@@ -3,7 +3,10 @@ name = "cheshire-backend"
 version = "0.1.0"
 description = "The backend AI evaluation server for Cheshire."
 authors = [
-    {name = "Idontknow13",email = "curtmatthewgarcia@gmail.com"}
+    { name = "Idontknow13", email = "curtmatthewgarcia@gmail.com" },
+    { name = "sleeptical", email = "yumidocusin@gmail.com" },
+    { name = "yohan-21", email = "a@gmail.com" },
+    { name = "jjh0a", email = "seeswoon5@gmail.com" },
 ]
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -40,4 +43,3 @@ module = [
     "haystack_integrations.components.websearch.exa.*",
 ]
 ignore_missing_imports = true
-
