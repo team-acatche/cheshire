@@ -34,8 +34,16 @@ package-mode = false
 
 
 [tool.mypy]
+mypy_path = "src"
 warn_return_any = true
 ignore_missing_imports = false
+
+[tool.pyright]
+venvPath = "."
+pythonVersion = "3.12"
+executionEnvironments = [
+    { root = "src" }
+]
 
 [[tool.mypy.overrides]]
 module = [

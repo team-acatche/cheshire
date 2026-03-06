@@ -11,6 +11,7 @@ import logging
 logger = logging.getLogger("uvicorn.error")
 
 from haystack.core.pipeline import Pipeline
+from haystack.document_stores.types import DocumentStore
 from haystack.components.generators.chat.llm import ChatGenerator, ChatMessage
 from haystack.components.generators.utils import print_streaming_chunk
 from haystack.tools import ToolsType
@@ -55,19 +56,19 @@ async def evaluate_file(
 	*,
 	model: ChatGenerator,
 	tools: ToolsType,
-	document_preprocessor: Callable[[Path], None] | None = None,
+	document_store: DocumentStore | None = None,
+	document_preprocessor: Callable[[Path, DocumentStore], None] | None = None,
 ) -> list[VulnerabilityDetails] | None:
 	if document_path.suffix != ".pdf" or not document_path.exists():
 		return None
 
-	analyst = _create_agent(model, tools)
-
-	logger.info(f"agent({document_path.name}): Loading...")
-	if document_preprocessor:
-		document_preprocessor(document_path)
-	logger.info(f"agent({document_path.name}): File loaded into memory.")
+	if document_store and document_preprocessor:
+		logger.info(f"agent({document_path.name}): Preprocessing...")
+		document_preprocessor(document_path, document_store)
+		logger.info(f"agent({document_path.name}): File preprocessing complete.")
 
 	logger.info(f"agent({document_path.name}): Starting audit...")
+	analyst = _create_agent(model, tools)
 	response = analyst.run(messages=[ChatMessage.from_user("Start the audit")])
 	logger.info(f"agent({document_path.name}): Audit complete.")
 
