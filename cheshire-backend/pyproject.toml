@@ -5,7 +5,7 @@ description = "The backend AI evaluation server for Cheshire."
 authors = [
     { name = "Idontknow13", email = "curtmatthewgarcia@gmail.com" },
     { name = "sleeptical", email = "yumidocusin@gmail.com" },
-    { name = "yohan-21", email = "a@gmail.com" },
+    { name = "yohan-21", email = "ivan.maano21@gmail.com" },
     { name = "jjh0a", email = "seeswoon5@gmail.com" },
 ]
 requires-python = ">=3.12,<3.13"
