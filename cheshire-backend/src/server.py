@@ -3,14 +3,17 @@ import logging
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI
-import endpoints
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Depends
 
-api = FastAPI()
+from cheshire_configs.registry import configs
+from endpoints.evaluate import evaluate_router
+
+api = FastAPI(dependencies=[Depends(configs)])
 logger = logging.getLogger("uvicorn.error")
 
 api.include_router(
-    endpoints.rag.ollama.router,
+    evaluate_router,
     prefix="/api/v1",
 )
 
