@@ -6,7 +6,15 @@ import SentIcon from "./ui/sent-icon"
 
 export function Chatbot() {
   return (
-    <Card className="w-full p-4 flex flex-col gap-3 rounded-2xl border-gray-200 shadow-sm">
+    <Card className="w-full h-[700px] p-4 flex flex-col gap-3 rounded-2xl border-gray-200 shadow-sm">
+      
+      <div className="flex-1 overflow-y-auto p-2 text-gray-500 text-sm">
+        <div className="flex flex-col items-center justify-center h-full opacity-50">
+          <p className="text-center">Chatbot area</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col">
       <Textarea
         placeholder="What would you like to know?"
         className="resize-none border-none focus-visible:ring-0 p-0 text-lg placeholder:text-gray-400"
@@ -39,6 +47,7 @@ export function Chatbot() {
           />
         </div>
       </div>
+    </div>
     </Card>
   )
 }

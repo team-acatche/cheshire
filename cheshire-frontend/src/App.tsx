@@ -14,6 +14,7 @@ import { drawHighlight } from "./lib/helpers/page-highlights"
 import { evaluateDocument } from "./lib/helpers/evaluate_document"
 import { FindingsDisplay } from "./components/findings-display"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
+import { Chatbot } from "./components/chatbot"
 
 export function App() {
   const [file, setFile] = useState<NamedFile | null>(null)
@@ -76,7 +77,7 @@ export function App() {
           </Card>
           {
             file && (
-              <FindingsDisplay findings={findings} />
+              <Chatbot />
             )
           }
         </main>
