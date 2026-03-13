@@ -36,4 +36,6 @@ async def resolve_config(
             tools=[*factory.tools, query_document_tool(rag_query_pipeline)],
         )
 
-    return factory
+    return factory.with_overrides(
+        mode=evaluation_mode,
+    )

@@ -1,6 +1,7 @@
 import os
 from typing import Callable
 from pathlib import Path
+from fastapi import HTTPException
 
 from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
@@ -14,7 +15,10 @@ from haystack_integrations.components.embedders.ollama import OllamaDocumentEmbe
 from cheshire_configs.core import DocumentPreprocessor
 
 class OllamaRagPreprocessor(DocumentPreprocessor):
-    def __call__(self, document: Path, document_store: DocumentStore):
+    def __call__(self, document: Path, document_store: DocumentStore | None = None):
+        if not document_store:
+            raise HTTPException(status_code=500, detail="Document store is required for OllamaRagPreprocessor")
+
         docling_converter = DoclingConverter(
         	chunker=HybridChunker(tokenizer=HuggingFaceTokenizer.from_pretrained(
         	    os.getenv("HF_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v2-moe"),

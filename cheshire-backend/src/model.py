@@ -3,6 +3,7 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
+from fastapi import HTTPException
 import os
 from pathlib import Path
 from typing import Callable
@@ -18,7 +19,7 @@ from haystack.tools import ToolsType
 from haystack.components.agents import Agent
 
 from tools.helpers.output_schema import VulnerabilityDetails
-from cheshire_configs.core import PipelineConfig
+from cheshire_configs.core import PipelineConfig, EvaluationType
 
 async def evaluate_file(document_path: Path, config: PipelineConfig) -> list[VulnerabilityDetails] | None:
 	if document_path.suffix != ".pdf" or not document_path.exists():
@@ -40,7 +41,21 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> list[Vul
 			"vulnerabilities_list": {"type": list[VulnerabilityDetails]},
 		}
 	)
-	response = analyst.run(messages=[ChatMessage.from_user("Start the audit")])
+
+	messages: list[ChatMessage] = []
+	if config.mode == EvaluationType.FULL_DOCUMENT:
+		from haystack.components.converters.image import PDFToImageContent
+
+		logger.info(f"agent({document_path.name}): Converting PDF to images...")
+		converter = PDFToImageContent()
+		pages = converter.run(sources=[document_path])["image_contents"]
+		logger.info(f"agent({document_path.name}): PDF converted to images.")
+
+		messages.append(ChatMessage.from_user(content_parts=["Audit the following file:", *pages]))
+	else:
+		messages.append(ChatMessage.from_user("Start the audit"))
+
+	response = analyst.run(messages=messages)
 	logger.info(f"agent({document_path.name}): Audit complete.")
 
-	return response["vulnerabilities_list"]
+	return response.get("vulnerabilities_list", [])
