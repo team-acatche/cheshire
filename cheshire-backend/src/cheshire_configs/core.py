@@ -1,6 +1,6 @@
 from enum import StrEnum, auto
 from dataclasses import dataclass, field, replace
-from typing import Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable, Optional
 from pathlib import Path
 from haystack.core.pipeline import Pipeline
 from haystack.document_stores.types import DocumentStore
@@ -26,30 +26,41 @@ class DocumentPreprocessor(Protocol):
 
 @runtime_checkable
 class ToolFactory(Protocol):
-    def create_tools(self) -> ToolsType:
+    @property
+    def tools(self) -> ToolsType:
+        ...
+    
+    def extend(self, factory: "ToolFactory"):
         ...
 
+@dataclass
 class DefaultToolFactory(ToolFactory):
-    def create_tools(self) -> ToolsType:
+    extra_tools: list = field(default_factory=list)
+
+    @property
+    def tools(self) -> ToolsType:
         return [
             web_search,
             add_vulnerability_tool("vulnerabilities_list"),
             read_vulnerabilities_tool("vulnerabilities_list")
-        ]
+        ] + self.extra_tools
+    
+    def extend(self, factory: ToolFactory):
+        self.extra_tools.extend(factory.tools)
 
 @dataclass(frozen=True)
 class PipelineConfig:
     model: ChatGenerator
     tools: ToolsType = field(default_factory=list)
     mode: EvaluationType = EvaluationType.RAG
-    document_store: DocumentStore | None = None
-    preprocessor: DocumentPreprocessor | None = None
-    embedder: TextEmbedder | None = None
+    document_store: Optional[DocumentStore] = None
+    preprocessor: Optional[DocumentPreprocessor] = None
+    embedder: Optional[TextEmbedder] = None
     system_prompt: str = """
         You are an expert security auditor. Given the system overview below, identify vulnerabilities by reading the document and cross-referencing known CVEs and attack patterns online.
         ## Process
         Repeat the following process until the full document has been covered:
-        1. **Know**: Obtain a quick overview of the system. Afterwards, plan your analysis.
+        1. **Know**: Plan your analysis.
         2. **Plan**: Identify a specific component or area to investigate next.
         3. **Research**: Use `web_search` to find known vulnerabilities matching what you found (e.g., CVEs, OWASP entries, exploit patterns). Ensure that what you're searching is specific to the component you're investigating.
         Repeat steps 1-3 until you are certain you have analyzed the entire document.

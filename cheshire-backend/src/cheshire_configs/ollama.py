@@ -22,5 +22,5 @@ async def ollama_config() -> PipelineConfig:
             model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
             url=os.getenv("OLLAMA_URL", "http://localhost:11434"),
         ),
-        tools=DefaultToolFactory().create_tools(),
+        tools=DefaultToolFactory().tools,
     )

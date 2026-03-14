@@ -1,5 +1,5 @@
 import os
-from typing import Callable
+from typing import Callable, Optional
 from pathlib import Path
 from fastapi import HTTPException
 
@@ -15,7 +15,7 @@ from haystack_integrations.components.embedders.ollama import OllamaDocumentEmbe
 from cheshire_configs.core import DocumentPreprocessor
 
 class OllamaRagPreprocessor(DocumentPreprocessor):
-    def __call__(self, document: Path, document_store: DocumentStore | None = None):
+    def __call__(self, document: Path, document_store: Optional[DocumentStore] = None):
         if not document_store:
             raise HTTPException(status_code=500, detail="Document store is required for OllamaRagPreprocessor")
 
@@ -36,6 +36,7 @@ class OllamaRagPreprocessor(DocumentPreprocessor):
         rag_pipeline.add_component("converter", docling_converter)
         rag_pipeline.add_component("embedder", embedder)
         rag_pipeline.add_component("writer", document_writer)
+
         rag_pipeline.connect("converter", "embedder")
         rag_pipeline.connect("embedder", "writer")
 

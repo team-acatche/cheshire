@@ -16,5 +16,5 @@ async def together_config() -> PipelineConfig:
                 "stream": True,
             }
         ),
-        tools=DefaultToolFactory().create_tools(),
+        tools=DefaultToolFactory().tools,
     )

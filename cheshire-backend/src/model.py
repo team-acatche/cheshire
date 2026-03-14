@@ -6,7 +6,7 @@ load_dotenv()
 from fastapi import HTTPException
 import os
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional
 
 import logging
 logger = logging.getLogger("uvicorn.error")
@@ -21,7 +21,7 @@ from haystack.components.agents import Agent
 from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.core import PipelineConfig, EvaluationType
 
-async def evaluate_file(document_path: Path, config: PipelineConfig) -> list[VulnerabilityDetails] | None:
+async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional[list[VulnerabilityDetails]]:
 	if document_path.suffix != ".pdf" or not document_path.exists():
 		return None
 
@@ -49,6 +49,7 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> list[Vul
 		logger.info(f"agent({document_path.name}): Converting PDF to images...")
 		converter = PDFToImageContent()
 		pages = converter.run(sources=[document_path])["image_contents"]
+		assert len(pages) > 0
 		logger.info(f"agent({document_path.name}): PDF converted to images.")
 
 		messages.append(ChatMessage.from_user(content_parts=["Audit the following file:", *pages]))
