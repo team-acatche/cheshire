@@ -5,11 +5,18 @@ load_dotenv()
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 
 from cheshire_configs.registry import configs
 from endpoints.evaluate import evaluate_router
 
 api = FastAPI(dependencies=[Depends(configs)])
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 logger = logging.getLogger("uvicorn.error")
 
 api.include_router(

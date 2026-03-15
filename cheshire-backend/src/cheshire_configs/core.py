@@ -72,7 +72,7 @@ class PipelineConfig:
 
         ## Rules
         - Prioritize attack surface: auth, inputs, network exposure, third-party deps, secrets handling, privilege boundaries.
-        - Cross-reference document findings with current threat intelligence.
+        - Cross-reference document findings with current threat intelligence (2025 onwards).
         - Never assume a component is secure without querying and searching it.
         - Ensure that the vulnerabilites and recommendations are as relevant and as recent as possible to the document you are analyzing.
         - Escalate query specificity if initial results are vague.

@@ -12,7 +12,6 @@ import DocumentPreview from "./components/document-preview"
 import { NamedFile } from "./types/NamedFile"
 import { drawHighlight } from "./lib/helpers/page-highlights"
 import { evaluateDocument } from "./lib/helpers/evaluate_document"
-import { FindingsDisplay } from "./components/findings-display"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 
@@ -42,7 +41,7 @@ export function App() {
                       Upload
                       <input
                         type="file"
-                        accept=".pdf,.docx"
+                        accept=".pdf"
                         className="hidden"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
@@ -77,7 +76,7 @@ export function App() {
           </Card>
           {
             file && (
-              <Chatbot />
+              <Chatbot findings={findings} />
             )
           }
         </main>

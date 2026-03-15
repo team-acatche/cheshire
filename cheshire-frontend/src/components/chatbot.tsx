@@ -10,15 +10,24 @@ import {
   SelectItem,
 } from "./ui/select"
 import SentIcon from "./ui/sent-icon"
+import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
+import VulnerabilityFindingComponent from "./vulnerability-finding"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
-  text: string
+  text: string | VulnerabilityFinding
 }
 
-export function Chatbot() {
+interface ChatbotProps {
+  findings: VulnerabilityFinding[]
+}
+
+export function Chatbot({ findings }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "bot1", text: "Hello I'm Agent 1! How can I help you?" },
+    { role: "bot1", text: "Hello I'm Agent 1!" },
+    { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
+    ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
+    { role: "bot1", text: "How can I help you?" },
   ])
 
 
@@ -78,8 +87,8 @@ export function Chatbot() {
             <div
               key={i}
               className={`flex items-end gap-2 ${msg.role === "user"
-                  ? "justify-end"
-                  : "justify-start"
+                ? "justify-end"
+                : "justify-start"
                 }`}
             >
 
@@ -107,7 +116,7 @@ export function Chatbot() {
                   }
                   `}
               >
-                {msg.text}
+                {typeof msg.text === "string" ? msg.text : <VulnerabilityFindingComponent finding={msg.text} />}
               </div>
 
               {/* USER AVATAR */}
