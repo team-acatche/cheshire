@@ -26,7 +26,7 @@ export function App() {
       <SidebarTrigger />
       <SidebarInset>
         <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
-          <Card className={`${!file ? "col-span-full" : "col-span-3 size-full"} mt-2`}>
+          <Card className={`${!file ? "col-span-full" : "col-span-3 size-full"} mt-2 shadow-none`}>
             {!file ? (
               <CardContent className="size-full space-y-6 text-center">
                 <p className="font-bold text-xl">
@@ -53,7 +53,7 @@ export function App() {
 
                             const pdfDoc = await drawHighlight(file, _findings);
                             const pdfBytes = await pdfDoc.save();
-                            
+
                             const pdfBlob = new Blob([pdfBytes as BlobPart], { type: "application/pdf" })
                             const newFile = new NamedFile(pdfBlob, file.name)
                             setFile(newFile);

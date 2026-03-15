@@ -69,7 +69,7 @@ export function Chatbot() {
   }, [messages, typing])
 
   return (
-    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden">
+    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0">
 
       {/*Chat*/}
       <div className="flex-1 overflow-y-scroll p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">

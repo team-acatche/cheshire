@@ -57,7 +57,7 @@ export function DocumentPreview({ src, setFile, setFindings }: DocumentPreviewPr
       )}
       {src.name.endsWith(".docx") && (
         <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-          DOCX preview will be available after conversion
+          Please upload a .pdf file.
         </div>
       )}
     </>
