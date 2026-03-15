@@ -18,6 +18,10 @@ class DocumentSource(BaseModel):
 def document_to_string(documents: list[Document]) -> str:
     document_sources: list[DocumentSource] = []
     for document in documents:
+        if document.meta.get("type") == "orientation_skeleton" or document.meta.get("type") == "orientation_visual_index":
+            continue
+        if not document.meta.get("dl_meta"):
+            raise ValueError(f"Document {document.meta.get('filename')} is missing dl_meta.")
         chunk: DocChunk = DocChunk.model_validate(document.meta["dl_meta"])
 
         document_source = DocumentSource(

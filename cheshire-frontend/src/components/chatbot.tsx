@@ -20,7 +20,7 @@ export function Chatbot() {
   const [messages, setMessages] = useState<Message[]>([
     { role: "bot1", text: "Hello I'm Agent 1! How can I help you?" },
   ])
-  
+
 
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
@@ -77,11 +77,10 @@ export function Chatbot() {
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-end gap-2 ${
-                msg.role === "user"
+              className={`flex items-end gap-2 ${msg.role === "user"
                   ? "justify-end"
                   : "justify-start"
-              }`}
+                }`}
             >
 
               {/* BOT AVATAR */}
@@ -98,32 +97,31 @@ export function Chatbot() {
                 </div>
               )}
 
-                  {/* BUBBLE */}
-                <div
-                  className={`
+              {/* BUBBLE */}
+              <div
+                className={`
                   max-w-[70%] px-3 py-2 rounded-l
-                    ${
-                    msg.role === "user"
-                      ? "bg-blue-800 text-white rounded-br-sm"
-                      : "bg-gray-200 text-gray-800 rounded-bl-sm"
-                    }
+                    ${msg.role === "user"
+                    ? "bg-blue-800 text-white rounded-br-sm"
+                    : "bg-gray-200 text-gray-800 rounded-bl-sm"
+                  }
                   `}
-                >
-                  {msg.text}
+              >
+                {msg.text}
+              </div>
+
+              {/* USER AVATAR */}
+              {msg.role === "user" && (
+                <div className="w-8 h-8 rounded-full overflow-hidden">
+                  <img
+                    src="/User.png"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
+              )}
 
-                      {/* USER AVATAR */}
-                        {msg.role === "user" && (
-                          <div className="w-8 h-8 rounded-full overflow-hidden">
-                            <img
-                              src="/User.png"
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                        )}
-
-    </div>
-      ))}
+            </div>
+          ))}
 
           {typing && (
             <div className="flex justify-start">
@@ -136,8 +134,8 @@ export function Chatbot() {
           )}
 
           <div ref={bottomRef} />
-          </div>
         </div>
+      </div>
 
       {/* INPUT */}
       <div className="border-none p-4 flex flex-col gap-2">
