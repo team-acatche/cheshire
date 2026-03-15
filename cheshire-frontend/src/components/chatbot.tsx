@@ -1,53 +1,183 @@
+import { useState, useRef, useEffect, type KeyboardEvent } from "react"
 import { Card } from "./ui/card"
 import { Textarea } from "./ui/textarea"
 import UploadSimpleIcon from "./ui/upload-icon"
-import { Select, SelectValue, SelectTrigger, SelectContent, SelectItem } from "./ui/select"
+import {
+  Select,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+} from "./ui/select"
 import SentIcon from "./ui/sent-icon"
 
-export function Chatbot() {
-  return (
-    <Card className="w-full h-[700px] p-4 flex flex-col gap-3 rounded-2xl border-gray-200 shadow-sm">
-      
-      <div className="flex-1 overflow-y-auto p-2 text-gray-500 text-sm">
-        <div className="flex flex-col items-center justify-center h-full opacity-50">
-          <p className="text-center">Chatbot area</p>
-        </div>
-      </div>
+type Message = {
+  role: "user" | "bot1" | "bot2" | "bot3"
+  text: string
+}
 
-      <div className="flex flex-col">
-      <Textarea
-        placeholder="What would you like to know?"
-        className="resize-none border-none focus-visible:ring-0 p-0 text-lg placeholder:text-gray-400"
-      />
-      
-      <div className="flex items-center justify-between mt-2">
-        <div className="flex items-center gap-2">
-          <UploadSimpleIcon 
-            size={22} 
-            className="cursor-pointer text-gray-700 hover:text-black transition-colors"
-          />
-          
-          <Select>
-            <SelectTrigger className="border-none shadow-none focus:ring-0 h-auto p-0 gap-1 text-gray-800 font-medium">
-              <SelectValue placeholder="Agent 1" />
-            </SelectTrigger>
-            <SelectContent>
+export function Chatbot() {
+  const [messages, setMessages] = useState<Message[]>([
+    { role: "bot1", text: "Hello I'm Agent 1! How can I help you?" },
+  ])
+  
+
+  const [input, setInput] = useState<string>("")
+  const [typing, setTyping] = useState<boolean>(false)
+
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+
+  const sendMessage = () => {
+    if (!input.trim()) return
+
+    const userText = input
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: userText },
+    ])
+
+    setInput("")
+    setTyping(true)
+
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "bot1",
+          text: "This is a bot response.",
+        },
+      ])
+      setTyping(false)
+    }, 1200)
+  }
+
+  // FIX implicit any
+  const handleKeyDown = (
+    e: KeyboardEvent<HTMLTextAreaElement>
+  ) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
+  }
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    })
+  }, [messages, typing])
+
+  return (
+    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden">
+
+      {/*Chat*/}
+      <div className="flex-1 overflow-y-scroll p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+        <div className="flex flex-col gap-3">
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`flex items-end gap-2 ${
+                msg.role === "user"
+                  ? "justify-end"
+                  : "justify-start"
+              }`}
+            >
+
+              {/* BOT AVATAR */}
+              {msg.role !== "user" && (
+                <div className="w-8 h-8 rounded-full overflow-hidden">
+                  <img
+                    src={
+                      msg.role === "bot1"
+                        ? "/Agent.jpg"
+                        : "/User.png"
+                    }
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+                  {/* BUBBLE */}
+                <div
+                  className={`
+                  max-w-[70%] px-3 py-2 rounded-l
+                    ${
+                    msg.role === "user"
+                      ? "bg-blue-800 text-white rounded-br-sm"
+                      : "bg-gray-200 text-gray-800 rounded-bl-sm"
+                    }
+                  `}
+                >
+                  {msg.text}
+                </div>
+
+                      {/* USER AVATAR */}
+                        {msg.role === "user" && (
+                          <div className="w-8 h-8 rounded-full overflow-hidden">
+                            <img
+                              src="/User.png"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+
+    </div>
+      ))}
+
+          {typing && (
+            <div className="flex justify-start">
+              <div className="bg-gray-200 px-3 py-2 rounded-2xl rounded-bl-sm flex gap-1">
+                <span className="animate-bounce">.</span>
+                <span className="animate-bounce delay-100">.</span>
+                <span className="animate-bounce delay-200">.</span>
+              </div>
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+          </div>
+        </div>
+
+      {/* INPUT */}
+      <div className="border-none p-4 flex flex-col gap-2">
+
+        <Textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="What would you like to know?"
+          className="resize-none border-none focus-visible:ring-0 p-0 text-lg min-h-40px"
+        />
+
+        <div className="flex items-center justify-between">
+
+          <div className="flex items-center gap-2">
+            <UploadSimpleIcon size={22} />
+
+            <Select>
+              <SelectTrigger className="border-none shadow-none focus:ring-0 h-auto p-0 gap-1 font-medium">
+                <SelectValue placeholder="Agent 1" />
+              </SelectTrigger>
+
+              <SelectContent>
                 <SelectItem value="Agent 1">Agent 1</SelectItem>
                 <SelectItem value="Agent 2">Agent 2</SelectItem>
                 <SelectItem value="Agent 3">Agent 3</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="bg-gray-200 hover:bg-gray-300 p-2 rounded-full cursor-pointer transition-colors">
-          <SentIcon 
-            size={22} 
-            color="#9ca3af"
-            className="transform" 
-          />
+          <button
+            onClick={sendMessage}
+            className="bg-gray-200 hover:bg-gray-300 p-2 rounded-full"
+          >
+            <SentIcon size={22} color="#6b7280" />
+          </button>
+
         </div>
       </div>
-    </div>
+
     </Card>
   )
 }

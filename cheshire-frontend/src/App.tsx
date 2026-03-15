@@ -53,7 +53,7 @@ export function App() {
 
                             const pdfDoc = await drawHighlight(file, _findings);
                             const pdfBytes = await pdfDoc.save();
-
+                            
                             const pdfBlob = new Blob([pdfBytes as BlobPart], { type: "application/pdf" })
                             const newFile = new NamedFile(pdfBlob, file.name)
                             setFile(newFile);
