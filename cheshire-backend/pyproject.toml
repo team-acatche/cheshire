@@ -20,7 +20,8 @@ dependencies = [
     "fastapi (>=0.135.0,<0.136.0)",
     "types-aiofiles (>=25.1.0.20251011,<26.0.0.0)",
     "uvicorn (>=0.41.0,<0.42.0)",
-    "python-multipart (>=0.0.22,<0.0.23)"
+    "python-multipart (>=0.0.22,<0.0.23)",
+    "num2words (>=0.5.14,<0.6.0)"
 ]
 
 
@@ -51,3 +52,8 @@ module = [
     "haystack_integrations.components.websearch.exa.*",
 ]
 ignore_missing_imports = true
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.2,<10.0.0)"
+]

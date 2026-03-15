@@ -8,7 +8,7 @@ from haystack_integrations.components.embedders.ollama import OllamaTextEmbedder
 from fastapi import HTTPException, Depends
 
 from cheshire_configs.core import EvaluationType, Provider, PipelineConfig
-from preprocessors.ollama import OllamaRagPreprocessor
+from cheshire_configs.preprocessors.ollama import OllamaRagPreprocessor
 from tools.base import query_document_tool
 from cheshire_configs.registry import configs
 

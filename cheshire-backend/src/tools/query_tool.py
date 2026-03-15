@@ -17,7 +17,7 @@ def query_pipeline(document_store: InMemoryDocumentStore) -> Pipeline:
         model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
         url=os.getenv("OLLAMA_URL", "http://localhost:11434"),
     )
-    retriever = InMemoryEmbeddingRetriever(document_store, top_k=5)
+    retriever = InMemoryEmbeddingRetriever(document_store, top_k=3)
 
     retrieval_pipeline = Pipeline()
     retrieval_pipeline.add_component("embedder", embedder)
