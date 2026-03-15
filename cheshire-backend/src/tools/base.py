@@ -20,8 +20,7 @@ def add_vulnerability_tool(vulnerability_state: str) -> Tool:
     _add_vulnerability_tool = create_tool_from_function(
 	    function=add_vulnerability,
 	    description="Add a vulnerability to the vulnerability list.",
-	    inputs_from_state={vulnerability_state: "vulnerabilities"},
-	    outputs_to_state={vulnerability_state: {"source": "vulnerabilities"}}
+	    outputs_to_state={vulnerability_state: {"source": "vulnerability"}}
     )
     _add_vulnerability_tool.warm_up()
     return _add_vulnerability_tool

@@ -62,7 +62,7 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		exit_conditions=["text"],
 		streaming_callback=print_streaming_chunk, # TODO (feat): switch to logger
 		state_schema={
-			"vulnerabilities_list": {"type": set[VulnerabilityDetails]},
+			"vulnerabilities_list": {"type": list[VulnerabilityDetails]},
 		}
 	)
 
