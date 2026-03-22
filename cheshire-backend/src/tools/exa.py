@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 web_search = ComponentTool(
-	component=ExaAnswer(system_prompt="Provide a concise, factual answer to the query (strictly under 500 tokens). Always explicitly cite specific sources from the provided search results to support your claims."),
+	component=ExaAnswer(system_prompt="Provide a concise, factual answer to the query (strictly under 500 tokens). Prioritize results from 2025 or later. Always explicitly cite specific sources from the provided search results to support your claims."),
 	name="web_search",
 	description="Answer questions through the web using Exa search.",
 	parameters={
