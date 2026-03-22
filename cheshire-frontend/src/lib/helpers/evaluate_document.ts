@@ -3,7 +3,7 @@ import type { VulnerabilityFinding } from "../../types/VulnerabilityFinding";
 export async function evaluateDocument(file: File): Promise<VulnerabilityFinding[]> {
     const formData = new FormData();
     formData.append("uploaded_document", file);
-    return await fetch("http://localhost:8000/evaluate", {
+    return await fetch("http://localhost:8000/api/v1/evaluate?provider=together_ai", {
         method: "POST",
         body: formData,
     })
