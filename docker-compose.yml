@@ -1,0 +1,32 @@
+services:
+  cheshire-backend:
+    build:
+      context: ./cheshire-backend
+      dockerfile: Dockerfile
+    container_name: cheshire-backend
+    restart: unless-stopped
+    env_file: ./cheshire-backend/.env
+    ports:
+      - "8000:8000"
+    networks:
+      - cheshire
+
+  cheshire-frontend:
+    build:
+      context: ./cheshire-frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: cheshire-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - BACKEND_URI=http://localhost:8000
+    depends_on:
+      - cheshire-backend
+    networks:
+      - cheshire
+
+networks:
+  cheshire:
+    driver: bridge
