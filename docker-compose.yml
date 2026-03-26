@@ -21,7 +21,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      - BACKEND_URI=http://localhost:8000
+      - BACKEND_URI=http://cheshire-backend:8000
     depends_on:
       - cheshire-backend
     networks:
