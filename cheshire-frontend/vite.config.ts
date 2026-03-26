@@ -8,6 +8,12 @@ export default defineConfig({
     allowedHosts: true,
     host: true,
     port: 5173,
+    proxy: {
+      "/api": {
+        target: process.env.BACKEND_URI ?? "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [react(), tailwindcss()],
   resolve: {

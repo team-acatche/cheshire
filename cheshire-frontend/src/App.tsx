@@ -47,7 +47,7 @@ export function App() {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           if (file.type === "application/pdf") {
-                            const _findings = await evaluateDocument(process.env.BACKEND_URI ?? "localhost:8000", file);
+                            const _findings = await evaluateDocument(file);
                             setFindings(_findings);
 
                             const pdfDoc = await drawHighlight(file, _findings);

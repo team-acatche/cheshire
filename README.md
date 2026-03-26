@@ -194,6 +194,14 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Proxy API requests to the backend container.
+    # The path is preserved: /api/v1/evaluate → http://cheshire-backend:8000/api/v1/evaluate
+    location /api/ {
+        proxy_pass http://cheshire-backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
     # For single-page apps: if the file doesn't exist,
     # serve index.html so React Router can handle the URL
     location / {
@@ -202,7 +210,7 @@ server {
 }
 ```
 
-> **What this does:** nginx looks for the exact file requested (e.g., `/assets/main.js`). If it doesn't exist (e.g., `/chatbot`), it serves `index.html` and lets your React app handle the route.
+> **What this does:** Requests to `/api/*` (e.g., `/api/v1/evaluate`) are forwarded to the backend container inside the Docker network. Everything else serves static files, falling back to `index.html` for client-side routing.
 
 ### Step 3: Update docker-compose.yml for production
 
