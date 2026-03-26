@@ -21,14 +21,17 @@ RUN pip install --no-cache-dir "poetry==$POETRY_VERSION" "poetry-plugin-export"
 # Copy dependency files first for better Docker cache use
 COPY pyproject.toml poetry.lock ./
 
-# Export production dependencies to requirements.txt, then install with pip.
-# Poetry's own installer ignores PIP_CONSTRAINT, so we use pip directly.
-# nvidia-nvshmem-cu12 is excluded — it requires the CUDA toolkit which
-# is not present on python:3.12-slim (only needed for multi-GPU setups).
-RUN poetry export --without dev -f requirements.txt -o requirements.txt \
-    && printf "nvidia-nvshmem-cu12\n" > /tmp/constraints.txt \
-    && PIP_CONSTRAINT=/tmp/constraints.txt pip install --no-cache-dir -r requirements.txt \
-    && rm -f requirements.txt /tmp/constraints.txt
+# Export production dependencies, strip out heavy NVIDIA/PyTorch GPU packages,
+# install the CPU versions of PyTorch first, then install the rest.
+RUN poetry export --without dev --without-hashes -f requirements.txt -o requirements.txt \
+    && sed -i -e '/^nvidia-/d' requirements.txt \
+    && sed -i -e 's/^\(torch==[0-9.]*\)/\1+cpu/g' requirements.txt \
+    && sed -i -e 's/^\(torchvision==[0-9.]*\)/\1+cpu/g' requirements.txt \
+    && sed -i -e 's/^\(torchaudio==[0-9.]*\)/\1+cpu/g' requirements.txt \
+    && sed -i -e '/^triton==/d' requirements.txt \
+    && pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu \
+    && rm -f requirements.txt
+
 
 
 # ─────────────────────────────────────────────────────────────
