@@ -2,6 +2,7 @@ services:
   cheshire-backend:
     build:
       context: ./cheshire-backend
+      network: host
       dockerfile: Dockerfile
     container_name: cheshire-backend
     restart: unless-stopped
