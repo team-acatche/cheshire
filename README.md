@@ -1,4 +1,5 @@
 # cheshire
+
 A security compliance assessment tool for evaluating project documents to empower development teams into implementing more secure software.
 
 This project is containerized using Docker for a consistent and easy development setup.
@@ -6,30 +7,36 @@ This project is containerized using Docker for a consistent and easy development
 ---
 
 ## Quick Start (Docker)
+
 Create an .env file in cheshire-backend folder and paste:
-```
+
+```env
 # Mode
+
 MODE=ollama # ollama | together-ai
 CONFIG_TYPE=rag # rag | full-document
 
 # HuggingFace
-HF_TOKEN=<YOUR-HUGGINGFACE-TOKEN>
+
+HF_TOKEN=\<YOUR-HUGGINGFACE-TOKEN>
 
 # Ollama
-OLLAMA_URL=http://172.27.80.1:11434/
+
+OLLAMA_URL=\<YOUR-OLLAMA-URL>
 OLLAMA_EMBEDDING_MODEL=qwen3-embedding:0.6b
 OLLAMA_CHAT_MODEL=qwen3
 HF_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 
 # Exa
-EXA_API_KEY=<YOUR-EXA-API-KEY>
+
+EXA_API_KEY=\<YOUR-EXA-API-KEY>
 
 # Together AI
-TOGETHER_API_KEY=<YOUR-TOGETHER-AI-API-KEY>
+
+TOGETHER_API_KEY=\<YOUR-TOGETHER-AI-API-KEY>
 TOGETHER_CHAT_MODEL=Qwen/Qwen3-235B-A22B-Instruct-2507-tput
 TOGETHER_REASONING_EFFORT=high
 ```
-
 
 Run the entire project with a single command:
 
@@ -41,10 +48,10 @@ docker compose up --build
 
 ## Services
 
-| Service  | Description                 | URL                   |
-| -------- | --------------------------- | --------------------- |
-| Frontend | User interface (React/Vite) | http://localhost:5173 |
-| Backend  | FastAPI backend API         | http://localhost:8000 |
+| Service  | Description                 | URL                     |
+| -------- | --------------------------- | ----------------------- |
+| Frontend | User interface (React/Vite) | `http://localhost:5173` |
+| Backend  | FastAPI backend API         | `http://localhost:8000` |
 
 ---
 
@@ -119,7 +126,6 @@ cheshire/
 
 ## Known Limitations
 
-* Nginx production setup is not yet included (project still in development)
 * UI does not yet include a processing/loading animation
 
 ---
@@ -132,11 +138,7 @@ cheshire/
    docker compose up --build
    ```
 
-2. Open frontend in browser:
-
-   ```
-   http://localhost:5173
-   ```
+2. Open frontend in browser: `http://localhost:5173`
 
 3. Test backend:
 
@@ -144,17 +146,113 @@ cheshire/
    curl http://localhost:8000/healthcheck
    ```
 
-4. Check FastAPI docs:
-
-    ```
-    http://localhost:8000/docs
-    ```
+4. Check FastAPI docs: `http://localhost:8000/docs`
 
 5. Upload a document and monitor backend logs:
 
    ```bash
    docker compose logs -f cheshire-backend
    ```
+
+---
+
+## Production Deployment
+
+In production, you don't use the Vite dev server. Instead, you **build** the frontend into static files and serve them with **nginx** inside a Docker container. You can then expose the containers to the internet using a **Cloudflare Tunnel** — no need to open ports on your machine.
+
+### Step 1: Add an nginx stage to the frontend Dockerfile
+
+The frontend `Dockerfile` already has a `build` stage that creates static files. Add a `production` stage at the end of `cheshire-frontend/Dockerfile`:
+
+```dockerfile
+# ─────────────────────────────────────────────────────────────
+# Stage 4: Production
+# Serves the built static files with nginx
+# ─────────────────────────────────────────────────────────────
+FROM nginx:alpine AS production
+
+# Copy the built static files from the build stage
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### Step 2: Create an nginx config for your SPA
+
+Create `cheshire-frontend/nginx.conf`:
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # For single-page apps: if the file doesn't exist,
+    # serve index.html so React Router can handle the URL
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+> **What this does:** nginx looks for the exact file requested (e.g., `/assets/main.js`). If it doesn't exist (e.g., `/chatbot`), it serves `index.html` and lets your React app handle the route.
+
+### Step 3: Update docker-compose.yml for production
+
+Change the frontend service to target the `production` stage:
+
+```yaml
+cheshire-frontend:
+  build:
+    context: ./cheshire-frontend
+    dockerfile: Dockerfile
+    target: production        # was: development
+  container_name: cheshire-frontend
+  restart: unless-stopped
+  ports:
+    - "80:80"                 # nginx serves on port 80
+  depends_on:
+    - cheshire-backend
+  networks:
+    - cheshire
+```
+
+Then rebuild:
+
+```bash
+docker compose up --build
+```
+
+Visit `http://localhost` to verify the frontend is working.
+
+### Step 4: Expose to the internet with Cloudflare Tunnel
+
+If you're already familiar with Cloudflare Tunnels, you can skip the setup steps. Point your tunnel to the container:
+
+```bash
+# If you haven't logged in yet:
+cloudflared tunnel login
+
+# Create a tunnel (one-time):
+cloudflared tunnel create cheshire
+
+# Route your domain to the tunnel:
+cloudflared tunnel route dns cheshire cheshire.yourdomain.com
+
+# Run the tunnel, pointing to your local containers:
+cloudflared tunnel run --url http://localhost:80 cheshire
+```
+
+This proxies `cheshire.yourdomain.com` → your local port 80 (nginx) → the built React app. No ports need to be opened on your router/firewall.
+
+> **Tip:** For the backend, you can add a second `cloudflared` tunnel or add an `ingress` rule in your tunnel config to route `api.yourdomain.com` → `http://localhost:8000`.
 
 ---
 
