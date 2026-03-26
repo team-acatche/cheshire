@@ -13,7 +13,7 @@ MODE=ollama # ollama | together-ai
 CONFIG_TYPE=rag # rag | full-document
 
 # HuggingFace
-HF_TOKEN=<YOUR-HUGGING-FACE-TOKEN>
+HF_TOKEN=<YOUR-HUGGINGFACE-TOKEN>
 
 # Ollama
 OLLAMA_URL=http://172.27.80.1:11434/
@@ -121,9 +121,6 @@ cheshire/
 
 * Nginx production setup is not yet included (project still in development)
 * UI does not yet include a processing/loading animation
-
-  * A skeletal loading animation was suggested to improve user experience
-  * Currently considered low priority
 
 ---
 
