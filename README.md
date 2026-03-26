@@ -6,6 +6,30 @@ This project is containerized using Docker for a consistent and easy development
 ---
 
 ## Quick Start (Docker)
+Create an .env file in cheshire-backend folder and paste:
+```
+# Mode
+MODE=ollama # ollama | together-ai
+CONFIG_TYPE=rag # rag | full-document
+
+# HuggingFace
+HF_TOKEN=<YOUR-HUGGING-FACE-TOKEN>
+
+# Ollama
+OLLAMA_URL=http://172.27.80.1:11434/
+OLLAMA_EMBEDDING_MODEL=qwen3-embedding:0.6b
+OLLAMA_CHAT_MODEL=qwen3
+HF_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+
+# Exa
+EXA_API_KEY=<YOUR-EXA-API-KEY>
+
+# Together AI
+TOGETHER_API_KEY=<YOUR-TOGETHER-AI-API-KEY>
+TOGETHER_CHAT_MODEL=Qwen/Qwen3-235B-A22B-Instruct-2507-tput
+TOGETHER_REASONING_EFFORT=high
+```
+
 
 Run the entire project with a single command:
 
