@@ -32,7 +32,12 @@ RUN poetry export --without dev --without-hashes -f requirements.txt -o requirem
     && pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu \
     && rm -f requirements.txt
 
+# Predownload Docling models
+ENV HF_HOME=/root/.cache/huggingface
+RUN docling-tools models download
 
+# Predownload EasyOCR models
+RUN python -c "import easyocr; easyocr.Reader(['fr', 'de', 'es', 'en'])"
 
 # ─────────────────────────────────────────────────────────────
 # Stage 2: Run
@@ -54,6 +59,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=build /usr/local/bin /usr/local/bin
 
+# Configure Hugging Face cache path and copy predownloaded Docling models
+ENV HF_HOME=/root/.cache/huggingface
+COPY --from=build /root/.cache/docling/models /root/.cache/docling/models
+COPY --from=build /root/.cache/huggingface /root/.cache/huggingface
+COPY --from=build /root/.EasyOCR /root/.EasyOCR
 # Copy application source
 COPY src ./src
 
