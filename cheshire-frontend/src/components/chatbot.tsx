@@ -23,18 +23,21 @@ interface ChatbotProps {
 }
 
 export function Chatbot({ findings }: ChatbotProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "bot1", text: "Hello I'm Agent 1!" },
-    { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
-    ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
-    { role: "bot1", text: "How can I help you?" },
-  ])
-
-
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
+
+  // ✅ FIX: Reinitialize messages whenever findings change
+  useEffect(() => {
+    setMessages([
+      { role: "bot1", text: "Hello I'm Agent 1!" },
+      { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
+      ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
+      { role: "bot1", text: "How can I help you?" },
+    ])
+  }, [findings])
 
   const sendMessage = () => {
     if (!input.trim()) return
@@ -61,7 +64,6 @@ export function Chatbot({ findings }: ChatbotProps) {
     }, 1200)
   }
 
-  // FIX implicit any
   const handleKeyDown = (
     e: KeyboardEvent<HTMLTextAreaElement>
   ) => {
@@ -80,16 +82,17 @@ export function Chatbot({ findings }: ChatbotProps) {
   return (
     <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0">
 
-      {/*Chat*/}
+      {/* Chat */}
       <div className="flex-1 overflow-y-scroll p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
         <div className="flex flex-col gap-3">
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-end gap-2 ${msg.role === "user"
-                ? "justify-end"
-                : "justify-start"
-                }`}
+              className={`flex items-end gap-2 ${
+                msg.role === "user"
+                  ? "justify-end"
+                  : "justify-start"
+              }`}
             >
 
               {/* BOT AVATAR */}
@@ -110,13 +113,16 @@ export function Chatbot({ findings }: ChatbotProps) {
               <div
                 className={`
                   max-w-[70%] px-3 py-2 rounded-l
-                    ${msg.role === "user"
-                    ? "bg-blue-800 text-white rounded-br-sm"
-                    : "bg-gray-200 text-gray-800 rounded-bl-sm"
+                  ${
+                    msg.role === "user"
+                      ? "bg-blue-800 text-white rounded-br-sm"
+                      : "bg-gray-200 text-gray-800 rounded-bl-sm"
                   }
-                  `}
+                `}
               >
-                {typeof msg.text === "string" ? msg.text : <VulnerabilityFindingComponent finding={msg.text} />}
+                {typeof msg.text === "string"
+                  ? msg.text
+                  : <VulnerabilityFindingComponent finding={msg.text} />}
               </div>
 
               {/* USER AVATAR */}
