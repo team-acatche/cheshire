@@ -35,11 +35,11 @@ async def get_sessions(
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
-    session_path = Path(SESSION_DIR) / username
-    if not session_path.exists():
+    session_db_path = Path(SESSION_DIR) / username / "session_metadata.sqlite"
+    if not session_db_path.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
-    with sqlite3.connect(session_path / "session_metadata.sqlite") as session_db:
+    with sqlite3.connect(session_db_path) as session_db:
         session_repo = SqliteSessionRepository(session_db)
         return session_repo.get_sessions()
     

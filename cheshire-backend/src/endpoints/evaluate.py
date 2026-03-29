@@ -1,3 +1,4 @@
+import aiofiles
 import os
 import tempfile
 from pathlib import Path
@@ -26,14 +27,6 @@ SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "
 
 evaluate_router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
-
-# class EvaluateBody(BaseModel):
-#     """
-#     Body for the /evaluate endpoint.
-#     """
-#     username: str = Field(..., description="The username of the user")
-#     uploaded_document: UploadFile = Field(..., description="The document to be evaluated")
-#     session_id: Optional[str] = Field(None, description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")
 
 class EvaluateResponse(BaseModel):
     session_id: str
@@ -83,3 +76,19 @@ async def evaluate_document(
         return EvaluateResponse(session_id=_session_id, vulnerabilities=results)
     else:
         return EvaluateResponse(session_id=_session_id, vulnerabilities=[])
+
+@evaluate_router.post("/{username}/evaluate/{session_id}/result", status_code=204)
+async def upload_result(
+    username: Annotated[str, PathParam(description="The username of the user")],
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
+    uploaded_document: Annotated[UploadFile, File(description="The evaluated document with highlights.")],
+) -> None:
+    if SESSION_DIR is None:
+        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+    
+    filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload")
+    document_path = Path(SESSION_DIR) / username / session_id / "documents" / f"{datetime.now().isoformat()}__highlighted__{filename}"
+
+    async with aiofiles.open(document_path, "wb") as d:
+        await d.write(await uploaded_document.read())
+

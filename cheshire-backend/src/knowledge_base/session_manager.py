@@ -72,14 +72,7 @@ class SqliteSessionRepository(SessionRepository):
     
     def save_new_session(self, session: Session) -> None:
         """Saves a session to the repository."""
-        values: list[str] = ["title"]
-        if session.session_id is not None:
-            values = ["session_id", *values]
-
-        values_str = f"({', '.join(values)})"
-        placeholders = f"({', '.join(['?' for _ in values])})"
-
-        self.cursor.execute(f"INSERT INTO session {values_str} VALUES {placeholders}", session.to_insert_tuple())
+        self.cursor.execute(f"INSERT INTO session (session_id, title) VALUES (?, ?)", (session.session_id, session.title))
         self.db.commit()
     
     def change_title(self, session_id: str, *, new_title: str) -> Optional[Session]:
