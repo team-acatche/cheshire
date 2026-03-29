@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent } from "./components/ui/card"
@@ -8,35 +8,65 @@ import {
   SidebarInset,
 } from "./components/ui/sidebar"
 import DocumentPreview from "./components/document-preview"
-import { NamedFile } from "./types/NamedFile"
 import { drawHighlight } from "./lib/helpers/page-highlights"
-import { evaluateDocument } from "./lib/helpers/evaluate_document"
+import { evaluateDocument, saveResult } from "./lib/helpers/evaluate_document"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
+import { USERNAME } from "./globals"
+import type { Chat } from "./ChatPage"
 
-// ✅ Chat type
-type Chat = {
-  id: string
-  file: NamedFile
-  findings: VulnerabilityFinding[]
+async function getChats(username: string): Promise<Chat[]> {
+  return await fetch(`/api/v1/${username}/chat`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Error getting chats: ${response.statusText}`);
+      }
+      return response.json() as Promise<Chat[]>
+    })
+    .catch(error => {
+      console.error("Error getting chats:", error);
+      return [];
+    });
 }
 
 export function App() {
-  const [file, setFile] = useState<NamedFile | null>(null)
+  const [file, setFile] = useState<File | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [chats, setChats] = useState<Chat[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+
+  useEffect(() => {
+    getChats(USERNAME).then(setChats)
+  }, [])
 
   // ✅ New Chat (reset only)
   const handleNewChat = () => {
     setFile(null)
     setFindings([])
+    setCurrentSessionId(null)
   }
 
   // ✅ Load previous chat
-  const handleSelectChat = (chat: Chat) => {
-    setFile(chat.file)
-    setFindings(chat.findings)
+  const handleSelectChat = async (chat: Chat) => {
+    const file = await fetch(`/api/v1/${USERNAME}/evaluate/${chat.session_id}/result`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Error getting file: ${response.statusText}`);
+        }
+        return response.blob()
+      })
+      .then(blob => new File([blob], chat.title + ".pdf", {
+        type: "application/pdf",
+      }))
+      .catch(error => {
+        console.error("Error getting file:", error);
+        return null;
+      });
+
+    setFile(file)
+    setFindings(chat.findings || [])
+    setCurrentSessionId(chat.session_id)
   }
 
   return (
@@ -78,28 +108,33 @@ export function App() {
                             return;
                           }
 
-                          const _findings = await evaluateDocument(fileInput);
+                          const response = await evaluateDocument(fileInput);
+                          if (response === null) {
+                            alert("Failed to evaluate document.");
+                            return;
+                          }
 
-                          const pdfDoc = await drawHighlight(fileInput, _findings);
+                          const pdfDoc = await drawHighlight(fileInput, response.findings);
                           const pdfBytes = await pdfDoc.save();
 
-                          const pdfBlob = new Blob([pdfBytes as BlobPart], {
+                          const highlightedPdf = new File([pdfBytes as BlobPart], fileInput.name, {
                             type: "application/pdf",
                           });
 
-                          const newFile = new NamedFile(pdfBlob, fileInput.name)
+                          await saveResult(response.session_id, highlightedPdf)
 
                           // ✅ Save to history
                           const newChat: Chat = {
-                            id: crypto.randomUUID(),
-                            file: newFile,
-                            findings: _findings,
+                            session_id: response.session_id,
+                            title: fileInput.name,
+                            findings: response.findings,
                           }
 
                           setChats((prev) => [newChat, ...prev])
 
-                          setFile(newFile)
-                          setFindings(_findings)
+                          setFile(highlightedPdf)
+                          setFindings(response.findings)
+                          setCurrentSessionId(response.session_id)
                         }}
                       />
                     </label>
@@ -113,8 +148,13 @@ export function App() {
             )}
           </Card>
 
-          {file && (
-            <Chatbot key={file.name} findings={findings} />
+          {file && currentSessionId && (
+            <Chatbot
+              key={currentSessionId}
+              findings={findings}
+              sessionId={currentSessionId}
+              username={USERNAME}
+            />
           )}
 
         </main>

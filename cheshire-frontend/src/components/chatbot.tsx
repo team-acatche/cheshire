@@ -20,48 +20,89 @@ type Message = {
 
 interface ChatbotProps {
   findings: VulnerabilityFinding[]
+  sessionId: string
+  username: string
 }
 
-export function Chatbot({ findings }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  // ✅ FIX: Reinitialize messages whenever findings change
+  // ✅ Fetch history on mount or when sessionId changes
   useEffect(() => {
-    setMessages([
-      { role: "bot1", text: "Hello I'm Agent 1!" },
-      { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
-      ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
-      { role: "bot1", text: "How can I help you?" },
-    ])
-  }, [findings])
+    const fetchHistory = async () => {
+      try {
+        const response = await fetch(`/api/v1/${username}/chat/${sessionId}`)
+        if (!response.ok) throw new Error("Failed to fetch history")
+        
+        const data = await response.json()
+        const backendMessages = data.messages || []
 
-  const sendMessage = () => {
+        if (backendMessages.length > 0) {
+          // Map backend roles to frontend roles
+          const mappedMessages = backendMessages.map((msg: any): Message => ({
+            role: msg.role === "user" ? "user" : "bot1",
+            text: msg.content || msg.text || "",
+          }))
+          setMessages(mappedMessages)
+        } else {
+          // Initial greeting if no history
+          setMessages([
+            { role: "bot1", text: "Hello I'm Agent 1!" },
+            { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
+            ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
+            { role: "bot1", text: "How can I help you?" },
+          ])
+        }
+      } catch (error) {
+        console.error("Error fetching chat history:", error)
+        // Fallback to initial greeting on error
+        setMessages([
+          { role: "bot1", text: "Hello! I'm ready to help you with the document." },
+        ])
+      }
+    }
+
+    fetchHistory()
+  }, [sessionId, username, findings])
+
+  const sendMessage = async () => {
     if (!input.trim()) return
 
     const userText = input
-
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: userText },
-    ])
-
+    setMessages((prev) => [...prev, { role: "user", text: userText }])
     setInput("")
     setTyping(true)
 
-    setTimeout(() => {
+    try {
+      const response = await fetch(`/api/v1/${username}/chat/${sessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText }),
+      })
+
+      if (!response.ok) throw new Error("Failed to send message")
+
+      const data = await response.json()
       setMessages((prev) => [
         ...prev,
         {
           role: "bot1",
-          text: "This is a bot response.",
+          text: data.response || "No response from agent.",
         },
       ])
+    } catch (error) {
+      console.error("Error sending message:", error)
+      setMessages((prev) => [
+        ...prev,
+        { role: "bot1", text: "Sorry, I encountered an error. Please try again." },
+      ])
+    } finally {
       setTyping(false)
-    }, 1200)
+    }
   }
 
   const handleKeyDown = (

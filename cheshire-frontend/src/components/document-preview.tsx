@@ -1,8 +1,7 @@
 import { FileText } from "lucide-react";
-import { NamedFile } from "@/types/NamedFile";
 
 interface DocumentPreviewProps {
-  src: NamedFile;
+  src: File;
 }
 
 export function DocumentPreview({ src }: DocumentPreviewProps) {
@@ -15,9 +14,9 @@ export function DocumentPreview({ src }: DocumentPreviewProps) {
         </div>
       </div>
 
-      {src.contents.type === "application/pdf" && (
+      {src.type === "application/pdf" && (
         <iframe
-          src={URL.createObjectURL(src.contents)}
+          src={URL.createObjectURL(src)} // TODO: check if we can directly link this to /api/v1/{username}/evaluate/{session_id}/result
           className="grow rounded-xl"
         />
       )}

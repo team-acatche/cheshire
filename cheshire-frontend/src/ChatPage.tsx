@@ -11,12 +11,13 @@ import {
   FileText
 } from "lucide-react"
 
-import { NamedFile } from "@/types/NamedFile"
+
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 
-type Chat = {
-  id: string
-  file: NamedFile
+// ✅ Chat type
+export type Chat = {
+  session_id: string
+  title: string
   findings: VulnerabilityFinding[]
 }
 
@@ -38,7 +39,7 @@ export default function ChatPage({
 
         {/* ACCOUNT */}
         <div className="flex items-center gap-3 text-sm text-black">
-          
+
           {/* ICON WITH ROUND BORDER */}
           <div className="h-9 w-9 flex items-center justify-center rounded-full border-2 border-black">
             <User className="h-5 w-5" />
@@ -73,13 +74,13 @@ export default function ChatPage({
 
           {chats.map((chat) => (
             <div
-              key={chat.id}
+              key={chat.session_id}
               onClick={() => onSelectChat(chat)}
               className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm"
             >
               <FileText className="h-4 w-4" />
               <span className="truncate">
-                {chat.file.name}
+                {chat.title}
               </span>
             </div>
           ))}
