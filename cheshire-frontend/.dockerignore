@@ -1,0 +1,30 @@
+# Node modules (always ignore)
+node_modules
+
+# Build output
+dist
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (optional but safer)
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+
+# Editor / IDE
+.vscode
+.idea
+
+# Misc
+*.md
