@@ -70,7 +70,7 @@ async def evaluate_document(
         # Save results as first event in history.sqlite
         with sqlite3.connect(session_path / "history.sqlite") as history_db:
             history_repo = SqliteEventRepository(history_db)
-            summary = "\n".join([f"- {v.title}: {v.description[:100]}..." for v in results])
+            summary = "\n".join([f"- {v.title}: {v.description[:100]}{'...' if len(v.description) > 100 else ''}" for v in results])
             history_repo.save(Event(
                 session_id=_session_id,
                 event_type=EventType.RESPONSE,

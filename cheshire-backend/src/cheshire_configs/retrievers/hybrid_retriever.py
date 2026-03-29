@@ -61,4 +61,4 @@ class HybridInMemoryRetriever:
         self.pipeline.connect("bm25_retriever", "document_joiner")
         self.pipeline.connect("document_joiner", "reranker")
 
-        self.input_mapping = {"query": ["embedder.text", "fts_retriever.query", "reranker.query"]}
+        self.input_mapping = {"query": ["embedder.text", "bm25_retriever.query", "reranker.query"]}
