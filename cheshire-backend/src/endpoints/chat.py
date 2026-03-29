@@ -75,7 +75,7 @@ async def chat(
     
     agent = Agent(
         chat_generator=config.model,
-        system_prompt=config.system_prompt + "\n\nYou are now in an interactive chat session. Use your tools to answer questions about the previously analyzed document and discovered vulnerabilities.",
+        system_prompt="You are now an expert security auditor in an interactive chat session. Use your tools to answer questions about the previously analyzed document and discovered vulnerabilities.",
         tools=cast(list[Tool], config.tools) + knowledge_tools,
         streaming_callback=callback_factory(),
     )
