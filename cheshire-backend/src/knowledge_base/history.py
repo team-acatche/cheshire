@@ -109,9 +109,15 @@ class SqliteEventRepository(EventRepository):
         self.cursor.execute(f"INSERT INTO event {values_str} VALUES {placeholders}", event.to_insert_tuple())
         self.history.commit()
     
-    def get_recent(self, session_id: str, k: int) -> list[Event]:
+    def get_recent(self, session_id: str, k: int, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
         """Returns the last k events."""
-        self.cursor.execute("SELECT * FROM event WHERE session_id = ? ORDER BY event_id DESC LIMIT ?", (session_id, k))
+        if event_types is None:
+            self.cursor.execute("SELECT * FROM event WHERE session_id = ? ORDER BY event_id DESC LIMIT ?", (session_id, k))
+        else:
+            self.cursor.execute(
+                f"SELECT * FROM event WHERE session_id = ? AND event_type IN ({','.join(['?'] * len(event_types))}) ORDER BY event_id DESC LIMIT ?",
+                (session_id, *[e.value for e in event_types], k)
+            )
         return [Event.from_row(row) for row in self.cursor.fetchall()]
     
     def get_event(self, event_id: int) -> Optional[Event]:

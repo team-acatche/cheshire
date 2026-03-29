@@ -8,8 +8,9 @@ import uuid
 from datetime import datetime
 import re
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Path as PathParam, Query
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 from model import evaluate_file
 from tools.helpers.output_schema import VulnerabilityDetails
@@ -34,13 +35,17 @@ logger = logging.getLogger("uvicorn.error")
 #     uploaded_document: UploadFile = Field(..., description="The document to be evaluated")
 #     session_id: Optional[str] = Field(None, description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")
 
-@evaluate_router.post("/evaluate")
+class EvaluateResponse(BaseModel):
+    session_id: str
+    vulnerabilities: list[VulnerabilityDetails]
+
+@evaluate_router.post("/{username}/evaluate")
 async def evaluate_document(
     config: Annotated[PipelineConfig, Depends(resolve_config)],
+    username: Annotated[str, PathParam(description="The username of the user")],
     uploaded_document: Annotated[UploadFile, File(description="The document to be evaluated")],
-    username: Annotated[str, Form(description="The username of the user")],
-    session_id: Annotated[Optional[str], Form(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
-) -> list[VulnerabilityDetails]:
+    session_id: Annotated[Optional[str], Query(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
+) -> EvaluateResponse:
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
     
@@ -57,7 +62,6 @@ async def evaluate_document(
         with sqlite3.connect(session_path / "session_metadata.sqlite") as session_db:
             session_repo = SqliteSessionRepository(session_db)
             session_repo.save_new_session(Session(session_id=_session_id, title=filename))
-        
         # Initialize vector store
         await create_vector_stores(session_path)
 
@@ -76,6 +80,6 @@ async def evaluate_document(
                 event_type=EventType.RESPONSE,
                 content=f"Evaluation complete. Found {len(results)} vulnerabilities:\n{summary}"
             ))
-        return results
+        return EvaluateResponse(session_id=_session_id, vulnerabilities=results)
     else:
-        return []
+        return EvaluateResponse(session_id=_session_id, vulnerabilities=[])
