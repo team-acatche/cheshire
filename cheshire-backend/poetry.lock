@@ -760,6 +760,21 @@ files = [
 ]
 
 [[package]]
+name = "deprecation"
+version = "2.1.0"
+description = "A library to handle automated deprecations"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "deprecation-2.1.0-py2.py3-none-any.whl", hash = "sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a"},
+    {file = "deprecation-2.1.0.tar.gz", hash = "sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff"},
+]
+
+[package.dependencies]
+packaging = "*"
+
+[[package]]
 name = "dill"
 version = "0.4.1"
 description = "serialize all of Python"
@@ -1013,6 +1028,54 @@ files = [
 
 [package.dependencies]
 python-dotenv = "*"
+
+[[package]]
+name = "duckdb"
+version = "1.5.1"
+description = "DuckDB in-process database"
+optional = false
+python-versions = ">=3.10.0"
+groups = ["main"]
+files = [
+    {file = "duckdb-1.5.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:46f92ada9023e59f27edc048167b31ac9a03911978b1296c845a34462a27f096"},
+    {file = "duckdb-1.5.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:caa65e1f5bf007430bf657c37cab7ab81a4ddf8d337e3062bcc5085d17ef038b"},
+    {file = "duckdb-1.5.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8c0088765747ae5d6c9f89987bb36f9fb83564f07090d721344ce8e1abedffea"},
+    {file = "duckdb-1.5.1-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e56a20ab6cdb90a95b0c99652e28de3504ce77129087319c03c9098266183ae5"},
+    {file = "duckdb-1.5.1-cp310-cp310-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:715f05ea198d20d7f8b407b9b84e0023d17f2b9096c194cea702b7840e74f1f7"},
+    {file = "duckdb-1.5.1-cp310-cp310-win_amd64.whl", hash = "sha256:e878ccb7d20872065e1597935fdb5e65efa43220c8edd0d9c4a1a7ff1f3eb277"},
+    {file = "duckdb-1.5.1-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:bc7ca6a1a40e7e4c933017e6c09ef18032add793df4e42624c6c0c87e0bebdad"},
+    {file = "duckdb-1.5.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:446d500a2977c6ae2077f340c510a25956da5c77597175c316edfa87248ceda3"},
+    {file = "duckdb-1.5.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:b8b0808dba0c63b7633bdaefb34e08fe0612622224f9feb0e7518904b1615101"},
+    {file = "duckdb-1.5.1-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:553c273a6a8f140adaa6da6a6135c7f95bdc8c2e5f95252fcdf9832d758e2141"},
+    {file = "duckdb-1.5.1-cp311-cp311-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:40c5220ec93790b18ec6278da9c6ac2608d997ee6d6f7cd44c5c3992764e8e71"},
+    {file = "duckdb-1.5.1-cp311-cp311-win_amd64.whl", hash = "sha256:36e8e32621a9e2a9abe75dc15a4b54a3997f2d8b1e53ad754bae48a083c91130"},
+    {file = "duckdb-1.5.1-cp311-cp311-win_arm64.whl", hash = "sha256:5ae7c0d744d64e2753149634787cc4ab60f05ef1e542b060eeab719f3cdb7723"},
+    {file = "duckdb-1.5.1-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:6f7361d66cc801d9eb4df734b139cd7b0e3c257a16f3573ebd550ddb255549e6"},
+    {file = "duckdb-1.5.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:0a6acc2040bec1f05de62a2f3f68f4c12f3ec7d6012b4317d0ab1a195af26225"},
+    {file = "duckdb-1.5.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:ed6d23a3f806898e69c77430ebd8da0c79c219f97b9acbc9a29a653e09740c59"},
+    {file = "duckdb-1.5.1-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6af347debc8b721aa72e48671166282da979d5e5ae52dbc660ab417282b48e23"},
+    {file = "duckdb-1.5.1-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8150c569b2aa4573b51ba8475e814aa41fd53a3d510c1ffb96f1139f46faf611"},
+    {file = "duckdb-1.5.1-cp312-cp312-win_amd64.whl", hash = "sha256:054ad424b051b334052afac58cb216f3b1ebb8579fc8c641e60f0182e8725ea9"},
+    {file = "duckdb-1.5.1-cp312-cp312-win_arm64.whl", hash = "sha256:6ba302115f63f6482c000ccfd62efdb6c41d9d182a5bcd4a90e7ab8cd13856eb"},
+    {file = "duckdb-1.5.1-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:26e56b5f0c96189e3288d83cf7b476e23615987902f801e5788dee15ee9f24a9"},
+    {file = "duckdb-1.5.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:972d0dbf283508f9bc446ee09c3838cb7c7f114b5bdceee41753288c97fe2f7c"},
+    {file = "duckdb-1.5.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:482f8a13f2600f527e427f73c42b5aa75536f9892868068f0aaf573055a0135f"},
+    {file = "duckdb-1.5.1-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:da137802688190835b4c863cafa77fd7e29dff662ee6d905a9ffc14f00299c91"},
+    {file = "duckdb-1.5.1-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5d4147422d91ccdc2d2abf6ed24196025e020259d1d267970ae20c13c2ce84b1"},
+    {file = "duckdb-1.5.1-cp313-cp313-win_amd64.whl", hash = "sha256:05fc91767d0cfc4cf2fa68966ab5b479ac07561752e42dd0ae30327bd160f64a"},
+    {file = "duckdb-1.5.1-cp313-cp313-win_arm64.whl", hash = "sha256:a28531cee2a5a42d89f9ba4da53bfeb15681f12acc0263476c8705380dadce07"},
+    {file = "duckdb-1.5.1-cp314-cp314-macosx_10_15_universal2.whl", hash = "sha256:eba81e0b3011c1f23df7ea47ef4ffaa8239817959ae291515b6efd068bde2161"},
+    {file = "duckdb-1.5.1-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:afab8b4b1f4469c3879bb049dd039f8fce402712050324e9524a43d7324c5e87"},
+    {file = "duckdb-1.5.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:71dddcebbc5a70e946a06c30b59b5dd7999c9833d307168f90fb4e4b672ab63e"},
+    {file = "duckdb-1.5.1-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ac2804043bd1bc10b5da18f8f4c706877197263a510c41be9b4c0062f5783dcc"},
+    {file = "duckdb-1.5.1-cp314-cp314-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:8843bd9594e1387f1e601439e19ad73abdf57356104fd1e53a708255bb95a13d"},
+    {file = "duckdb-1.5.1-cp314-cp314-win_amd64.whl", hash = "sha256:d68c5a01a283cb13b79eafe016fe5869aa11bff8c46e7141c70aa0aac808010f"},
+    {file = "duckdb-1.5.1-cp314-cp314-win_arm64.whl", hash = "sha256:a3be2072315982e232bfe49c9d3db0a59ba67b2240a537ef42656cc772a887c7"},
+    {file = "duckdb-1.5.1.tar.gz", hash = "sha256:b370d1620a34a4538ef66524fcee9de8171fa263c701036a92bc0b4c1f2f9c6d"},
+]
+
+[package.extras]
+all = ["adbc-driver-manager", "fsspec", "ipython", "numpy", "pandas", "pyarrow"]
 
 [[package]]
 name = "easyocr"
@@ -1811,6 +1874,93 @@ files = [
 
 [package.dependencies]
 referencing = ">=0.31.0"
+
+[[package]]
+name = "lance-namespace"
+version = "0.6.1"
+description = "Lance Namespace interface and plugin registry"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "lance_namespace-0.6.1-py3-none-any.whl", hash = "sha256:9699c9e3f12236e5e08ea979cc4e036a8e3c67ed2f37ae6f25c5353ab908e1be"},
+    {file = "lance_namespace-0.6.1.tar.gz", hash = "sha256:f0deea442bd3f1056a8e2fed056ae2778e3356517ec2e680db049058b824d131"},
+]
+
+[package.dependencies]
+lance-namespace-urllib3-client = "0.6.1"
+
+[[package]]
+name = "lance-namespace-urllib3-client"
+version = "0.6.1"
+description = "Lance Namespace Specification"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "lance_namespace_urllib3_client-0.6.1-py3-none-any.whl", hash = "sha256:b9c103e1377ad46d2bd70eec894bfec0b1e2133dae0964d7e4de543c6e16293b"},
+    {file = "lance_namespace_urllib3_client-0.6.1.tar.gz", hash = "sha256:31fbd058ce1ea0bf49045cdeaa756360ece0bc61e9e10276f41af6d217debe87"},
+]
+
+[package.dependencies]
+pydantic = ">=2"
+python-dateutil = ">=2.8.2"
+typing-extensions = ">=4.7.1"
+urllib3 = ">=1.25.3,<3.0.0"
+
+[[package]]
+name = "lancedb"
+version = "0.30.1"
+description = "lancedb"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "lancedb-0.30.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:34cf0d49e755313867c04e0f3e7e4dde222e31110a60ca45ef0dc4c72d9a705d"},
+    {file = "lancedb-0.30.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f21d794a506ff2bba77ba7eba12a476f518c62c78803af765ebd35b83f9097a3"},
+    {file = "lancedb-0.30.1-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:2eaebfa5add91c0185be4baa0c1a714877e203340a116102b12ad5e60bf36209"},
+    {file = "lancedb-0.30.1-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:7beb23b096b7798f65aac6203deab0e4b4c9d541050f17bc38312e6cf143fafd"},
+]
+
+[package.dependencies]
+deprecation = ">=2.1.0"
+lance-namespace = ">=0.3.2"
+numpy = ">=1.24.0"
+packaging = ">=23.0"
+pyarrow = ">=16"
+pydantic = ">=1.10"
+tqdm = ">=4.27.0"
+
+[package.extras]
+azure = ["adlfs (>=2024.2.0)"]
+clip = ["open-clip-torch", "pillow (>=12.1.1)", "torch"]
+dev = ["pre-commit (>=3.5.0)", "pyright (>=1.1.350)", "ruff (>=0.3.0)", "typing-extensions (>=4.0.0) ; python_full_version < \"3.11.0\""]
+docs = ["mkdocs", "mkdocs-jupyter", "mkdocs-material", "mkdocstrings-python"]
+embeddings = ["awscli (>=1.44.38)", "boto3 (>=1.28.57)", "botocore (>=1.31.57)", "cohere (>=4.0)", "colpali-engine (>=0.3.10)", "google-generativeai (>=0.3.0)", "huggingface-hub (>=0.19.0)", "ibm-watsonx-ai (>=1.1.2) ; python_full_version >= \"3.10.0\"", "instructorembedding (>=1.0.1)", "ollama (>=0.3.0)", "open-clip-torch (>=2.20.0)", "openai (>=1.6.1)", "pillow (>=12.1.1)", "requests (>=2.31.0)", "sentence-transformers (>=2.2.0)", "sentencepiece (>=0.1.99)", "torch (>=2.0.0)"]
+pylance = ["pylance (>=4.0.0b7)"]
+siglip = ["pillow (>=12.1.1)", "sentencepiece", "torch", "transformers (>=4.41.0)"]
+tests = ["aiohttp (>=3.9.0)", "boto3 (>=1.28.57)", "datafusion (>=52,<53)", "duckdb (>=0.9.0)", "pandas (>=1.4)", "polars (>=0.19,<=1.3.0)", "pyarrow-stubs (>=16.0)", "pylance (>=4.0.0b7)", "pytest (>=7.0)", "pytest-asyncio (>=0.21)", "pytest-mock (>=3.10)", "pytz (>=2023.3)", "requests (>=2.31.0)", "tantivy (>=0.20.0)"]
+
+[[package]]
+name = "lancedb-haystack"
+version = "0.1.1"
+description = "LanceDB backed datastore and retrievers for Haystack 2.X"
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "lancedb_haystack-0.1.1-py3-none-any.whl", hash = "sha256:edb06de4cf8ecaa86f75f332a0b992dc2e6a97a3e063539c1f8ed887c0add9d3"},
+    {file = "lancedb_haystack-0.1.1.tar.gz", hash = "sha256:59b1e74f7c3ba9960d7b1a3a78c6f4254a58137a0d7c303483843454dc56a13b"},
+]
+
+[package.dependencies]
+duckdb = "*"
+haystack-ai = "*"
+lancedb = "*"
+pandas = "*"
+pyarrow = "*"
+tantivy = "*"
+typing-extensions = "*"
 
 [[package]]
 name = "latex2mathml"
@@ -3784,7 +3934,6 @@ description = "Python library for Apache Arrow"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "sys_platform == \"darwin\" and platform_machine == \"arm64\""
 files = [
     {file = "pyarrow-23.0.1-cp310-cp310-macosx_12_0_arm64.whl", hash = "sha256:3fab8f82571844eb3c460f90a75583801d14ca0cc32b1acc8c361650e006fd56"},
     {file = "pyarrow-23.0.1-cp310-cp310-macosx_12_0_x86_64.whl", hash = "sha256:3f91c038b95f71ddfc865f11d5876c42f343b4495535bd262c7b321b0b94507c"},
@@ -5473,6 +5622,55 @@ files = [
 widechars = ["wcwidth"]
 
 [[package]]
+name = "tantivy"
+version = "0.25.1"
+description = "Official Python bindings for the Tantivy search engine"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "tantivy-0.25.1-cp310-cp310-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:7aa587a3dc9470584cacf5e3640fee93d12ec5f10109669c1f47c4e90820b958"},
+    {file = "tantivy-0.25.1-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:56d77fe667595693d9fa5f0b4545776d84da9526bab0273b3fc6c7536dc0d8a2"},
+    {file = "tantivy-0.25.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5ba8c347cd48595fcaeabb28a909ebce92cf9c5e5c84ab5ba1136a280a307b5c"},
+    {file = "tantivy-0.25.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:aa7c4932e8fde1f09f2d46226060e827e197c2749abdc6129d73a752773adc38"},
+    {file = "tantivy-0.25.1-cp310-cp310-win_amd64.whl", hash = "sha256:afcfc5dbb0bcd5d24531f4471737ae0896f33528426ab0b1dad3e427c19120f6"},
+    {file = "tantivy-0.25.1-cp311-cp311-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:d363d7b4207d3a5aa7f0d212420df35bed18bdb6bae26a2a8bd57428388b7c29"},
+    {file = "tantivy-0.25.1-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:8f4389cf1d889a1df7c5a3195806b4b56c37cee10d8a26faaa0dea35a867b5ff"},
+    {file = "tantivy-0.25.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:99864c09fc54652c3c2486cdf13f86cdc8200f4b481569cb291e095ca5d496e5"},
+    {file = "tantivy-0.25.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:05abf37ddbc5063c575548be0d62931629c086bff7a5a1b67cf5a8f5ebf4cd8c"},
+    {file = "tantivy-0.25.1-cp311-cp311-win_amd64.whl", hash = "sha256:f307ee8ad21597b0be23af83008fd66cfd5f958cdfa24ec0aaa08a38e86bbef4"},
+    {file = "tantivy-0.25.1-cp312-cp312-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:90fd919e5f611809f746560ecf36eb9be824dec62e21ae17a27243759edb9aa1"},
+    {file = "tantivy-0.25.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:4613c7cf6c23f3a97989819690a0f956d799354957de7a204abcc60083cebe02"},
+    {file = "tantivy-0.25.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c477bd20b4df804d57dfc5033431bef27cde605695ae141b03abbf6ebc069129"},
+    {file = "tantivy-0.25.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f9b1a1ba1113c523c7ff7b10f282d6c4074006f7ef8d71e1d973d51bf7291ddb"},
+    {file = "tantivy-0.25.1-cp312-cp312-win_amd64.whl", hash = "sha256:9de0bafd3bd7ac9f8f82d53e17562e9db11a5af308fe5185c4bd86feaddbe4a6"},
+    {file = "tantivy-0.25.1-cp313-cp313-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:f51ff7196c6f31719202080ed8372d5e3d51e92c749c032fb8234f012e99744c"},
+    {file = "tantivy-0.25.1-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:550e63321bfcacc003859f2fa29c1e8e56450807b3c9a501c1add27cfb9236d9"},
+    {file = "tantivy-0.25.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:fde31cc8d6e122faf7902aeea32bc008a429a6e8904e34d3468126a3ec01b016"},
+    {file = "tantivy-0.25.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b11bd5a518b0be645320b47af8493f6a40c4f3234313e37adcf4534a564d27dd"},
+    {file = "tantivy-0.25.1-cp313-cp313-win_amd64.whl", hash = "sha256:cc7fe88853e06b3251ee4fa42b7a2038727f850c8765bcc8167cfc73585dd24e"},
+    {file = "tantivy-0.25.1-cp313-cp313t-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:dae99e75b7eaa9bf5bd16ab106b416370f08c135aed0e117d62a3201cd1ffe36"},
+    {file = "tantivy-0.25.1-cp313-cp313t-macosx_10_12_x86_64.whl", hash = "sha256:506e9533c5ef4d3df43bad64ffecc0aa97c76e361ea610815dc3a20a9d6b30b3"},
+    {file = "tantivy-0.25.1-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5dbd4f8f264dacbcc9dee542832da2173fd53deaaea03f082d95214f8b5ed6bc"},
+    {file = "tantivy-0.25.1-cp313-cp313t-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:824c643ccb640dd9e35e00c5d5054ddf3323f56fe4219d57d428a9eeea13d22c"},
+    {file = "tantivy-0.25.1-cp313-cp313t-win_amd64.whl", hash = "sha256:09c987b840afcebac817836ac08407eff17272d8aa60ce6e291f89c81830221d"},
+    {file = "tantivy-0.25.1-cp314-cp314-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:7f5d29ae85dd0f23df8d15b3e7b341d4f9eb5a446bbb9640df48ac1f6d9e0c6c"},
+    {file = "tantivy-0.25.1-cp314-cp314-macosx_10_12_x86_64.whl", hash = "sha256:f2d2938fb69a74fc1bb36edfaf7f0d1596fa1264db0f377bda2195c58bcb6245"},
+    {file = "tantivy-0.25.1-cp314-cp314-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4f5ff124c4802558e627091e780b362ca944169736caba5a372eef39a79d0ae0"},
+    {file = "tantivy-0.25.1-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:43b80ef62a340416139c93d19264e5f808da48e04f9305f1092b8ed22be0a5be"},
+    {file = "tantivy-0.25.1-cp314-cp314-win_amd64.whl", hash = "sha256:286b654f40c70c1e6b64b9bc7031ed0bf5c440f5bffeaeeee21a0ee6cc39f0e2"},
+    {file = "tantivy-0.25.1-cp39-cp39-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:6ed0cdb0c46f7ef6138d20717d483ef577e156236cc8eefa4f29af740c7c3cb8"},
+    {file = "tantivy-0.25.1-cp39-cp39-macosx_10_12_x86_64.whl", hash = "sha256:6f1125669db85d672c4bac33a71227b316ae6a7569328db6f7953b47a21492f9"},
+    {file = "tantivy-0.25.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:cba86cbbc6001d152042cdab9c55812595395a40b28a0d6dd742397b58bb5587"},
+    {file = "tantivy-0.25.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f666e98860762ee08a2ddf6fb1004bfe19163e1b78a41813178f2f98ace51d7b"},
+    {file = "tantivy-0.25.1-cp39-cp39-win_amd64.whl", hash = "sha256:3cb8308ec1ef1cbdfe1aa43ce1b7707a72dae3dfb5661dd94ffafd7a8f6ca235"},
+    {file = "tantivy-0.25.1.tar.gz", hash = "sha256:68a3314699a7d18fcf338b52bae8ce46a97dde1128a3e47e33fa4db7f71f265e"},
+]
+
+[package.extras]
+dev = ["nox"]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 description = "Retry code until it succeeds"
@@ -6384,4 +6582,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "f77442dcdec6705a835ec01102d71cb9172591c8191a46dd87e28bb4d00274c3"
+content-hash = "8e8e76f51ab8ae1d36b81daabf2383c8094e6fe646f7304bb7e350659e400405"
