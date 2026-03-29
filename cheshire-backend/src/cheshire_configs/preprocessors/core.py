@@ -13,16 +13,19 @@ from haystack.core.pipeline import Pipeline
 
 from haystack.components.embedders.hugging_face_api_document_embedder import HuggingFaceAPIDocumentEmbedder, HFEmbeddingAPIType
 from haystack.components.embedders.types import DocumentEmbedder
-from haystack_integrations.components.embedders.ollama import OllamaDocumentEmbedder
+from haystack_integrations.components.embedders.fastembed import FastembedDocumentEmbedder
 
-from cheshire_configs.core import DocumentPreprocessor
+from cheshire_configs.core import DocumentPreprocessor, PipelineConfig
 from cheshire_configs.preprocessors.rag import DOCUMENT_CONVERTER, DoclingOrientationExtractor
 from cheshire_configs.preprocessors.fallbacks import FallbackDocumentEmbedder
 
-class OllamaRagPreprocessor(DocumentPreprocessor):
+class DefaultRagPreprocessor(DocumentPreprocessor):
+    def __init__(self, config: PipelineConfig):
+        self.config = config
+
     def __call__(self, document: Path, document_store: Optional[DocumentStore] = None):
         if not document_store:
-            raise HTTPException(status_code=500, detail="Document store is required for OllamaRagPreprocessor")
+            raise HTTPException(status_code=500, detail="Document store is required for DefaultRagPreprocessor")
 
         docling_converter = DoclingConverter(
             converter=DOCUMENT_CONVERTER,
@@ -32,23 +35,14 @@ class OllamaRagPreprocessor(DocumentPreprocessor):
             ))
         )
 
-        embedder = OllamaDocumentEmbedder(
-            model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
-            url=os.getenv("OLLAMA_URL", "http://localhost:11434"),
-        )
-        backup_embedder = HuggingFaceAPIDocumentEmbedder(
-            api_type=HFEmbeddingAPIType.SERVERLESS_INFERENCE_API,
-            api_params={
-                "model": os.getenv("HF_EMBEDDING_MODEL", "nomic-ai/nomic-embed-text-v2-moe"),
-            }
-        )
-        document_writer = DocumentWriter(document_store)
-
         rag_pipeline = Pipeline()
         rag_pipeline.add_component("converter", docling_converter)
         rag_pipeline.add_component("orientation_extractor", DoclingOrientationExtractor())
-        rag_pipeline.add_component("embedder", FallbackDocumentEmbedder(embedder, backup_embedder))
-        rag_pipeline.add_component("writer", document_writer)
+        if self.config.embedder:
+            rag_pipeline.add_component("embedder", self.config.embedder())
+        else:
+            rag_pipeline.add_component("embedder", FastembedDocumentEmbedder())
+        rag_pipeline.add_component("writer", DocumentWriter(document_store))
 
         rag_pipeline.connect("converter", "orientation_extractor")
         rag_pipeline.connect("orientation_extractor", "embedder")

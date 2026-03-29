@@ -21,7 +21,7 @@ async def together_config() -> PipelineConfig:
                 "stream": True,
             }
         ),
-        embedder=FallbackTextEmbedder(
+        embedder=lambda: FallbackTextEmbedder(
             HuggingFaceAPITextEmbedder(
                 api_type=HFEmbeddingAPIType.SERVERLESS_INFERENCE_API,
                 api_params={

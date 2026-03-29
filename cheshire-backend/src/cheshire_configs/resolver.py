@@ -8,7 +8,7 @@ from haystack_integrations.components.embedders.ollama import OllamaTextEmbedder
 from fastapi import HTTPException, Depends
 
 from cheshire_configs.core import EvaluationType, Provider, PipelineConfig
-from cheshire_configs.preprocessors.ollama import OllamaRagPreprocessor
+from cheshire_configs.preprocessors.core import DefaultRagPreprocessor
 from tools.base import query_document_tool
 from cheshire_configs.registry import configs
 
@@ -21,18 +21,18 @@ async def resolve_config(
     if not factory:
         raise HTTPException(status_code=400, detail=f"Unsupported: {provider}")
 
-    if evaluation_mode == EvaluationType.RAG and factory.embedder:
+    if evaluation_mode == EvaluationType.RAG and factory.embedder is not None:
         document_store = InMemoryDocumentStore(embedding_similarity_function="cosine")
         retriever = InMemoryEmbeddingRetriever(document_store)
 
         rag_query_pipeline = Pipeline()
-        rag_query_pipeline.add_component("embedder", factory.embedder)
+        rag_query_pipeline.add_component("embedder", factory.embedder())
         rag_query_pipeline.add_component("retriever", retriever)
         rag_query_pipeline.connect("embedder.embedding", "retriever.query_embedding")
 
         return factory.with_overrides(
             document_store=document_store,
-            preprocessor=OllamaRagPreprocessor(),
+            preprocessor=DefaultRagPreprocessor(factory),
             tools=[*factory.tools, query_document_tool(rag_query_pipeline)],
         )
 

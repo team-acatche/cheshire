@@ -1,6 +1,6 @@
 from enum import StrEnum, auto
 from dataclasses import dataclass, field, replace
-from typing import Protocol, runtime_checkable, Optional
+from typing import Protocol, runtime_checkable, Optional, Callable
 from pathlib import Path
 from haystack.core.pipeline import Pipeline
 from haystack.document_stores.types import DocumentStore
@@ -55,7 +55,7 @@ class PipelineConfig:
     mode: EvaluationType = EvaluationType.RAG
     document_store: Optional[DocumentStore] = None
     preprocessor: Optional[DocumentPreprocessor] = None
-    embedder: Optional[TextEmbedder] = None
+    embedder: Optional[Callable[[], TextEmbedder]] = None
     system_prompt: str = """
         You are an expert security auditor. Given the system overview below, identify vulnerabilities by reading the document and cross-referencing known CVEs and attack patterns online.
 
