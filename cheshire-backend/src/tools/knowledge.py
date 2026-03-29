@@ -1,6 +1,6 @@
 from datetime import datetime
 from dataclasses import replace
-from typing import Annotated, Any, Callable, Optional
+from typing import Annotated, Any, Callable, Optional, cast
 from uuid import UUID, uuid4
 
 from haystack import Pipeline, Document
@@ -23,7 +23,7 @@ def upsert_fact_tool(
     knowledge_store: LanceDBDocumentStore,
     embedder: EmbedderFactory,
     similarity_threshold: float = 0.35,
-) -> Tool | Callable[[Callable[..., Any]], Tool]:
+) -> Tool:
     """
     Creates a tool for asserting facts.
 
@@ -105,13 +105,14 @@ def upsert_fact_tool(
         upsert_pipeline.run({"embedder": {"documents": fact_documents}})
         return f"Added {added} new facts and updated {updated} facts to the knowledge base."
 
-    return upsert_fact
+
+    return cast(Tool, upsert_fact)
 
 def get_facts_tool(
     session_id: UUID,
     *,
     knowledge_store: LanceDBDocumentStore,
-) -> Tool | Callable[[Callable[..., Any]], Tool]:
+) -> Tool:
     """
     Creates a tool for getting facts.
 
@@ -148,14 +149,15 @@ def get_facts_tool(
         for document in results:
             facts.append(f"{document.content} (id: {document.meta['knowledge_id']})")
         return "\n".join(facts)
-    return get_facts
+
+    return cast(Tool, get_facts)
 
 def get_relevant_facts_tool(
     session_id: UUID,
     *,
     knowledge_store: LanceDBDocumentStore,
     embedder: EmbedderFactory,
-) -> Tool | Callable[[Callable[..., Any]], Tool]:
+) -> Tool:
     """
     Creates a tool for getting relevant facts.
 
@@ -177,4 +179,5 @@ def get_relevant_facts_tool(
         results = HybridRetriever(knowledge_store, embedder()).run(query=query) # type: ignore
         facts: list[str] = [f"{document.content} (id: {document.meta['knowledge_id']})" for document in results["documents"]]
         return "\n".join(facts)
-    return get_relevant_facts
+
+    return cast(Tool, get_relevant_facts)

@@ -52,7 +52,7 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 				orientation_text += f"\n## Visual Index\n{visual_index_docs[0].content}\n"
 			
 			if orientation_text:
-				system_prompt += f"\n\nHere is the orientation bundle for the document you are analyzing. Use it to understand the structure and locate specific sections or figures before querying:\n{orientation_text}"
+				system_prompt += f"\n\nHere is the orientation bundle for the document you are analyzing. Use it to understand the structure and locate specific sections or figures before querying:\n<orientation_bundle>{orientation_text}</orientation_bundle>"
 			logger.info(f"agent({document_path.name}): Orientation bundle retrieved.")
 		except Exception as e:
 			logger.error(f"Failed to retrieve orientation bundle: {e}")

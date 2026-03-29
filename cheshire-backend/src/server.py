@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from cheshire_configs.registry import configs
 from endpoints.evaluate import evaluate_router
+from endpoints.chat import chat_router
 
 api = FastAPI(dependencies=[Depends(configs)])
 api.add_middleware(
@@ -21,6 +22,11 @@ logger = logging.getLogger("uvicorn.error")
 
 api.include_router(
     evaluate_router,
+    prefix="/api/v1",
+)
+
+api.include_router(
+    chat_router,
     prefix="/api/v1",
 )
 

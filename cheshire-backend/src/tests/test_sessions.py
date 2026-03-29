@@ -1,0 +1,42 @@
+import sqlite3
+import pytest
+from knowledge_base.session_manager import Session, SqliteSessionRepository
+
+@pytest.fixture
+def db_conn():
+    conn = sqlite3.connect(":memory:")
+    yield conn
+    conn.close()
+
+@pytest.fixture
+def repo(db_conn):
+    return SqliteSessionRepository(db_conn)
+
+def test_save_and_get_session(repo):
+    session = Session(title="Test Session")
+    repo.save_new_session(session)
+    
+    fetched = repo.get_session(session.session_id)
+    assert fetched is not None
+    assert fetched.title == "Test Session"
+    assert fetched.session_id == session.session_id
+
+def test_get_sessions_list(repo):
+    s1 = Session(title="Session 1")
+    s2 = Session(title="Session 2")
+    repo.save_new_session(s1)
+    repo.save_new_session(s2)
+    
+    sessions = repo.get_sessions()
+    assert len(sessions) == 2
+    titles = [s.title for s in sessions]
+    assert "Session 1" in titles
+    assert "Session 2" in titles
+
+def test_get_session_with_title(repo):
+    session = Session(title="Unique Title")
+    repo.save_new_session(session)
+    
+    fetched = repo.get_session_with_title("Unique Title")
+    assert fetched is not None
+    assert fetched.session_id == session.session_id

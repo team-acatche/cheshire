@@ -1,5 +1,5 @@
 from haystack.core.pipeline import Pipeline
-from haystack.tools import Tool, create_tool_from_function, PipelineTool
+from haystack.tools import Tool, create_tool_from_function, PipelineTool, tool
 
 from tools.vulnerability_tools import add_vulnerability, read_vulnerabilities
 from tools.helpers import document_to_string, vulnerabilities_to_string
@@ -34,3 +34,10 @@ def read_vulnerabilities_tool(vulnerability_state: str) -> Tool:
     )
     _read_vulnerabilities_tool.warm_up()
     return _read_vulnerabilities_tool
+
+@tool
+def finish_tool(
+    _confirm: bool # the model needs one required argument for tool calling to work properly, but this is otherwise unnecessary
+) -> str:
+    """Finish the audit."""
+    return "Audit finished."
