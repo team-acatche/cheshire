@@ -78,3 +78,7 @@ pnpm-debug.log*
 *.swo
 .DS_Store
 Thumbs.db
+
+GET
+Host:
+User-Agent:
