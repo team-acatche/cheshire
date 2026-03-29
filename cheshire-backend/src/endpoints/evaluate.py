@@ -9,7 +9,18 @@ import uuid
 from datetime import datetime
 import re
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Path as PathParam, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    UploadFile,
+    File,
+    HTTPException,
+    Form,
+    Path as PathParam,
+    Query,
+)
+from fastapi.responses import FileResponse
+
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -77,8 +88,17 @@ async def evaluate_document(
     else:
         return EvaluateResponse(session_id=_session_id, vulnerabilities=[])
 
+def _get_latest(session_path: Path) -> str:
+    timestamps = set()
+    for root, _, filenames in os.walk(session_path / "documents"):
+        for filename in filenames:
+            if filename.endswith(".pdf"):
+                timestamps.add(datetime.fromisoformat(filename.split("__")[0]))
+    return max(timestamps).isoformat()
+    
+
 @evaluate_router.post("/{username}/evaluate/{session_id}/result", status_code=204)
-async def upload_result(
+async def upload_latest_highlighted_document(
     username: Annotated[str, PathParam(description="The username of the user")],
     session_id: Annotated[str, PathParam(description="The session ID for the document.")],
     uploaded_document: Annotated[UploadFile, File(description="The evaluated document with highlights.")],
@@ -87,8 +107,25 @@ async def upload_result(
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
     
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload")
-    document_path = Path(SESSION_DIR) / username / session_id / "documents" / f"{datetime.now().isoformat()}__highlighted__{filename}"
+    session_path = Path(SESSION_DIR) / username / session_id
+    document_path = session_path / "documents" / f"{_get_latest(session_path)}__highlighted__{filename}"
 
     async with aiofiles.open(document_path, "wb") as d:
         await d.write(await uploaded_document.read())
 
+@evaluate_router.get("/{username}/evaluate/{session_id}/result")
+async def get_latest_highlighted_document(
+    username: Annotated[str, PathParam(description="The username of the user")],
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
+) -> FileResponse:
+    if SESSION_DIR is None:
+        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+
+    session_path = Path(SESSION_DIR) / username / session_id
+    latest_timestamp = _get_latest(session_path)
+    for root, _, filenames in os.walk(session_path / "documents"):
+        for filename in sorted(filenames):
+            if f"{latest_timestamp}__highlighted__" in filename:
+                return FileResponse(Path(root) / filename)
+
+    raise HTTPException(status_code=404, detail="No highlighted document found")
