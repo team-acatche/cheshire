@@ -1,5 +1,8 @@
 import os
 import sqlite3
+from dotenv import load_dotenv
+
+load_dotenv()
 from pathlib import Path
 from typing import Annotated, Optional, cast
 from uuid import UUID
@@ -19,7 +22,7 @@ from endpoints.helpers import create_vector_stores
 from tools.knowledge import get_relevant_facts_tool
 
 chat_router = APIRouter()
-SESSION_DIR = os.getenv("SESSIONS_PATH")
+SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", ""))) if os.getenv("SESSIONS_PATH") else None
 
 class ChatBody(BaseModel):
     username: str
@@ -31,6 +34,7 @@ async def chat(
     body: ChatBody,
     config: Annotated[PipelineConfig, Depends(resolve_config)],
 ):
+    # TODO: make this SSE
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 

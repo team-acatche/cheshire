@@ -11,7 +11,7 @@ from haystack.tools import tool, Tool
 from haystack_integrations.components.embedders.fastembed import FastembedDocumentEmbedder, FastembedTextEmbedder
 from lancedb_haystack import LanceDBDocumentStore, LanceDBEmbeddingRetriever, LanceDBFTSRetriever # type: ignore
 
-from cheshire_configs.retrievers.hybrid_retriever import HybridRetriever
+from cheshire_configs.retrievers.hybrid_retriever import HybridLanceDbRetriever
 
 
 EmbedderFactory = Callable[[], TextEmbedder]
@@ -40,7 +40,7 @@ def upsert_fact_tool(
     upsert_pipeline.add_component("writer", DocumentWriter(document_store=knowledge_store, policy=DuplicatePolicy.OVERWRITE))
     upsert_pipeline.connect("embedder", "writer")
 
-    retriever = HybridRetriever(knowledge_store, embedder())
+    retriever = HybridLanceDbRetriever(knowledge_store, embedder())
 
     @tool
     def upsert_fact(
@@ -176,7 +176,7 @@ def get_relevant_facts_tool(
 
         :return: a string containing all facts relevant to the query.
         """
-        results = HybridRetriever(knowledge_store, embedder()).run(query=query) # type: ignore
+        results = HybridLanceDbRetriever(knowledge_store, embedder()).run(query=query) # type: ignore
         facts: list[str] = [f"{document.content} (id: {document.meta['knowledge_id']})" for document in results["documents"]]
         return "\n".join(facts)
 

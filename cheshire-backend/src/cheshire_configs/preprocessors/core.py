@@ -26,6 +26,8 @@ class DefaultRagPreprocessor(DocumentPreprocessor):
     def __call__(self, document: Path, document_store: Optional[DocumentStore] = None):
         if not document_store:
             raise HTTPException(status_code=500, detail="Document store is required for DefaultRagPreprocessor")
+        if not self.config.document_embedder:
+            raise HTTPException(status_code=500, detail="Document embedder is required for DefaultRagPreprocessor")
 
         docling_converter = DoclingConverter(
             converter=DOCUMENT_CONVERTER,
@@ -38,10 +40,7 @@ class DefaultRagPreprocessor(DocumentPreprocessor):
         rag_pipeline = Pipeline()
         rag_pipeline.add_component("converter", docling_converter)
         rag_pipeline.add_component("orientation_extractor", DoclingOrientationExtractor())
-        if self.config.embedder:
-            rag_pipeline.add_component("embedder", self.config.embedder())
-        else:
-            rag_pipeline.add_component("embedder", FastembedDocumentEmbedder())
+        rag_pipeline.add_component("embedder", self.config.document_embedder())
         rag_pipeline.add_component("writer", DocumentWriter(document_store))
 
         rag_pipeline.connect("converter", "orientation_extractor")

@@ -5,7 +5,7 @@ from pathlib import Path
 from haystack.core.pipeline import Pipeline
 from haystack.document_stores.types import DocumentStore
 from haystack.components.generators.chat.llm import ChatGenerator, ChatMessage
-from haystack.components.embedders.types import TextEmbedder
+from haystack.components.embedders.types import TextEmbedder, DocumentEmbedder
 from haystack.tools import ToolsType
 
 from tools.base import add_vulnerability_tool, read_vulnerabilities_tool
@@ -55,6 +55,7 @@ class PipelineConfig:
     mode: EvaluationType = EvaluationType.RAG
     document_store: Optional[DocumentStore] = None
     preprocessor: Optional[DocumentPreprocessor] = None
+    document_embedder: Optional[Callable[[], DocumentEmbedder]] = None
     embedder: Optional[Callable[[], TextEmbedder]] = None
     system_prompt: str = """
         You are an expert security auditor. Given the system overview below, identify vulnerabilities by reading the document and cross-referencing known CVEs and attack patterns online.
