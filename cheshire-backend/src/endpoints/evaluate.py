@@ -69,7 +69,7 @@ async def evaluate_document(
             session_repo = SqliteSessionRepository(session_db)
             session_repo.save_new_session(Session(session_id=_session_id, title=filename))
         # Initialize vector store
-        await create_vector_stores(session_path)
+        await create_vector_stores(session_path, username=username)
 
     logger.info(f"save({filename}): Saving {filename} to {document_path}...")
     async with aiofiles.open(document_path, "wb") as d:
