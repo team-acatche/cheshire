@@ -13,6 +13,17 @@ from docling_core.types.doc.document import (
 from docling_core.types.doc.labels import DocItemLabel
 
 from server import api
+from cheshire_configs.registry import configs
+from cheshire_configs.core import PipelineConfig, Provider, EvaluationType
+
+# Override the registry dependency to avoid real model initialization
+# This also ensures resolve_config finds a valid config for the default OLLAMA provider
+mock_config = PipelineConfig(
+    model=MagicMock(),
+    tools=[],
+    mode=EvaluationType.RAG
+)
+api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
 
 client = TestClient(api)
 
@@ -23,7 +34,7 @@ client = TestClient(api)
 
 def _make_pdf_bytes() -> bytes:
     """Return a minimal valid PDF as bytes (no external files needed)."""
-    from pypdfium2 import PdfDocument
+    from pypdfium2 import PdfDocument # type: ignore
 
     doc = PdfDocument.new()
     doc.new_page(595, 842)
@@ -79,11 +90,25 @@ def _build_docling_doc(
     return doc
 
 
-def _mock_convert(docling_doc: DoclingDocument):
-    """Return a mock that mimics converter.convert(path).document."""
-    result = MagicMock()
-    result.document = docling_doc
-    return result
+def _mock_evaluate_result(docling_doc: DoclingDocument):
+    """Return a mock list of VulnerabilityDetails to simulate evaluate_file output."""
+    from tools.helpers.output_schema import VulnerabilityDetails
+    from docling_core.types.doc import BoundingBox
+    
+    results = []
+    # If the doc has paragraphs, create a vulnerability for each to simulate findings
+    for i, item in enumerate(docling_doc.texts):
+        results.append(VulnerabilityDetails(
+            title=f"Vulnerability {i}",
+            description=f"Description for {item.text}",
+            page_no=1,
+            bbox=BoundingBox(l=10.0, t=10.0, r=100.0, b=100.0),
+            web_references=["http://example.com"],
+            recommendations=["Recommendation 1"]
+        ))
+    return results
+
+# Convert the response processing in tests to expect the new structure
 
 
 PDF_BYTES = _make_pdf_bytes()
@@ -99,9 +124,9 @@ class TestSuccessfulEvaluation:
     def test_successful_pdf_evaluation(self):
         """Upload a PDF → 200, response is a list."""
         doc = _build_docling_doc(paragraphs=["Hello world."])
-        with patch("server.converter.convert", return_value=_mock_convert(doc)):
+        with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
@@ -110,15 +135,15 @@ class TestSuccessfulEvaluation:
     def test_response_contains_expected_text(self):
         """Returned sources contain the text from the DoclingDocument."""
         doc = _build_docling_doc(paragraphs=["First paragraph.", "Second paragraph."])
-        with patch("server.converter.convert", return_value=_mock_convert(doc)):
+        with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         data = response.json()
-        texts = [item["text"] for item in data]
-        assert "First paragraph." in texts
-        assert "Second paragraph." in texts
+        titles = [item["title"] for item in data]
+        assert "Vulnerability 0" in titles
+        assert "Vulnerability 1" in titles
 
     def test_response_metadata_fields(self):
         """Each source has all expected metadata fields with correct types."""
@@ -127,49 +152,37 @@ class TestSuccessfulEvaluation:
             paragraphs=["Some text."],
             add_provenance=True,
         )
-        with patch("server.converter.convert", return_value=_mock_convert(doc)):
+        with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         data = response.json()
         assert len(data) == 1
 
         source = data[0]
-        assert "source_id" in source
-        assert "text" in source
-        assert "metadata" in source
+        assert "title" in source
+        assert "description" in source
+        assert "page_no" in source
+        assert "bbox" in source
+        assert "web_references" in source
+        assert "recommendations" in source
 
-        meta = source["metadata"]
-        assert meta["document_id"] == "my-doc"
-        assert isinstance(meta["page_number"], int)
-        assert meta["page_number"] == 1
-        assert "summary" in meta
-        assert "bounding_box" in meta
-
-        bbox = meta["bounding_box"]
-        assert bbox["l"] == 10
-        assert bbox["t"] == 20
-        assert bbox["r"] == 300
-        assert bbox["b"] == 40
+        assert source["page_no"] == 1
 
     def test_source_ids_are_unique(self):
         """All source_id values in the response are unique valid UUIDs."""
         doc = _build_docling_doc(paragraphs=["A", "B", "C", "D", "E"])
-        with patch("server.converter.convert", return_value=_mock_convert(doc)):
+        with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         data = response.json()
-        ids = [item["source_id"] for item in data]
+        titles = [item["title"] for item in data]
 
         # All unique
-        assert len(ids) == len(set(ids))
-
-        # All valid UUIDs
-        for sid in ids:
-            uuid.UUID(sid)  # raises ValueError if invalid
+        assert len(set(titles)) == len(titles)
 
 
 class TestEmptyAndEdgeCases:
@@ -178,9 +191,9 @@ class TestEmptyAndEdgeCases:
     def test_empty_document_returns_empty_list(self):
         """A document with no text or picture items returns []."""
         doc = _build_docling_doc()
-        with patch("server.converter.convert", return_value=_mock_convert(doc)):
+        with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
@@ -189,9 +202,9 @@ class TestEmptyAndEdgeCases:
     def test_filename_fallback(self):
         """When UploadFile.filename is None, the endpoint uses 'upload' fallback."""
         doc = _build_docling_doc(paragraphs=["Content here."])
-        with patch("server.converter.convert", return_value=_mock_convert(doc)):
+        with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/evaluate",
+                "/api/v1/evaluate",
                 # Use a real filename here; the fallback logic is already covered by
                 # the server.py code `filename = uploaded_document.filename or "upload"`.
                 # We verify it doesn't crash with an unusual filename.
@@ -201,40 +214,7 @@ class TestEmptyAndEdgeCases:
         assert isinstance(response.json(), list)
 
 
-class TestPictureHandling:
-    """Tests for PictureItem processing."""
-
-    def test_document_with_picture_caption(self):
-        """A picture with a caption produces a source containing the caption text."""
-        from document_source import DocumentSource, DocumentSourceMetadata
-
-        # Mock both converter.convert AND from_docling_document so we don't
-        # hit the server's figure-saving assert. The caption extraction logic
-        # itself is already tested in test_document_source.py.
-        mock_sources = [
-            DocumentSource(
-                source_id="pic-uuid",
-                text="Figure 1: Architecture diagram",
-                metadata=DocumentSourceMetadata(
-                    document_id="test",
-                    page_number=1,
-                    summary="",
-                    bounding_box=BoundingBox(l=0, t=0, r=0, b=0),
-                ),
-            )
-        ]
-        doc = _build_docling_doc()  # empty doc, won't actually be processed
-        with (
-            patch("server.converter.convert", return_value=_mock_convert(doc)),
-            patch("server.DocumentSource.from_docling_document", return_value=mock_sources),
-        ):
-            response = client.post(
-                "/evaluate",
-                files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
-            )
-        data = response.json()
-        texts = [item["text"] for item in data]
-        assert "Figure 1: Architecture diagram" in texts
+# TestPictureHandling removed as document_source is obsolete
 
 
 class TestRequestValidation:
@@ -242,5 +222,5 @@ class TestRequestValidation:
 
     def test_missing_file_returns_422(self):
         """No file uploaded → 422 validation error."""
-        response = client.post("/evaluate")
+        response = client.post("/api/v1/evaluate")
         assert response.status_code == 422

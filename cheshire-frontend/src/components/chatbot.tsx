@@ -12,56 +12,101 @@ import {
 import SentIcon from "./ui/sent-icon"
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import VulnerabilityFindingComponent from "./vulnerability-finding"
+import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
-  text: string | VulnerabilityFinding
+  text: string
 }
 
 interface ChatbotProps {
   findings: VulnerabilityFinding[]
+  sessionId: string
+  username: string
 }
 
-export function Chatbot({ findings }: ChatbotProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "bot1", text: "Hello I'm Agent 1!" },
-    { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
-    ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
-    { role: "bot1", text: "How can I help you?" },
-  ])
-
-
+export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
 
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  const sendMessage = () => {
+  // ✅ Fetch history on mount or when sessionId changes
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const response = await fetch(`/api/v1/${username}/chat/${sessionId}`)
+        if (!response.ok) throw new Error("Failed to fetch history")
+
+        const data = await response.json() as ResponseMessages
+        const backendMessages = data.messages || []
+
+        if (backendMessages.length > 0) {
+          // Map backend roles to frontend roles
+          const mappedMessages = backendMessages.map((msg: ResponseMessage): Message => ({
+            role: msg._role as "user" | "bot1" | "bot2" | "bot3",
+            text: msg._content.map((content) => content.text).join("\n\n")
+          }))
+          setMessages(mappedMessages)
+        } else {
+          // Initial greeting if no history
+          setMessages([
+            { role: "bot1", text: "Hello I'm Agent 1!" },
+            { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
+            ...findings.map((finding): Message => ({ role: "bot1", text: JSON.stringify(finding) })),
+            { role: "bot1", text: "How can I help you?" },
+          ])
+        }
+      } catch (error) {
+        console.error("Error fetching chat history:", error)
+        // Fallback to initial greeting on error
+        setMessages([
+          { role: "bot1", text: "Hello! I'm ready to help you with the document." },
+        ])
+      }
+    }
+
+    fetchHistory()
+  }, [sessionId, username, findings])
+
+  const sendMessage = async () => {
     if (!input.trim()) return
 
     const userText = input
-
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: userText },
-    ])
-
+    setMessages((prev) => [...prev, { role: "user", text: userText }])
     setInput("")
     setTyping(true)
 
-    setTimeout(() => {
+    try {
+      const response = await fetch(`/api/v1/${username}/chat/${sessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText }),
+      })
+
+      if (!response.ok) throw new Error("Failed to send message")
+
+      const data = await response.json()
+      const message = data.response as ResponseMessage
       setMessages((prev) => [
         ...prev,
         {
           role: "bot1",
-          text: "This is a bot response.",
+          text: message._content.filter((content) => content.text).map((content) => content.text).join("\n\n"),
         },
       ])
+    } catch (error) {
+      console.error("Error sending message:", error)
+      setMessages((prev) => [
+        ...prev,
+        { role: "bot1", text: "Sorry, I encountered an error. Please try again." },
+      ])
+    } finally {
       setTyping(false)
-    }, 1200)
+    }
   }
 
-  // FIX implicit any
   const handleKeyDown = (
     e: KeyboardEvent<HTMLTextAreaElement>
   ) => {
@@ -80,7 +125,7 @@ export function Chatbot({ findings }: ChatbotProps) {
   return (
     <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0">
 
-      {/*Chat*/}
+      {/* Chat */}
       <div className="flex-1 overflow-y-scroll p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
         <div className="flex flex-col gap-3">
           {messages.map((msg, i) => (
@@ -110,13 +155,21 @@ export function Chatbot({ findings }: ChatbotProps) {
               <div
                 className={`
                   max-w-[70%] px-3 py-2 rounded-l
-                    ${msg.role === "user"
+                  ${msg.role === "user"
                     ? "bg-blue-800 text-white rounded-br-sm"
                     : "bg-gray-200 text-gray-800 rounded-bl-sm"
                   }
-                  `}
+                `}
               >
-                {typeof msg.text === "string" ? msg.text : <VulnerabilityFindingComponent finding={msg.text} />}
+                {
+                  (() => {
+                    try {
+                      return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
+                    } catch (_) {
+                      return <p>{msg.text}</p>
+                    }
+                  })()
+                }
               </div>
 
               {/* USER AVATAR */}
