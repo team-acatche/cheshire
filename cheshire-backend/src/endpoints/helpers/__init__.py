@@ -1,16 +1,48 @@
+from dataclasses import dataclass
+import os
 from pathlib import Path
+
+import pyarrow as pa # type: ignore
 from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
-async def create_vector_stores(session_path: Path) -> LanceDBDocumentStore:
-    """
-    Creates and initializes the LanceDB document store for the session.
-    """
-    # ensure the parent directory exists
-    lancedb_path = session_path / "knowledge_base"
-    lancedb_path.mkdir(parents=True, exist_ok=True)
+@dataclass(frozen=True, kw_only=True)
+class ChatStore:
+    event_store: LanceDBDocumentStore
+    knowledge_store: LanceDBDocumentStore
     
-    document_store = LanceDBDocumentStore(
-        database=str(lancedb_path),
-        table_name="documents",
+
+async def create_vector_stores(sessions_path: str | Path, *, username: str, dimensions: int = 384) -> ChatStore:
+    EVENTS_TABLE: str = "events"
+    KNOWLEDGE_TABLE: str = "knowledge"
+
+    event_metadata_schema = pa.struct([
+        pa.field("event_id", type=pa.string(), nullable=False),
+        pa.field("session_id", type=pa.string(), nullable=False),
+        pa.field("timestamp", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
+    ])
+    knowledge_metadata_schema = pa.struct([
+        pa.field("knowledge_id", type=pa.string(), nullable=False),
+        pa.field("is_global", type=pa.bool_(), nullable=False),
+        pa.field("session_id", type=pa.string(), nullable=True),
+        pa.field("created_at", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
+        pa.field("last_modified", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
+    ])
+
+    db_path = os.path.join(sessions_path, "knowledge_base")
+    event_store = LanceDBDocumentStore(
+        database=db_path,
+        table_name="events",
+        metadata_schema=event_metadata_schema,
+        embedding_dims=dimensions,
     )
-    return document_store
+    knowledge_store = LanceDBDocumentStore(
+        database=db_path,
+        table_name="facts",
+        metadata_schema=knowledge_metadata_schema,
+        embedding_dims=dimensions,
+    )
+
+    return ChatStore(
+        event_store=event_store,
+        knowledge_store=knowledge_store,
+    )

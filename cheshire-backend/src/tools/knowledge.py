@@ -8,7 +8,7 @@ from haystack.components.writers.document_writer import DocumentWriter, Duplicat
 from haystack.components.embedders.types import TextEmbedder
 from haystack.tools import tool, Tool
 
-from haystack_integrations.components.embedders.fastembed import FastembedDocumentEmbedder, FastembedTextEmbedder
+from haystack_integrations.components.embedders.fastembed import FastembedDocumentEmbedder
 from lancedb_haystack import LanceDBDocumentStore, LanceDBEmbeddingRetriever, LanceDBFTSRetriever # type: ignore
 
 from cheshire_configs.retrievers.hybrid_retriever import HybridLanceDbRetriever

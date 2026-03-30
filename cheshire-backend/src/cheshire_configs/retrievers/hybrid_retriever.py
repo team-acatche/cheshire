@@ -18,8 +18,10 @@ class HybridLanceDbRetriever:
         document_store: LanceDBDocumentStore,
         embedder: TextEmbedder,
     ):
-        embedding_retriever = LanceDBEmbeddingRetriever(document_store, top_k=5)
-        fts_retriever = LanceDBFTSRetriever(document_store, top_k=5)
+        self.document_store = document_store
+
+        embedding_retriever = LanceDBEmbeddingRetriever(self.document_store, top_k=5)
+        fts_retriever = LanceDBFTSRetriever(self.document_store, top_k=5)
         document_joiner = DocumentJoiner()
         reranker = FastembedRanker(top_k=5)
 
@@ -44,8 +46,10 @@ class HybridInMemoryRetriever:
         document_store: InMemoryDocumentStore,
         embedder: TextEmbedder,
     ):
-        embedding_retriever = InMemoryEmbeddingRetriever(document_store, top_k=5)
-        bm25_retriever = InMemoryBM25Retriever(document_store, top_k=5)
+        self.document_store = document_store
+
+        embedding_retriever = InMemoryEmbeddingRetriever(self.document_store, top_k=5)
+        bm25_retriever = InMemoryBM25Retriever(self.document_store, top_k=5)
         document_joiner = DocumentJoiner()
         reranker = FastembedRanker(top_k=5)
 

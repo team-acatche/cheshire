@@ -8,5 +8,6 @@ export interface ResponseMessage {
 }
 
 export interface ResponseMessageContent {
-    text: string;
+    reasoning_text?: string;
+    text?: string;
 }

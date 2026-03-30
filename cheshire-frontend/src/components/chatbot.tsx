@@ -88,11 +88,12 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
       if (!response.ok) throw new Error("Failed to send message")
 
       const data = await response.json()
+      const message = data.response as ResponseMessage
       setMessages((prev) => [
         ...prev,
         {
           role: "bot1",
-          text: data.response || "No response from agent.",
+          text: message._content.filter((content) => content.text).map((content) => content.text).join("\n\n"),
         },
       ])
     } catch (error) {
@@ -165,7 +166,7 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
                     try {
                       return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
                     } catch (_) {
-                      return msg.text
+                      return <p>{msg.text}</p>
                     }
                   })()
                 }

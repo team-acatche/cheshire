@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from haystack.components.agents import Agent
 from haystack.tools import Tool
-from haystack.components.generators.utils import print_streaming_chunk
+from haystack.dataclasses import ChatMessage
 from haystack_integrations.components.embedders.fastembed import FastembedTextEmbedder
 
 from cheshire_configs.core import PipelineConfig
@@ -97,7 +97,7 @@ async def chat(
     history_repo.save(user_event)
 
     # Initialize Vector Store (LanceDB)
-    knowledge_base = await create_vector_stores(session_path)
+    vector_stores = await create_vector_stores(session_path, username=username)
 
     recent_events = history_repo.get_recent(session_id, 1000)
     # Events are returned in DESC order, we need them in ASC order for context
@@ -108,8 +108,8 @@ async def chat(
     knowledge_tools = [
         get_relevant_facts_tool(
             session_id=UUID(session_id),
-            knowledge_store=knowledge_base,
-            embedder=config.embedder or (lambda: FastembedTextEmbedder())
+            knowledge_store=vector_stores.knowledge_store,
+            embedder=config.embedder or (lambda: FastembedTextEmbedder("sentence-transformers/all-MiniLM-L6-v2"))
         )
     ]
     
@@ -125,9 +125,9 @@ async def chat(
 
     # Run agent
     try:
-        response = agent.run(messages=messages)
+        response = agent.run(messages=[*messages, ChatMessage.from_user(body.message)])
         # Note: StreamCallbackFactory already saved the response to history.sqlite
-        return {"response": response.get("text", "")}
+        return {"response": response.get("last_message", "")}
     except Exception as e:
         import logging
         logging.error(f"Agent error: {e}")
