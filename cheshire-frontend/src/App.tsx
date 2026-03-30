@@ -14,6 +14,7 @@ import { evaluateDocument } from "./lib/helpers/evaluate_document"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
+import { LoadingPage } from "./components/ui/loadingpage"
 
 // ✅ Chat type
 type Chat = {
@@ -26,6 +27,7 @@ export function App() {
   const [file, setFile] = useState<NamedFile | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [chats, setChats] = useState<Chat[]>([])
+  const [isProcessing, setIsProcessing] = useState(false)
 
   // ✅ New Chat (reset only)
   const handleNewChat = () => {
@@ -50,13 +52,17 @@ export function App() {
       <SidebarTrigger />
       <SidebarInset>
         <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
-
           <Card className={`${!file ? "col-span-full" : "col-span-3 size-full"} mt-2 shadow-none`}>
-            {!file ? (
-              <CardContent className="size-full space-y-6 text-center">
-                <p className="font-bold text-xl">
-                  Hi! Welcome to Cheshire. Please upload a document to evaluate.
-                </p>
+            
+          {isProcessing ? (
+            <CardContent className="col-span-full h-full flex items-center justify-center">
+              <LoadingPage />
+            </CardContent>
+           ) : !file ? (
+            <CardContent className="size-full space-y-6 text-center">
+              <p className="font-bold text-xl">
+                Hi! Welcome to Cheshire. Please upload a document to evaluate.
+              </p>
 
                 <CardAction className="flex justify-center m-auto">
                   <Button asChild className="w-40">
@@ -78,28 +84,27 @@ export function App() {
                             return;
                           }
 
-                          const _findings = await evaluateDocument(fileInput);
+                          setIsProcessing(true);
 
-                          const pdfDoc = await drawHighlight(fileInput, _findings);
-                          const pdfBytes = await pdfDoc.save();
+                            const _findings = await evaluateDocument(fileInput);
+                            const pdfDoc = await drawHighlight(fileInput, _findings);
+                            const pdfBytes = await pdfDoc.save();
 
-                          const pdfBlob = new Blob([pdfBytes as BlobPart], {
-                            type: "application/pdf",
-                          });
+                            const pdfBlob = new Blob([pdfBytes as BlobPart], {
+                              type: "application/pdf",
+                            });
 
-                          const newFile = new NamedFile(pdfBlob, fileInput.name)
+                            const newFile = new NamedFile(pdfBlob, fileInput.name)
 
-                          // ✅ Save to history
-                          const newChat: Chat = {
-                            id: crypto.randomUUID(),
-                            file: newFile,
-                            findings: _findings,
-                          }
+                            const newChat: Chat = {
+                              id: crypto.randomUUID(),
+                              file: newFile,
+                              findings: _findings,
+                            }
 
-                          setChats((prev) => [newChat, ...prev])
-
-                          setFile(newFile)
-                          setFindings(_findings)
+                            setChats((prev) => [newChat, ...prev])
+                            setFile(newFile)
+                            setFindings(_findings)
                         }}
                       />
                     </label>
@@ -112,11 +117,9 @@ export function App() {
               </CardContent>
             )}
           </Card>
-
-          {file && (
+          {file && !isProcessing && (
             <Chatbot key={file.name} findings={findings} />
           )}
-
         </main>
       </SidebarInset>
     </SidebarProvider>
