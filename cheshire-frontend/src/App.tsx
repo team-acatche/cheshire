@@ -15,6 +15,7 @@ import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
 import { USERNAME } from "./globals"
 import type { Chat } from "./ChatPage"
+import { LoadingPage } from "./components/ui/loadingpage"
 
 async function getChats(username: string): Promise<Chat[]> {
   return await fetch(`/api/v1/${username}/chat`)
@@ -35,6 +36,7 @@ export function App() {
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   useEffect(() => {
     getChats(USERNAME).then(setChats)
@@ -82,7 +84,11 @@ export function App() {
         <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
 
           <Card className={`${!file ? "col-span-full" : "col-span-3 size-full"} mt-2 shadow-none`}>
-            {!file ? (
+            {isProcessing ? (
+              <CardContent className="col-span-full h-full flex items-center justify-center">
+                <LoadingPage />
+              </CardContent>
+            ) : !file ? (
               <CardContent className="size-full space-y-6 text-center">
                 <p className="font-bold text-xl">
                   Hi! Welcome to Cheshire. Please upload a document to evaluate.
@@ -108,33 +114,38 @@ export function App() {
                             return;
                           }
 
-                          const response = await evaluateDocument(fileInput);
-                          if (response === null) {
-                            alert("Failed to evaluate document.");
-                            return;
+                          setIsProcessing(true);
+                          try {
+                            const response = await evaluateDocument(fileInput);
+                            if (response === null) {
+                              alert("Failed to evaluate document.");
+                              return;
+                            }
+
+                            const pdfDoc = await drawHighlight(fileInput, response.vulnerabilities);
+                            const pdfBytes = await pdfDoc.save();
+
+                            const highlightedPdf = new File([pdfBytes as BlobPart], fileInput.name, {
+                              type: "application/pdf",
+                            });
+
+                            await saveResult(response.session_id, highlightedPdf)
+
+                            // ✅ Save to history
+                            const newChat: Chat = {
+                              session_id: response.session_id,
+                              title: fileInput.name,
+                              findings: response.vulnerabilities,
+                            }
+
+                            setChats((prev) => [newChat, ...prev])
+
+                            setFile(highlightedPdf)
+                            setFindings(response.vulnerabilities)
+                            setCurrentSessionId(response.session_id)
+                          } finally {
+                            setIsProcessing(false);
                           }
-
-                          const pdfDoc = await drawHighlight(fileInput, response.vulnerabilities);
-                          const pdfBytes = await pdfDoc.save();
-
-                          const highlightedPdf = new File([pdfBytes as BlobPart], fileInput.name, {
-                            type: "application/pdf",
-                          });
-
-                          await saveResult(response.session_id, highlightedPdf)
-
-                          // ✅ Save to history
-                          const newChat: Chat = {
-                            session_id: response.session_id,
-                            title: fileInput.name,
-                            findings: response.vulnerabilities,
-                          }
-
-                          setChats((prev) => [newChat, ...prev])
-
-                          setFile(highlightedPdf)
-                          setFindings(response.vulnerabilities)
-                          setCurrentSessionId(response.session_id)
                         }}
                       />
                     </label>
@@ -156,7 +167,6 @@ export function App() {
               username={USERNAME}
             />
           )}
-
         </main>
       </SidebarInset>
     </SidebarProvider>

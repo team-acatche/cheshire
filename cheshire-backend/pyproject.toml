@@ -24,7 +24,7 @@ dependencies = [
     "num2words (>=0.5.14,<0.6.0)",
     "togetherai-haystack (>=3.0.0,<4.0.0)",
     "fastembed-haystack (>=2.1.0,<3.0.0)",
-    "lancedb-haystack (>=0.1.1,<0.2.0)"
+    "lancedb-haystack (>=0.1.1,<0.2.0)",
 ]
 
 
@@ -45,9 +45,7 @@ ignore_missing_imports = false
 [tool.pyright]
 venvPath = "."
 pythonVersion = "3.12"
-executionEnvironments = [
-    { root = "src" }
-]
+executionEnvironments = [{ root = "src" }]
 
 [[tool.mypy.overrides]]
 module = [
@@ -57,6 +55,4 @@ module = [
 ignore_missing_imports = true
 
 [dependency-groups]
-dev = [
-    "pytest (>=9.0.2,<10.0.0)"
-]
+dev = ["pytest (>=9.0.2,<10.0.0)"]

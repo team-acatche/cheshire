@@ -39,7 +39,6 @@ export default function ChatPage({
 
         {/* ACCOUNT */}
         <div className="flex items-center gap-3 text-sm text-black">
-
           {/* ICON WITH ROUND BORDER */}
           <div className="h-9 w-9 flex items-center justify-center rounded-full border-2 border-black">
             <User className="h-5 w-5" />

@@ -132,8 +132,8 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
             <div
               key={i}
               className={`flex items-end gap-2 ${msg.role === "user"
-                ? "justify-end"
-                : "justify-start"
+                  ? "justify-end"
+                  : "justify-start"
                 }`}
             >
 
