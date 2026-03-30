@@ -56,14 +56,16 @@ async def evaluate_document(
     # Save the uploaded document
     _session_id: str = session_id or str(uuid.uuid4())
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload")
-    document_path = Path(SESSION_DIR) / username / _session_id / "documents" / f"{datetime.now().isoformat()}__{filename}"
+    user_path = Path(SESSION_DIR) / username
 
-    session_path = Path(SESSION_DIR) / username / _session_id
+    document_path = user_path / _session_id / "documents" / f"{datetime.now().isoformat()}__{filename}"
+    session_path = user_path / _session_id
+
     if session_id is None:
         # create new session
         os.makedirs(os.path.dirname(document_path), exist_ok=True)
         # Initialize session DB
-        with sqlite3.connect(session_path / "session_metadata.sqlite") as session_db:
+        with sqlite3.connect(user_path / "session_metadata.sqlite") as session_db:
             session_repo = SqliteSessionRepository(session_db)
             session_repo.save_new_session(Session(session_id=_session_id, title=filename))
         # Initialize vector store
@@ -78,12 +80,12 @@ async def evaluate_document(
         # Save results as first event in history.sqlite
         with sqlite3.connect(session_path / "history.sqlite") as history_db:
             history_repo = SqliteEventRepository(history_db)
-            summary = "\n".join([f"- {v.title}: {v.description[:100]}{'...' if len(v.description) > 100 else ''}" for v in results])
-            history_repo.save(Event(
-                session_id=_session_id,
-                event_type=EventType.RESPONSE,
-                content=f"Evaluation complete. Found {len(results)} vulnerabilities:\n{summary}"
-            ))
+            for vulnerability in results:
+                history_repo.save(Event(
+                    session_id=_session_id,
+                    event_type=EventType.VULNERABILITY_FINDING,
+                    content=vulnerability.model_dump_json()
+                ))
         return EvaluateResponse(session_id=_session_id, vulnerabilities=results)
     else:
         return EvaluateResponse(session_id=_session_id, vulnerabilities=[])

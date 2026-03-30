@@ -12,10 +12,11 @@ import {
 import SentIcon from "./ui/sent-icon"
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import VulnerabilityFindingComponent from "./vulnerability-finding"
+import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
-  text: string | VulnerabilityFinding
+  text: string
 }
 
 interface ChatbotProps {
@@ -37,15 +38,15 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
       try {
         const response = await fetch(`/api/v1/${username}/chat/${sessionId}`)
         if (!response.ok) throw new Error("Failed to fetch history")
-        
-        const data = await response.json()
+
+        const data = await response.json() as ResponseMessages
         const backendMessages = data.messages || []
 
         if (backendMessages.length > 0) {
           // Map backend roles to frontend roles
-          const mappedMessages = backendMessages.map((msg: any): Message => ({
-            role: msg.role === "user" ? "user" : "bot1",
-            text: msg.content || msg.text || "",
+          const mappedMessages = backendMessages.map((msg: ResponseMessage): Message => ({
+            role: msg._role as "user" | "bot1" | "bot2" | "bot3",
+            text: msg._content.map((content) => content.text).join("\n\n")
           }))
           setMessages(mappedMessages)
         } else {
@@ -53,7 +54,7 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
           setMessages([
             { role: "bot1", text: "Hello I'm Agent 1!" },
             { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
-            ...findings.map((finding): Message => ({ role: "bot1", text: finding })),
+            ...findings.map((finding): Message => ({ role: "bot1", text: JSON.stringify(finding) })),
             { role: "bot1", text: "How can I help you?" },
           ])
         }
@@ -129,11 +130,10 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-end gap-2 ${
-                msg.role === "user"
-                  ? "justify-end"
-                  : "justify-start"
-              }`}
+              className={`flex items-end gap-2 ${msg.role === "user"
+                ? "justify-end"
+                : "justify-start"
+                }`}
             >
 
               {/* BOT AVATAR */}
@@ -154,16 +154,21 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
               <div
                 className={`
                   max-w-[70%] px-3 py-2 rounded-l
-                  ${
-                    msg.role === "user"
-                      ? "bg-blue-800 text-white rounded-br-sm"
-                      : "bg-gray-200 text-gray-800 rounded-bl-sm"
+                  ${msg.role === "user"
+                    ? "bg-blue-800 text-white rounded-br-sm"
+                    : "bg-gray-200 text-gray-800 rounded-bl-sm"
                   }
                 `}
               >
-                {typeof msg.text === "string"
-                  ? msg.text
-                  : <VulnerabilityFindingComponent finding={msg.text} />}
+                {
+                  (() => {
+                    try {
+                      return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
+                    } catch (_) {
+                      return msg.text
+                    }
+                  })()
+                }
               </div>
 
               {/* USER AVATAR */}

@@ -10,6 +10,7 @@ from uuid import UUID
 from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage
 
 class EventType(StrEnum):
+    VULNERABILITY_FINDING = "vulnerability_finding"
     USER_MESSAGE = "user_message"
     TOOL_CALL = "tool_call"
     TOOL_CALL_RESULT = "tool_call_result"

@@ -114,7 +114,7 @@ export function App() {
                             return;
                           }
 
-                          const pdfDoc = await drawHighlight(fileInput, response.findings);
+                          const pdfDoc = await drawHighlight(fileInput, response.vulnerabilities);
                           const pdfBytes = await pdfDoc.save();
 
                           const highlightedPdf = new File([pdfBytes as BlobPart], fileInput.name, {
@@ -127,13 +127,13 @@ export function App() {
                           const newChat: Chat = {
                             session_id: response.session_id,
                             title: fileInput.name,
-                            findings: response.findings,
+                            findings: response.vulnerabilities,
                           }
 
                           setChats((prev) => [newChat, ...prev])
 
                           setFile(highlightedPdf)
-                          setFindings(response.findings)
+                          setFindings(response.vulnerabilities)
                           setCurrentSessionId(response.session_id)
                         }}
                       />

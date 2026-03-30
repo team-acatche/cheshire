@@ -3,7 +3,7 @@ import { USERNAME, PROVIDER } from "@/globals";
 
 interface EvaluateResponse {
     session_id: string;
-    findings: VulnerabilityFinding[];
+    vulnerabilities: VulnerabilityFinding[];
 }
 
 export async function evaluateDocument(file: File): Promise<EvaluateResponse | null> {
