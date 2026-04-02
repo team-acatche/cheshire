@@ -6,7 +6,11 @@ services:
       dockerfile: Dockerfile
     container_name: cheshire-backend
     restart: unless-stopped
-    env_file: ./cheshire-backend/.env
+    env_file:
+      - path: ./cheshire-backend/.env
+        required: true
+      - path: ./cheshire-backend/.env.user
+        required: false
     ports:
       - "8000:8000"
     networks:
