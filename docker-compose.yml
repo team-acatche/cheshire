@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile
     container_name: cheshire-backend
     restart: unless-stopped
+    environment:
+      - SESSIONS_PATH=~/.config/cheshire
     env_file:
       - path: ./cheshire-backend/.env
         required: true
