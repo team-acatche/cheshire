@@ -62,7 +62,7 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		chat_generator=config.model,
 		system_prompt=system_prompt,
 		tools=config.tools,
-		exit_conditions=["text"],
+		exit_conditions=["finish"],
 		streaming_callback=print_streaming_chunk, # TODO (feat): switch to logger
 		state_schema={
 			"vulnerabilities_list": {"type": list[VulnerabilityDetails]},

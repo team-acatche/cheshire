@@ -8,7 +8,7 @@ from haystack.components.generators.chat.llm import ChatGenerator, ChatMessage
 from haystack.components.embedders.types import TextEmbedder, DocumentEmbedder
 from haystack.tools import ToolsType
 
-from tools.base import add_vulnerability_tool, read_vulnerabilities_tool
+from tools.base import add_vulnerability_tool, read_vulnerabilities_tool, finish as finish_tool
 from tools.exa import web_search
 
 class EvaluationType(StrEnum):
@@ -42,7 +42,8 @@ class DefaultToolFactory(ToolFactory):
         return [
             web_search,
             add_vulnerability_tool("vulnerabilities_list"),
-            read_vulnerabilities_tool("vulnerabilities_list")
+            read_vulnerabilities_tool("vulnerabilities_list"),
+            finish_tool,
         ] + self.extra_tools
     
     def extend(self, factory: ToolFactory):
@@ -69,7 +70,7 @@ class PipelineConfig:
         CRITICAL: Repeat steps 1-3 in a loop. Do not stop after a single tool call. Continue querying, researching, and storing until you are certain you have covered the entire document.
         
         4. **Review**: Once the document is fully analyzed, use the `read_vulnerabilities` tool to retrieve the complete list of stored vulnerabilities.
-        5. **Summarize**: Generate a final, comprehensive summary report detailing all discovered vulnerabilities and wrapping up your discoveries. You MUST NOT stop until you have output this final summary.
+        5. **Finish**: Call the `finish` tool to end the audit.
 
         ## Rules
         - Prioritize attack surface: auth, inputs, network exposure, third-party deps, secrets handling, privilege boundaries.
