@@ -8,7 +8,6 @@ import {
   SidebarInset,
 } from "./components/ui/sidebar"
 import DocumentPreview from "./components/document-preview"
-import { drawHighlight } from "./lib/helpers/page-highlights"
 import { evaluateDocument, saveResult } from "./lib/helpers/evaluate_document"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
@@ -32,7 +31,7 @@ async function getChats(username: string): Promise<Chat[]> {
 }
 
 export function App() {
-  const [file, setFile] = useState<File | null>(null)
+  const [file, setFile] = useState<File | string | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
@@ -42,31 +41,17 @@ export function App() {
     getChats(USERNAME).then(setChats)
   }, [])
 
-  // ✅ New Chat (reset only)
+  // Reset to home screen
   const handleNewChat = () => {
     setFile(null)
     setFindings([])
     setCurrentSessionId(null)
   }
 
-  // ✅ Load previous chat
-  const handleSelectChat = async (chat: Chat) => {
-    const file = await fetch(`/api/v1/${USERNAME}/evaluate/${chat.session_id}/result`)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Error getting file: ${response.statusText}`);
-        }
-        return response.blob()
-      })
-      .then(blob => new File([blob], chat.title + ".pdf", {
-        type: "application/pdf",
-      }))
-      .catch(error => {
-        console.error("Error getting file:", error);
-        return null;
-      });
-
-    setFile(file)
+  // Restore a previous session — point directly at the API URL, no blob fetch needed
+  const handleSelectChat = (chat: Chat) => {
+    const url = `/api/v1/${USERNAME}/evaluate/${chat.session_id}/result`;
+    setFile(url)
     setFindings(chat.findings || [])
     setCurrentSessionId(chat.session_id)
   }
@@ -122,16 +107,10 @@ export function App() {
                               return;
                             }
 
-                            const pdfDoc = await drawHighlight(fileInput, response.vulnerabilities);
-                            const pdfBytes = await pdfDoc.save();
+                            // Save the original, unmodified PDF as the stored result.
+                            // Highlights are now rendered as overlays — no pdf-lib mutation needed.
+                            await saveResult(response.session_id, fileInput);
 
-                            const highlightedPdf = new File([pdfBytes as BlobPart], fileInput.name, {
-                              type: "application/pdf",
-                            });
-
-                            await saveResult(response.session_id, highlightedPdf)
-
-                            // ✅ Save to history
                             const newChat: Chat = {
                               session_id: response.session_id,
                               title: fileInput.name,
@@ -139,8 +118,7 @@ export function App() {
                             }
 
                             setChats((prev) => [newChat, ...prev])
-
-                            setFile(highlightedPdf)
+                            setFile(fileInput)
                             setFindings(response.vulnerabilities)
                             setCurrentSessionId(response.session_id)
                           } finally {
@@ -153,8 +131,9 @@ export function App() {
                 </CardAction>
               </CardContent>
             ) : (
-              <CardContent className="flex flex-col gap-3 size-full">
-                <DocumentPreview src={file} />
+              <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
+                {/* Pass the original file + findings separately — no burned-in highlights */}
+                <DocumentPreview src={file} findings={findings} />
               </CardContent>
             )}
           </Card>
