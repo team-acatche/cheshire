@@ -59,8 +59,7 @@ interface FindingOverlayProps {
   scale: number;
   pageHeightPt: number;
   isActive: boolean;
-  onEnter: (finding: VulnerabilityFinding, el: HTMLElement) => void;
-  onLeave: () => void;
+  onClick: (finding: VulnerabilityFinding, el:HTMLElement) => void;
 }
 
 function FindingOverlay({
@@ -68,16 +67,16 @@ function FindingOverlay({
   scale,
   pageHeightPt,
   isActive,
-  onEnter,
-  onLeave,
+  onClick,
 }: FindingOverlayProps) {
   const rect = pdfToPixels(finding.bbox, pageHeightPt, scale);
 
   return (
     <div
-      onMouseEnter={(e) => onEnter(finding, e.currentTarget)}
-      onMouseLeave={onLeave}
-      onClick={(e) => onEnter(finding, e.currentTarget)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(finding, e.currentTarget);
+      }}
       style={{
         position: "absolute",
         left:     rect.left,
@@ -108,10 +107,9 @@ function FindingOverlay({
 interface FindingPopoverProps {
   finding: VulnerabilityFinding;
   anchorEl: HTMLElement;
-  onClose: () => void;
 }
 
-function FindingPopover({ finding, anchorEl, onClose}: FindingPopoverProps) {
+function FindingPopover({ finding, anchorEl }: FindingPopoverProps) {
   const { refs, floatingStyles} = useFloating({
     elements: { reference: anchorEl },
     middleware: [offset(10), flip({ padding: 12}), shift({ padding: 12})],
@@ -124,8 +122,6 @@ function FindingPopover({ finding, anchorEl, onClose}: FindingPopoverProps) {
       <div
         ref={refs.setFloating}
         style={{ ...floatingStyles, zIndex: 9999 }}
-        onMouseEnter={() => {/* keep open while hovering popover */}}
-        onMouseLeave={onClose}
         className="
           w-80 rounded-xl border border-amber-200/60 bg-white shadow-xl
           ring-1 ring-black/5 overflow-hidden
@@ -205,8 +201,7 @@ interface HighlightLayerProps {
   pageMeta: PageMeta;
   findings: VulnerabilityFinding[];
   activeFindingId: string | null;
-  onEnter: (finding: VulnerabilityFinding, el: HTMLElement) => void;
-  onLeave: () => void;
+  onClick: (finding: VulnerabilityFinding, el: HTMLElement) => void;
 }
 
 function HighlightLayer({
@@ -214,8 +209,7 @@ function HighlightLayer({
   pageMeta,
   findings,
   activeFindingId,
-  onEnter,
-  onLeave,
+  onClick,
 }: HighlightLayerProps) {
   const scale = pageMeta.renderedWidth / pageMeta.originalWidth;
   const pageFindings = findings.filter((f) => f.page_no === pageNumber);
@@ -238,8 +232,7 @@ function HighlightLayer({
           scale={scale}
           pageHeightPt={pageMeta.originalHeight}
           isActive={activeFindingId === makeFindingId(finding)}
-          onEnter={onEnter}
-          onLeave={onLeave}
+          onClick={onClick}
         />
       ))}
     </div>
@@ -253,6 +246,8 @@ function makeFindingId(f: VulnerabilityFinding) {
 
 // --- DocumentPreview 
 interface DocumentPreviewProps {
+  // File  → freshly uploaded document (has .name / .type)
+  // string → API URL for a previously saved session result
   src: File | string; // string = direct API URL
   findings: VulnerabilityFinding[];
 }
@@ -277,16 +272,20 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
     if (node) setContainerWidth(node.getBoundingClientRect().width);
   }, []);
 
-  const handleEnter = useCallback(
-    (finding: VulnerabilityFinding, el: HTMLElement) => {
-      setActive({ finding, anchorEl: el});
+  const handleClick = useCallback(
+    (finding: VulnerabilityFinding, el:HTMLElement) => {
+      setActive((prev) =>
+        prev && makeFindingId(prev.finding) === makeFindingId(finding)
+          ? null
+          : { finding, anchorEl: el}
+      );
     },
     []
   );
 
-  const handleLeave = useCallback(() => {
-    // Small delay so the pointer can reach the popover without it vanishing
-    setTimeout(() => setActive(null), 80);
+  // Click anywhere outside a highlight closes the popover
+  const handlePageClick = useCallback(() => {
+    setActive(null);
   }, []);
 
   const activeFindingId = active ? makeFindingId(active.finding) : null;
@@ -321,6 +320,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
           }}
           className="flex-1 overflow-y-auto rounded-lg"
           style={{ position:"relative" }}
+          onClick={handlePageClick}
         >
           <Document
             file={pdfSource}
@@ -368,8 +368,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
                     pageMeta={pageMetaMap[pageNumber]}
                     findings={findings}
                     activeFindingId={activeFindingId}
-                    onEnter={handleEnter}
-                    onLeave={handleLeave}
+                    onClick={handleClick}
                 />
                 )}
               </div>
@@ -384,7 +383,6 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
         <FindingPopover
           finding={active.finding}
           anchorEl={active.anchorEl}
-          onClose={() => setActive(null)}
         />
       )}
     </>
