@@ -15,6 +15,11 @@ import ChatPage from "./ChatPage"
 import { USERNAME } from "./globals"
 import type { Chat } from "./ChatPage"
 import { LoadingPage } from "./components/ui/loadingpage"
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable"
 
 async function getChats(username: string): Promise<Chat[]> {
   return await fetch(`/api/v1/${username}/chat`)
@@ -68,7 +73,7 @@ export function App() {
       <SidebarInset>
         <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
 
-          <Card className={`${!file ? "col-span-full" : "col-span-3 size-full"} mt-2 shadow-none`}>
+          <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} mt-2 shadow-none`}>
             {isProcessing ? (
               <CardContent className="col-span-full h-full flex items-center justify-center">
                 <LoadingPage />
@@ -131,21 +136,30 @@ export function App() {
                 </CardAction>
               </CardContent>
             ) : (
-              <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
-                {/* Pass the original file + findings separately — no burned-in highlights */}
-                <DocumentPreview src={file} findings={findings} />
-              </CardContent>
+              <ResizablePanelGroup direction="horizontal" className="h-full">
+                <ResizablePanel defaultSize={75} minSize={30}>
+                  <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
+                    {/* Pass the original file + findings separately — no burned-in highlights */}
+                    <DocumentPreview src={file} findings={findings} />
+                  </CardContent>
+                </ResizablePanel>
+
+                <ResizableHandle withHandle />
+
+                <ResizablePanel defaultSize={25} minSize={15}>
+                  {currentSessionId && (
+                    <Chatbot
+                      key={currentSessionId}
+                      findings={findings}
+                      sessionId={currentSessionId}
+                      username={USERNAME}
+                    />
+                  )}
+                </ResizablePanel>
+              </ResizablePanelGroup>
             )}
           </Card>
 
-          {file && currentSessionId && (
-            <Chatbot
-              key={currentSessionId}
-              findings={findings}
-              sessionId={currentSessionId}
-              username={USERNAME}
-            />
-          )}
         </main>
       </SidebarInset>
     </SidebarProvider>
