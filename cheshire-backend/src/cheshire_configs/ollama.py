@@ -5,6 +5,7 @@ from haystack_integrations.components.embedders.fastembed import FastembedTextEm
 
 from cheshire_configs.core import DefaultToolFactory, PipelineConfig
 
+TIMEOUT_MINUTES = 5;
 
 async def ollama_config() -> PipelineConfig:
     # Force fastembed (onnxruntime) to use CPU to avoid NVRTC/CUDA initialization crashes
@@ -22,6 +23,8 @@ async def ollama_config() -> PipelineConfig:
                 "num_ctx": 2**14,  # 16384
             },
             think=True,
+            timeout=60*TIMEOUT_MINUTES,
+            max_retries=5,
         ),
         document_embedder=lambda: FastembedDocumentEmbedder(model="sentence-transformers/all-MiniLM-L6-v2"),
         embedder=lambda: FastembedTextEmbedder(model="sentence-transformers/all-MiniLM-L6-v2"),
