@@ -4,6 +4,7 @@ from haystack.components.joiners import DocumentJoiner
 from haystack.components.embedders.types import TextEmbedder
 
 from lancedb_haystack import LanceDBDocumentStore, LanceDBEmbeddingRetriever, LanceDBFTSRetriever # type: ignore
+from haystack_integrations.components.embedders.fastembed import FastembedTextEmbedder
 from haystack_integrations.components.rankers.fastembed import FastembedRanker
 
 from haystack.document_stores.in_memory import InMemoryDocumentStore
@@ -44,9 +45,10 @@ class HybridInMemoryRetriever:
     def __init__(
         self,
         document_store: InMemoryDocumentStore,
-        embedder: TextEmbedder,
+        embedder: TextEmbedder = FastembedTextEmbedder(model="sentence-transformers/all-MiniLM-L6-v2"),
     ):
         self.document_store = document_store
+        self.embedder = embedder
 
         embedding_retriever = InMemoryEmbeddingRetriever(self.document_store, top_k=5)
         bm25_retriever = InMemoryBM25Retriever(self.document_store, top_k=5)
@@ -54,7 +56,7 @@ class HybridInMemoryRetriever:
         reranker = FastembedRanker(top_k=5)
 
         self.pipeline = Pipeline()
-        self.pipeline.add_component("embedder", embedder)
+        self.pipeline.add_component("embedder", self.embedder)
         self.pipeline.add_component("embedding_retriever", embedding_retriever)
         self.pipeline.add_component("bm25_retriever", bm25_retriever)
         self.pipeline.add_component("document_joiner", document_joiner)

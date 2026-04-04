@@ -14,7 +14,6 @@ class EventType(StrEnum):
     USER_MESSAGE = "user_message"
     TOOL_CALL = "tool_call"
     TOOL_CALL_RESULT = "tool_call_result"
-    REASONING = "reasoning"
     RESPONSE = "response"
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,16 +52,7 @@ class Event:
     def to_chat_message(self) -> ChatMessage:
         if self.event_type == EventType.USER_MESSAGE:
             return ChatMessage.from_user(str(self.content))
-        elif self.event_type == EventType.RESPONSE:
-            return ChatMessage.from_assistant(str(self.content))
-        elif self.event_type == EventType.REASONING:
-            # Reasoning is not technically a role in ChatMessage, 
-            # but for context we might treat it as assistant if needed 
-            # or just skip. For now, we skip non-user/assistant for context.
-            return ChatMessage.from_assistant(str(self.content))
-        else:
-            # Fallback
-            return ChatMessage.from_assistant(str(self.content))
+        return ChatMessage.from_assistant(str(self.content))
 
 class EventRepository(Protocol):
     def save(self, event: Event) -> None:
@@ -133,10 +123,15 @@ class StreamCallbackFactory:
     history: Annotated[EventRepository, "the event repository"]
     current_event: Annotated[Optional[Event], "the current event"] = field(init=False, default=None)
 
+    def flush(self) -> None:
+        if self.current_event is not None:
+            self.history.save(self.current_event)
+            self.current_event = None
+
     def __call__(self) -> StreamingCallbackT:
         def _callback(chunk: StreamingChunk) -> None:
             # save to db if this current chunk is a new content block and event is previously set
-            if chunk.start and self.current_event is not None:
+            if chunk.finish_reason and self.current_event is not None:
                 self.history.save(self.current_event)
                 self.current_event = None
 
@@ -169,20 +164,11 @@ class StreamCallbackFactory:
 
             ## Normal content streaming
             if chunk.content:
-                if chunk.start or self.current_event is None:
+                if self.current_event is None:
                     self.current_event = Event(
                         session_id=str(self.session_id),
                         event_type=EventType.RESPONSE
                     )
                 self.current_event = replace(self.current_event, content=self.current_event.content+chunk.content)
-
-            ## Reasoning content streaming
-            if chunk.reasoning:
-                if chunk.start or self.current_event is None:
-                    self.current_event = Event(
-                        session_id=str(self.session_id),
-                        event_type=EventType.REASONING
-                    )
-                self.current_event = replace(self.current_event, content=self.current_event.content+str(chunk.reasoning))
 
         return _callback

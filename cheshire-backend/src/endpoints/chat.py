@@ -126,7 +126,7 @@ async def chat(
     # Run agent
     try:
         response = agent.run(messages=[*messages, ChatMessage.from_user(body.message)])
-        # Note: StreamCallbackFactory already saved the response to history.sqlite
+        callback_factory.flush()
         return {"response": response.get("last_message", "")}
     except Exception as e:
         import logging
