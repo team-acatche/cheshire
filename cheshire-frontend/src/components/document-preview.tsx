@@ -197,7 +197,7 @@ function FindingPopover({ finding, anchorEl }: FindingPopoverProps) {
   );
 }
 
-// --- HighlightLayer (unchanged)
+// --- HighlightLayer
 interface HighlightLayerProps {
   pageNumber: number;
   pageMeta: PageMeta;
@@ -235,7 +235,7 @@ function HighlightLayer({
   );
 }
 
-// --- Stable ID helper (unchanged)
+// --- Stable ID helper
 function makeFindingId(f: VulnerabilityFinding) {
   return `${f.page_no}-${f.bbox.l}-${f.bbox.t}`;
 }
@@ -309,35 +309,89 @@ function SearchBar({
 }
 
 // --- Helpers: apply / clear search highlights in a page's text layer
-const SEARCH_ATTR = "data-pdf-search";
+// Track every <mark> we inject so we can tear them all down reliably
+const injectedMarks: Set<HTMLElement> = new Set();
+
+function getTextLayer(pageEl: HTMLElement): HTMLElement | null {
+  // react-pdf v7+ uses textLayer class, older used textContent
+  return (
+    pageEl.querySelector(".react-pdf__Page__textLayer") ??
+    pageEl.querySelector(".react-pdf__Page__textContent")
+  );
+}
+
+function clearAllMarks() {
+  injectedMarks.forEach((mark) => {
+    const parent = mark.parentNode;
+    if (parent) {
+      // Replace <mark> with its text content
+      parent.replaceChild(document.createTextNode(mark.textContent ?? ""), mark);
+      parent.normalize(); // merge adjacent text nodes
+    }
+  });
+  injectedMarks.clear();
+}
 
 function applyPageHighlights(pageEl: HTMLElement, query: string): number {
-  const textLayer = pageEl.querySelector(".react-pdf__Page__textContent");
-  if (!textLayer) return 0;
-
-  // Clear previous
-  textLayer.querySelectorAll(`[${SEARCH_ATTR}]`).forEach((el) => {
-    (el as HTMLElement).removeAttribute(SEARCH_ATTR);
-  });
-
-  if (!query.trim()) return 0;
+  const textLayer = getTextLayer(pageEl);
+  if (!textLayer || !query.trim()) return 0;
 
   const lower = query.toLowerCase();
   let count = 0;
-  textLayer.querySelectorAll("span").forEach((span) => {
-    if ((span.textContent ?? "").toLowerCase().includes(lower)) {
-      span.setAttribute(SEARCH_ATTR, "true");
-      count++;
-    }
+
+  // Walk leaf text nodes only
+  const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node: Text | null;
+  while ((node = walker.nextNode() as Text | null)) {
+    textNodes.push(node);
+  }
+
+  textNodes.forEach((textNode) => {
+    const text = textNode.textContent ?? "";
+    const idx = text.toLowerCase().indexOf(lower);
+    if (idx === -1) return;
+
+    // Split the text node around the match and wrap only the matched portion
+    const before = text.slice(0, idx);
+    const match  = text.slice(idx, idx + query.length);
+    const after  = text.slice(idx + query.length);
+
+    const mark = document.createElement("mark");
+    mark.textContent = match;
+    mark.setAttribute("data-pdf-search", "true");
+    mark.style.cssText =
+      "background:rgba(59,130,246,0.35);outline:1px solid rgba(59,130,246,0.55);border-radius:2px;color:inherit;";
+    injectedMarks.add(mark);
+
+    const parent = textNode.parentNode!;
+    if (before) parent.insertBefore(document.createTextNode(before), textNode);
+    parent.insertBefore(mark, textNode);
+    if (after) parent.insertBefore(document.createTextNode(after), textNode);
+    parent.removeChild(textNode);
+
+    count++;
   });
+
   return count;
 }
 
-function clearPageHighlights(pageEl: HTMLElement) {
-  const textLayer = pageEl.querySelector(".react-pdf__Page__textContent");
-  textLayer
-    ?.querySelectorAll(`[${SEARCH_ATTR}]`)
-    .forEach((el) => (el as HTMLElement).removeAttribute(SEARCH_ATTR));
+function markCurrentPageMatch(pageEl: HTMLElement, isCurrent: boolean) {
+  const textLayer = getTextLayer(pageEl);
+  textLayer?.querySelectorAll("[data-pdf-search]").forEach((el) => {
+    const e = el as HTMLElement;
+    if (isCurrent) {
+      e.style.background = "rgba(234,179,8,0.55)";
+      e.style.outline    = "2px solid rgba(234,179,8,0.9)";
+    } else {
+      e.style.background = "rgba(59,130,246,0.35)";
+      e.style.outline    = "1px solid rgba(59,130,246,0.55)";
+    }
+  });
+}
+
+function clearPageHighlights(_pageEl: HTMLElement) {
+  // no-op per page — we clear globally via clearAllMarks()
 }
 
 // --- DocumentPreview
@@ -398,6 +452,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
 
   // ── Run search across all rendered page elements ──
   const runSearch = useCallback((query: string) => {
+    clearAllMarks(); // tear down previous marks before injecting new ones
     const hits: number[] = [];
     Object.entries(pageEls.current).forEach(([num, el]) => {
       if (!el) return;
@@ -414,10 +469,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
   // Re-run search whenever query changes
   useEffect(() => {
     if (!searchQuery.trim()) {
-      // Clear all highlights
-      Object.values(pageEls.current).forEach((el) => {
-        if (el) clearPageHighlights(el);
-      });
+      clearAllMarks();
       setMatchPages([]);
       return;
     }
@@ -425,6 +477,10 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
   }, [searchQuery, runSearch]);
 
   const scrollToPage = (pageNum: number) => {
+    // Mark previous current match as normal, new one as current
+    Object.entries(pageEls.current).forEach(([num, el]) => {
+      if (el) markCurrentPageMatch(el, Number(num) === pageNum);
+    });
     pageEls.current[pageNum]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -443,6 +499,9 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
   }, [matchIdx, matchPages]);
 
   const closeSearch = useCallback(() => {
+    clearAllMarks();
+    setMatchPages([]);
+    setMatchIdx(0);
     setSearchOpen(false);
     setSearchQuery("");
   }, []);
@@ -472,9 +531,12 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
         </div>
         <button
           onClick={() => {
-            setSearchOpen((prev) => !prev);
-            if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 50);
-            else setSearchQuery("");
+            if (searchOpen) {
+              closeSearch();
+            } else {
+              setSearchOpen(true);
+              setTimeout(() => searchInputRef.current?.focus(), 50);
+            }
           }}
           title="Search (Ctrl+F)"
           className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
