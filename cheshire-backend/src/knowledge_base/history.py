@@ -59,13 +59,32 @@ class EventRepository(Protocol):
         """Saves an event to the repository."""
         ...
     
-    def get_recent(self, session_id: str, k: int) -> list[Event]:
-        """Returns the last k events."""
+    def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
+        """Returns the last k events of type event_types (inclusive)."""
         ...
     
     def get_event(self, event_id: int) -> Optional[Event]:
         """Returns the event with the given id."""
         ...
+
+@dataclass(frozen=True, kw_only=True)
+class SimplerEventRepository:
+    """
+    An event repository wherein the session ID is already set on init.
+    """
+    session_id: str
+    repo: EventRepository
+    
+    def save(self, event: Event) -> None:
+        if event.session_id != self.session_id:
+            raise ValueError("Event session id does not match the repository session id")
+        self.repo.save(event)
+    
+    def get_recent(self, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
+        return self.repo.get_recent(self.session_id, k, event_types=event_types)
+    
+    def get_event(self, event_id: int) -> Optional[Event]:
+        return self.repo.get_event(event_id)
     
 class SqliteEventRepository(EventRepository):
     def __init__(self, history: sqlite.Connection):
@@ -100,7 +119,7 @@ class SqliteEventRepository(EventRepository):
         self.cursor.execute(f"INSERT INTO event {values_str} VALUES {placeholders}", event.to_insert_tuple())
         self.history.commit()
     
-    def get_recent(self, session_id: str, k: int, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
+    def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
         """Returns the last k events."""
         if event_types is None:
             self.cursor.execute("SELECT * FROM event WHERE session_id = ? ORDER BY event_id DESC LIMIT ?", (session_id, k))

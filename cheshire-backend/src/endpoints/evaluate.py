@@ -8,6 +8,7 @@ import logging
 import uuid
 from datetime import datetime
 import re
+import sqlite3
 
 from fastapi import (
     APIRouter,
@@ -29,9 +30,9 @@ from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.core import PipelineConfig
 from cheshire_configs.resolver import resolve_config
 from knowledge_base.session_manager import Session, SqliteSessionRepository
-from knowledge_base.history import Event, EventType, SqliteEventRepository
-import sqlite3
+from knowledge_base.history import Event, EventType, SqliteEventRepository, EventRepository, SimplerEventRepository
 from endpoints.helpers import create_vector_stores
+from auth.db_access import get_history
 
 load_dotenv()
 SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
@@ -119,37 +120,10 @@ def _get_latest(session_path: Path) -> str:
     return max(timestamps).isoformat()
     
 
-@evaluate_router.post("/{username}/evaluate/{session_id}/result", status_code=204)
-async def upload_latest_highlighted_document(
-    username: Annotated[str, PathParam(description="The username of the user")],
-    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
-    uploaded_document: Annotated[UploadFile, File(description="The evaluated document with highlights.")],
-) -> Response:
-    if not SESSION_DIR:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+@evaluate_router.get("/result")
+async def get_latest_evaluation_results(
+    history: Annotated[SimplerEventRepository, Depends(get_history)],
+) -> list[VulnerabilityDetails]:
+    findings_history: list[Event] = history.get_recent(event_types=[EventType.VULNERABILITY_FINDING])
+    return [VulnerabilityDetails.model_validate_json(event.content) for event in findings_history]
     
-    filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload")
-    session_path = Path(SESSION_DIR) / username / session_id
-    document_path = session_path / "documents" / f"{_get_latest(session_path)}__highlighted__{filename}"
-
-    async with aiofiles.open(document_path, "wb") as d:
-        await d.write(await uploaded_document.read())
-
-    return Response(status_code=204)
-
-@evaluate_router.get("/{username}/evaluate/{session_id}/result")
-async def get_latest_highlighted_document(
-    username: Annotated[str, PathParam(description="The username of the user")],
-    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
-) -> FileResponse:
-    if not SESSION_DIR:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
-
-    session_path = Path(SESSION_DIR) / username / session_id
-    latest_timestamp = _get_latest(session_path)
-    for root, _, filenames in os.walk(session_path / "documents"):
-        for filename in sorted(filenames):
-            if f"{latest_timestamp}__highlighted__" in filename:
-                return FileResponse(Path(root) / filename)
-
-    raise HTTPException(status_code=404, detail="No highlighted document found")
