@@ -82,3 +82,6 @@ Thumbs.db
 GET
 Host:
 User-Agent:
+
+# Nginx Config
+nginx.conf

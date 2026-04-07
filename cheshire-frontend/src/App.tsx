@@ -136,7 +136,7 @@ export function App() {
                 </CardAction>
               </CardContent>
             ) : (
-              <ResizablePanelGroup direction="horizontal" className="h-full">
+              <ResizablePanelGroup orientation="horizontal" className="h-full">
                 <ResizablePanel defaultSize={75} minSize={30}>
                   <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
                     {/* Pass the original file + findings separately — no burned-in highlights */}

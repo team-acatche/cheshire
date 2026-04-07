@@ -12,10 +12,12 @@ import {
   FileText,
   ExternalLink,
   ChevronRight,
+  ChevronLeft,
   Search,
   X,
   ChevronUp,
   ChevronDown,
+  Layers,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
@@ -23,13 +25,13 @@ import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-// ___ pdfjs worker
+// ─── pdfjs worker ────────────────────────────────────────────────────────────
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
-// --- Types
+// ─── Types ───────────────────────────────────────────────────────────────────
 interface PageMeta {
   renderedWidth: number;
   renderedHeight: number;
@@ -37,12 +39,32 @@ interface PageMeta {
   originalHeight: number;
 }
 
-interface ActiveFinding {
-  finding: VulnerabilityFinding;
+interface ActiveGroup {
+  findings: VulnerabilityFinding[];
   anchorEl: HTMLElement;
+  bboxKey: string;
 }
 
-// --- Coordinate transform
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function makeBboxKey(f: VulnerabilityFinding) {
+  return `${f.page_no}|${f.bbox.l}|${f.bbox.t}|${f.bbox.r}|${f.bbox.b}`;
+}
+
+function groupByBbox(findings: VulnerabilityFinding[], pageNumber: number) {
+  const map = new Map<string, VulnerabilityFinding[]>();
+
+  for (const f of findings) {
+    if (f.page_no !== pageNumber) continue;
+    const key = makeBboxKey(f);
+    const group = map.get(key) ?? [];
+    group.push(f);
+    map.set(key, group);
+  }
+
+  return map;
+}
+
+// ─── Coordinate transform ────────────────────────────────────────────────────
 function pdfToPixels(
   bbox: VulnerabilityFinding["bbox"],
   pageHeightPt: number,
@@ -52,32 +74,196 @@ function pdfToPixels(
     left: bbox.l * scale,
     top: (pageHeightPt - bbox.t) * scale,
     width: (bbox.r - bbox.l) * scale,
-    height: (bbox.r - bbox.b) * scale,
+    height: (bbox.t - bbox.b) * scale,
   };
 }
 
-// --- FindingOverlay
+// ─── SearchBar ───────────────────────────────────────────────────────────────
+interface SearchBarProps {
+  query: string;
+  matchCount: number;
+  currentMatch: number;
+  onQueryChange: (q: string) => void;
+  onNext: () => void;
+  onPrev: () => void;
+  onClose: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}
+
+function SearchBar({
+  query,
+  matchCount,
+  currentMatch,
+  onQueryChange,
+  onNext,
+  onPrev,
+  onClose,
+  inputRef,
+}: SearchBarProps) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-background shadow-sm">
+      <Search className="size-3.5 text-muted-foreground shrink-0" />
+      <input
+        ref={inputRef}
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.shiftKey ? onPrev() : onNext();
+          }
+          if (e.key === "Escape") {
+            onClose();
+          }
+        }}
+        placeholder="Search in document…"
+        className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground"
+      />
+
+      {query && (
+        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
+          {matchCount === 0 ? "No results" : `${currentMatch + 1} / ${matchCount}`}
+        </span>
+      )}
+
+      <button
+        onClick={onPrev}
+        disabled={matchCount === 0}
+        className="p-0.5 rounded hover:bg-muted disabled:opacity-30"
+        title="Previous (Shift+Enter)"
+      >
+        <ChevronUp className="size-3.5" />
+      </button>
+
+      <button
+        onClick={onNext}
+        disabled={matchCount === 0}
+        className="p-0.5 rounded hover:bg-muted disabled:opacity-30"
+        title="Next (Enter)"
+      >
+        <ChevronDown className="size-3.5" />
+      </button>
+
+      <button
+        onClick={onClose}
+        className="p-0.5 rounded hover:bg-muted"
+        title="Close (Esc)"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// ─── Search highlight helpers ────────────────────────────────────────────────
+const injectedMarks: Set<HTMLElement> = new Set();
+
+function getTextLayer(pageEl: HTMLElement): HTMLElement | null {
+  return (
+    pageEl.querySelector(".react-pdf__Page__textLayer") ??
+    pageEl.querySelector(".react-pdf__Page__textContent")
+  );
+}
+
+function clearAllMarks() {
+  injectedMarks.forEach((mark) => {
+    const parent = mark.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(mark.textContent ?? ""), mark);
+      parent.normalize();
+    }
+  });
+  injectedMarks.clear();
+}
+
+function applyPageHighlights(pageEl: HTMLElement, query: string): number {
+  const textLayer = getTextLayer(pageEl);
+  if (!textLayer || !query.trim()) return 0;
+
+  const lowerQuery = query.toLowerCase();
+  let count = 0;
+
+  const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node: Text | null;
+
+  while ((node = walker.nextNode() as Text | null)) {
+    textNodes.push(node);
+  }
+
+  textNodes.forEach((textNode) => {
+    const text = textNode.textContent ?? "";
+    const lowerText = text.toLowerCase();
+    const idx = lowerText.indexOf(lowerQuery);
+
+    if (idx === -1) return;
+
+    const before = text.slice(0, idx);
+    const match = text.slice(idx, idx + query.length);
+    const after = text.slice(idx + query.length);
+
+    const mark = document.createElement("mark");
+    mark.textContent = match;
+    mark.setAttribute("data-pdf-search", "true");
+    mark.style.cssText =
+      "background:rgba(59,130,246,0.35);outline:1px solid rgba(59,130,246,0.55);border-radius:2px;color:inherit;";
+
+    injectedMarks.add(mark);
+
+    const parent = textNode.parentNode;
+    if (!parent) return;
+
+    if (before) parent.insertBefore(document.createTextNode(before), textNode);
+    parent.insertBefore(mark, textNode);
+    if (after) parent.insertBefore(document.createTextNode(after), textNode);
+    parent.removeChild(textNode);
+
+    count++;
+  });
+
+  return count;
+}
+
+function markCurrentPageMatch(pageEl: HTMLElement, isCurrent: boolean) {
+  const textLayer = getTextLayer(pageEl);
+  textLayer?.querySelectorAll("[data-pdf-search]").forEach((el) => {
+    const element = el as HTMLElement;
+
+    if (isCurrent) {
+      element.style.background = "rgba(234,179,8,0.55)";
+      element.style.outline = "2px solid rgba(234,179,8,0.9)";
+    } else {
+      element.style.background = "rgba(59,130,246,0.35)";
+      element.style.outline = "1px solid rgba(59,130,246,0.55)";
+    }
+  });
+}
+
+// ─── FindingOverlay ──────────────────────────────────────────────────────────
 interface FindingOverlayProps {
-  finding: VulnerabilityFinding;
+  bboxKey: string;
+  findings: VulnerabilityFinding[];
   scale: number;
   pageHeightPt: number;
   isActive: boolean;
-  onClick: (finding: VulnerabilityFinding, el: HTMLElement) => void;
+  onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => void;
 }
 
 function FindingOverlay({
-  finding,
+  bboxKey,
+  findings,
   scale,
   pageHeightPt,
   isActive,
   onClick,
 }: FindingOverlayProps) {
-  const rect = pdfToPixels(finding.bbox, pageHeightPt, scale);
+  const rect = pdfToPixels(findings[0].bbox, pageHeightPt, scale);
+  const hasMultiple = findings.length > 1;
+
   return (
     <div
       onClick={(e) => {
         e.stopPropagation();
-        onClick(finding, e.currentTarget);
+        onClick(findings, bboxKey, e.currentTarget);
       }}
       style={{
         position: "absolute",
@@ -89,27 +275,58 @@ function FindingOverlay({
         cursor: "pointer",
         borderRadius: 3,
         background: isActive
-          ? "rgba(251, 191, 36, 0.25)"
-          : "rgba(251, 191, 36, 0.12)",
+          ? "rgba(0, 51, 178, 0.25)"
+          : "rgba(0, 51, 178, 0.12)",
         borderBottom: isActive
-          ? "2.5px solid rgba(245, 158, 11, 0.9)"
-          : "2px solid rgba(245, 158, 11, 0.55)",
+          ? "2.5px solid rgba(0, 51, 178, 0.9)"
+          : "2px solid rgba(0, 51, 178, 0.55)",
         boxShadow: isActive
-          ? "0 0 0 1.5px rgba(245, 158, 11, 0.35)"
+          ? "0 0 0 1.5px rgba(0, 51, 178, 0.35)"
           : "none",
         transition: "all 150ms ease",
+        zIndex: 20,
       }}
-    />
+    >
+      {hasMultiple && (
+        <div
+          style={{
+            position: "absolute",
+            top: -8,
+            right: -8,
+            background: isActive ? "rgb(0, 51, 178)" : "rgb(0, 82, 224)",
+            color: "white",
+            borderRadius: "9999px",
+            fontSize: 10,
+            fontWeight: 700,
+            minWidth: 18,
+            height: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 4px",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+            pointerEvents: "none",
+            transition: "all 150ms ease",
+          }}
+        >
+          {findings.length}
+        </div>
+      )}
+    </div>
   );
 }
 
-// --- FindingPopover
+// ─── FindingPopover ──────────────────────────────────────────────────────────
 interface FindingPopoverProps {
-  finding: VulnerabilityFinding;
+  findings: VulnerabilityFinding[];
   anchorEl: HTMLElement;
 }
 
-function FindingPopover({ finding, anchorEl }: FindingPopoverProps) {
+function FindingPopover({ findings, anchorEl }: FindingPopoverProps) {
+  const [page, setPage] = useState(0);
+  const finding = findings[page];
+  const total = findings.length;
+
   const { refs, floatingStyles } = useFloating({
     elements: { reference: anchorEl },
     middleware: [offset(10), flip({ padding: 12 }), shift({ padding: 12 })],
@@ -132,9 +349,10 @@ function FindingPopover({ finding, anchorEl }: FindingPopoverProps) {
         {/* Header */}
         <div className="bg-amber-50 dark:bg-amber-950/40 px-4 py-3 border-b border-amber-100/80 dark:border-amber-400/15">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug flex-1">
               {finding.title}
             </p>
+
             <Badge
               variant="outline"
               className="shrink-0 text-[10px] border-amber-300 text-amber-700 dark:text-amber-400 dark:border-amber-600"
@@ -142,6 +360,52 @@ function FindingPopover({ finding, anchorEl }: FindingPopoverProps) {
               pg. {finding.page_no}
             </Badge>
           </div>
+
+          {total > 1 && (
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-amber-100/60 dark:border-amber-400/10">
+              <div className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+                <Layers className="size-3" />
+                <span>
+                  {page + 1} of {total} findings
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="p-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Previous finding"
+                >
+                  <ChevronLeft className="size-3.5 text-amber-700 dark:text-amber-400" />
+                </button>
+
+                <div className="flex gap-0.5">
+                  {findings.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setPage(i)}
+                      className={`rounded-full transition-all ${
+                        i === page
+                          ? "w-3 h-1.5 bg-amber-500"
+                          : "w-1.5 h-1.5 bg-amber-300 hover:bg-amber-400"
+                      }`}
+                      aria-label={`Go to finding ${i + 1}`}
+                    />
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setPage((p) => Math.min(total - 1, p + 1))}
+                  disabled={page === total - 1}
+                  className="p-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Next finding"
+                >
+                  <ChevronRight className="size-3.5 text-amber-700 dark:text-amber-400" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Body */}
@@ -197,37 +461,44 @@ function FindingPopover({ finding, anchorEl }: FindingPopoverProps) {
   );
 }
 
-// --- HighlightLayer
+// ─── HighlightLayer ──────────────────────────────────────────────────────────
 interface HighlightLayerProps {
   pageNumber: number;
   pageMeta: PageMeta;
   findings: VulnerabilityFinding[];
-  activeFindingId: string | null;
-  onClick: (finding: VulnerabilityFinding, el: HTMLElement) => void;
+  activeBboxKey: string | null;
+  onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => void;
 }
 
 function HighlightLayer({
   pageNumber,
   pageMeta,
   findings,
-  activeFindingId,
+  activeBboxKey,
   onClick,
 }: HighlightLayerProps) {
   const scale = pageMeta.renderedWidth / pageMeta.originalWidth;
-  const pageFindings = findings.filter((f) => f.page_no === pageNumber);
-  if (pageFindings.length === 0) return null;
+  const groups = groupByBbox(findings, pageNumber);
+
+  if (groups.size === 0) return null;
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 20 }}
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: "none",
+        zIndex: 20,
+      }}
     >
-      {pageFindings.map((finding, i) => (
+      {Array.from(groups.entries()).map(([bboxKey, group]) => (
         <FindingOverlay
-          key={i}
-          finding={finding}
+          key={bboxKey}
+          bboxKey={bboxKey}
+          findings={group}
           scale={scale}
           pageHeightPt={pageMeta.originalHeight}
-          isActive={activeFindingId === makeFindingId(finding)}
+          isActive={activeBboxKey === bboxKey}
           onClick={onClick}
         />
       ))}
@@ -235,166 +506,7 @@ function HighlightLayer({
   );
 }
 
-// --- Stable ID helper
-function makeFindingId(f: VulnerabilityFinding) {
-  return `${f.page_no}-${f.bbox.l}-${f.bbox.t}`;
-}
-
-// --- SearchBar
-interface SearchBarProps {
-  query: string;
-  matchCount: number;
-  currentMatch: number;
-  onQueryChange: (q: string) => void;
-  onNext: () => void;
-  onPrev: () => void;
-  onClose: () => void;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-}
-
-function SearchBar({
-  query,
-  matchCount,
-  currentMatch,
-  onQueryChange,
-  onNext,
-  onPrev,
-  onClose,
-  inputRef,
-}: SearchBarProps) {
-  return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-background shadow-sm">
-      <Search className="size-3.5 text-muted-foreground shrink-0" />
-      <input
-        ref={inputRef}
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.shiftKey ? onPrev() : onNext();
-          if (e.key === "Escape") onClose();
-        }}
-        placeholder="Search in document…"
-        className="flex-1 text-xs bg-transparent outline-none placeholder:text-muted-foreground"
-      />
-      {query && (
-        <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
-          {matchCount === 0 ? "No results" : `${currentMatch + 1} / ${matchCount}`}
-        </span>
-      )}
-      <button
-        onClick={onPrev}
-        disabled={matchCount === 0}
-        className="p-0.5 rounded hover:bg-muted disabled:opacity-30"
-        title="Previous (Shift+Enter)"
-      >
-        <ChevronUp className="size-3.5" />
-      </button>
-      <button
-        onClick={onNext}
-        disabled={matchCount === 0}
-        className="p-0.5 rounded hover:bg-muted disabled:opacity-30"
-        title="Next (Enter)"
-      >
-        <ChevronDown className="size-3.5" />
-      </button>
-      <button
-        onClick={onClose}
-        className="p-0.5 rounded hover:bg-muted"
-        title="Close (Esc)"
-      >
-        <X className="size-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// --- Helpers: apply / clear search highlights in a page's text layer
-// Track every <mark> we inject so we can tear them all down reliably
-const injectedMarks: Set<HTMLElement> = new Set();
-
-function getTextLayer(pageEl: HTMLElement): HTMLElement | null {
-  // react-pdf v7+ uses textLayer class, older used textContent
-  return (
-    pageEl.querySelector(".react-pdf__Page__textLayer") ??
-    pageEl.querySelector(".react-pdf__Page__textContent")
-  );
-}
-
-function clearAllMarks() {
-  injectedMarks.forEach((mark) => {
-    const parent = mark.parentNode;
-    if (parent) {
-      // Replace <mark> with its text content
-      parent.replaceChild(document.createTextNode(mark.textContent ?? ""), mark);
-      parent.normalize(); // merge adjacent text nodes
-    }
-  });
-  injectedMarks.clear();
-}
-
-function applyPageHighlights(pageEl: HTMLElement, query: string): number {
-  const textLayer = getTextLayer(pageEl);
-  if (!textLayer || !query.trim()) return 0;
-
-  const lower = query.toLowerCase();
-  let count = 0;
-
-  // Walk leaf text nodes only
-  const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
-  const textNodes: Text[] = [];
-  let node: Text | null;
-  while ((node = walker.nextNode() as Text | null)) {
-    textNodes.push(node);
-  }
-
-  textNodes.forEach((textNode) => {
-    const text = textNode.textContent ?? "";
-    const idx = text.toLowerCase().indexOf(lower);
-    if (idx === -1) return;
-
-    // Split the text node around the match and wrap only the matched portion
-    const before = text.slice(0, idx);
-    const match  = text.slice(idx, idx + query.length);
-    const after  = text.slice(idx + query.length);
-
-    const mark = document.createElement("mark");
-    mark.textContent = match;
-    mark.setAttribute("data-pdf-search", "true");
-    mark.style.cssText =
-      "background:rgba(59,130,246,0.35);outline:1px solid rgba(59,130,246,0.55);border-radius:2px;color:inherit;";
-    injectedMarks.add(mark);
-
-    const parent = textNode.parentNode!;
-    if (before) parent.insertBefore(document.createTextNode(before), textNode);
-    parent.insertBefore(mark, textNode);
-    if (after) parent.insertBefore(document.createTextNode(after), textNode);
-    parent.removeChild(textNode);
-
-    count++;
-  });
-
-  return count;
-}
-
-function markCurrentPageMatch(pageEl: HTMLElement, isCurrent: boolean) {
-  const textLayer = getTextLayer(pageEl);
-  textLayer?.querySelectorAll("[data-pdf-search]").forEach((el) => {
-    const e = el as HTMLElement;
-    if (isCurrent) {
-      e.style.background = "rgba(234,179,8,0.55)";
-      e.style.outline    = "2px solid rgba(234,179,8,0.9)";
-    } else {
-      e.style.background = "rgba(59,130,246,0.35)";
-      e.style.outline    = "1px solid rgba(59,130,246,0.55)";
-    }
-  });
-}
-
-function clearPageHighlights(_pageEl: HTMLElement) {
-  // no-op per page — we clear globally via clearAllMarks()
-}
-
-// --- DocumentPreview
+// ─── DocumentPreview ─────────────────────────────────────────────────────────
 interface DocumentPreviewProps {
   src: File | string;
   findings: VulnerabilityFinding[];
@@ -403,37 +515,37 @@ interface DocumentPreviewProps {
 export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageMetaMap, setPageMetaMap] = useState<Record<number, PageMeta>>({});
-  const [active, setActive] = useState<ActiveFinding | null>(null);
+  const [active, setActive] = useState<ActiveGroup | null>(null);
   const [containerWidth, setContainerWidth] = useState(800);
 
-  // ── Search state ──
+  // Search state
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [matchPages, setMatchPages] = useState<number[]>([]); // pages with ≥1 hit
+  const [matchPages, setMatchPages] = useState<number[]>([]);
   const [matchIdx, setMatchIdx] = useState(0);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  // per-page div refs so we can scroll to them
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const pageEls = useRef<Record<number, HTMLDivElement | null>>({});
 
-  // ── Normalise src ──
   const isUrl = typeof src === "string";
   const fileName = isUrl ? src.split("/").pop() ?? "document.pdf" : src.name;
   const isPdf = isUrl ? true : src.type === "application/pdf";
   const pdfSource: File | string = src;
 
-  // ── ResizeObserver: re-measure whenever the panel is dragged ──
   const measuredRef = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
+
     setContainerWidth(node.getBoundingClientRect().width);
+
     const ro = new ResizeObserver(([entry]) => {
       setContainerWidth(entry.contentRect.width);
     });
+
     ro.observe(node);
+
+    return () => ro.disconnect();
   }, []);
 
-  // ── Ctrl+F / Escape keyboard shortcut ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
@@ -441,62 +553,80 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
         setSearchOpen(true);
         setTimeout(() => searchInputRef.current?.focus(), 50);
       }
+
       if (e.key === "Escape") {
         setSearchOpen(false);
         setSearchQuery("");
       }
     };
+
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ── Run search across all rendered page elements ──
-  const runSearch = useCallback((query: string) => {
-    clearAllMarks(); // tear down previous marks before injecting new ones
-    const hits: number[] = [];
+  const scrollToPage = useCallback((pageNum: number) => {
     Object.entries(pageEls.current).forEach(([num, el]) => {
-      if (!el) return;
-      const count = applyPageHighlights(el, query);
-      if (count > 0) hits.push(Number(num));
+      if (el) {
+        markCurrentPageMatch(el, Number(num) === pageNum);
+      }
     });
-    // Sort ascending
-    hits.sort((a, b) => a - b);
-    setMatchPages(hits);
-    setMatchIdx(0);
-    if (hits.length > 0) scrollToPage(hits[0]);
+
+    pageEls.current[pageNum]?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }, []);
 
-  // Re-run search whenever query changes
+  const runSearch = useCallback(
+    (query: string) => {
+      clearAllMarks();
+
+      const hits: number[] = [];
+
+      Object.entries(pageEls.current).forEach(([num, el]) => {
+        if (!el) return;
+
+        const count = applyPageHighlights(el, query);
+        if (count > 0) hits.push(Number(num));
+      });
+
+      hits.sort((a, b) => a - b);
+      setMatchPages(hits);
+      setMatchIdx(0);
+
+      if (hits.length > 0) {
+        scrollToPage(hits[0]);
+      }
+    },
+    [scrollToPage]
+  );
+
   useEffect(() => {
     if (!searchQuery.trim()) {
       clearAllMarks();
       setMatchPages([]);
+      setMatchIdx(0);
       return;
     }
+
     runSearch(searchQuery);
   }, [searchQuery, runSearch]);
 
-  const scrollToPage = (pageNum: number) => {
-    // Mark previous current match as normal, new one as current
-    Object.entries(pageEls.current).forEach(([num, el]) => {
-      if (el) markCurrentPageMatch(el, Number(num) === pageNum);
-    });
-    pageEls.current[pageNum]?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
   const goNext = useCallback(() => {
     if (matchPages.length === 0) return;
+
     const next = (matchIdx + 1) % matchPages.length;
     setMatchIdx(next);
     scrollToPage(matchPages[next]);
-  }, [matchIdx, matchPages]);
+  }, [matchIdx, matchPages, scrollToPage]);
 
   const goPrev = useCallback(() => {
     if (matchPages.length === 0) return;
+
     const prev = (matchIdx - 1 + matchPages.length) % matchPages.length;
     setMatchIdx(prev);
     scrollToPage(matchPages[prev]);
-  }, [matchIdx, matchPages]);
+  }, [matchIdx, matchPages, scrollToPage]);
 
   const closeSearch = useCallback(() => {
     clearAllMarks();
@@ -506,29 +636,27 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
     setSearchQuery("");
   }, []);
 
-  // ── Finding overlay callbacks (unchanged) ──
   const handleClick = useCallback(
-    (finding: VulnerabilityFinding, el: HTMLElement) => {
+    (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => {
       setActive((prev) =>
-        prev && makeFindingId(prev.finding) === makeFindingId(finding)
+        prev?.bboxKey === bboxKey
           ? null
-          : { finding, anchorEl: el }
+          : { findings: group, bboxKey, anchorEl: el }
       );
     },
     []
   );
 
   const handlePageClick = useCallback(() => setActive(null), []);
-  const activeFindingId = active ? makeFindingId(active.finding) : null;
 
   return (
     <>
-      {/* File name strip */}
       <div className="flex items-center justify-between text-sm text-muted-foreground px-1 shrink-0">
         <div className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4" />
           <span>{fileName}</span>
         </div>
+
         <button
           onClick={() => {
             if (searchOpen) {
@@ -539,13 +667,14 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
             }
           }}
           title="Search (Ctrl+F)"
-          className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
+          className={`p-1 rounded hover:bg-muted transition-colors ${
+            searchOpen ? "text-foreground bg-muted" : ""
+          }`}
         >
           <Search className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Search bar — shown when open */}
       {searchOpen && (
         <div className="shrink-0">
           <SearchBar
@@ -563,7 +692,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
 
       {!isPdf && (
         <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-          Only PDF files are allowed.
+          Only PDF files are supported.
         </div>
       )}
 
@@ -597,7 +726,9 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
             {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNumber) => (
               <div
                 key={pageNumber}
-                ref={(el) => { pageEls.current[pageNumber] = el; }}
+                ref={(el) => {
+                  pageEls.current[pageNumber] = el;
+                }}
                 style={{ position: "relative", marginBottom: 12 }}
               >
                 <Page
@@ -615,7 +746,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
                         originalHeight: page.originalHeight,
                       },
                     }));
-                    // Re-apply search highlights after page (re)renders
+
                     if (searchQuery.trim() && pageEls.current[pageNumber]) {
                       applyPageHighlights(pageEls.current[pageNumber]!, searchQuery);
                     }
@@ -627,7 +758,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
                     pageNumber={pageNumber}
                     pageMeta={pageMetaMap[pageNumber]}
                     findings={findings}
-                    activeFindingId={activeFindingId}
+                    activeBboxKey={active?.bboxKey ?? null}
                     onClick={handleClick}
                   />
                 )}
@@ -637,9 +768,11 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
         </div>
       )}
 
-      {/* Floating popover — unchanged */}
       {active && (
-        <FindingPopover finding={active.finding} anchorEl={active.anchorEl} />
+        <FindingPopover
+          findings={active.findings}
+          anchorEl={active.anchorEl}
+        />
       )}
     </>
   );
