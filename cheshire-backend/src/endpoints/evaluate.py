@@ -112,12 +112,12 @@ async def evaluate_document(
 
 
 def _get_latest(session_path: Path) -> str:
-    timestamps = set()
+    timestamps = {}
     for root, _, filenames in os.walk(session_path / "documents"):
         for filename in filenames:
             if filename.endswith(".pdf"):
-                timestamps.add(datetime.fromisoformat(filename.split("__")[0]))
-    return max(timestamps).isoformat()
+                timestamps[datetime.fromisoformat(filename.split("__")[0])] = filename
+    return timestamps[max(timestamps)]
     
 
 @evaluate_router.get("/{session_id}/result")
@@ -127,4 +127,13 @@ async def get_latest_evaluation_results(
 ) -> list[VulnerabilityDetails]:
     findings_history: list[Event] = history.get_recent(session_id=session_id, event_types=[EventType.VULNERABILITY_FINDING])
     return [VulnerabilityDetails.model_validate_json(event.content) for event in findings_history]
+
+@evaluate_router.get("/{session_id}/document")
+async def get_document(
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")]
+) -> Response:
+    latest_document = Path(SESSION_DIR) / session_id / "documents" / _get_latest(Path(SESSION_DIR) / session_id)
+    if not latest_document.exists():
+        return Response(status_code=404, content=f"Document for session {session_id} not found")
+    return FileResponse(latest_document, media_type="application/pdf")
     
