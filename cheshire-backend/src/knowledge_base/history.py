@@ -67,25 +67,6 @@ class EventRepository(Protocol):
         """Returns the event with the given id."""
         ...
 
-@dataclass(frozen=True, kw_only=True)
-class SimplerEventRepository:
-    """
-    An event repository wherein the session ID is already set on init.
-    """
-    session_id: str
-    repo: EventRepository
-    
-    def save(self, event: Event) -> None:
-        if event.session_id != self.session_id:
-            raise ValueError("Event session id does not match the repository session id")
-        self.repo.save(event)
-    
-    def get_recent(self, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
-        return self.repo.get_recent(self.session_id, k, event_types=event_types)
-    
-    def get_event(self, event_id: int) -> Optional[Event]:
-        return self.repo.get_event(event_id)
-    
 class SqliteEventRepository(EventRepository):
     def __init__(self, history: sqlite.Connection):
         self.history = history
@@ -121,7 +102,7 @@ class SqliteEventRepository(EventRepository):
     
     def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
         """Returns the last k events."""
-        if event_types is None:
+        if event_types is None or len(event_types) == 0:
             self.cursor.execute("SELECT * FROM event WHERE session_id = ? ORDER BY event_id DESC LIMIT ?", (session_id, k))
         else:
             self.cursor.execute(
