@@ -19,7 +19,7 @@ from cheshire_configs.core import PipelineConfig
 from cheshire_configs.resolver import resolve_config
 from knowledge_base.history import Event, EventType, SqliteEventRepository, StreamCallbackFactory
 from knowledge_base.session_manager import SqliteSessionRepository, Session
-from endpoints.helpers import create_vector_stores
+from endpoints.helpers import get_or_create_vector_stores
 from tools.knowledge import get_relevant_facts_tool
 
 chat_router = APIRouter()
@@ -35,7 +35,7 @@ async def get_sessions(
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
-    session_db_path = Path(SESSION_DIR) / username / "session_metadata.sqlite"
+    session_db_path = Path(SESSION_DIR) / username / f"{username}.sqlite"
     if not session_db_path.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -51,8 +51,7 @@ async def chat_history(
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
-    session_path = Path(SESSION_DIR) / username / session_id
-    history_db_path = session_path / "history.sqlite"
+    history_db_path = Path(SESSION_DIR) / username / f"{username}.sqlite"
     
     if not history_db_path.exists():
         raise HTTPException(status_code=404, detail="Session not found")
@@ -77,8 +76,8 @@ async def chat(
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
-    session_path = Path(SESSION_DIR) / username / session_id
-    history_db_path = session_path / "history.sqlite"
+    user_path = Path(SESSION_DIR) / username
+    history_db_path = user_path / f"{username}.sqlite"
     
     if not history_db_path.exists():
         raise HTTPException(status_code=404, detail="Session not found")
@@ -97,7 +96,7 @@ async def chat(
     history_repo.save(user_event)
 
     # Initialize Vector Store (LanceDB)
-    vector_stores = await create_vector_stores(session_path, username=username)
+    vector_stores = await get_or_create_vector_stores(user_path, username=username)
 
     recent_events = history_repo.get_recent(session_id, 1000)
     # Events are returned in DESC order, we need them in ASC order for context
@@ -126,7 +125,7 @@ async def chat(
     # Run agent
     try:
         response = agent.run(messages=[*messages, ChatMessage.from_user(body.message)])
-        # Note: StreamCallbackFactory already saved the response to history.sqlite
+        callback_factory.flush()
         return {"response": response.get("last_message", "")}
     except Exception as e:
         import logging

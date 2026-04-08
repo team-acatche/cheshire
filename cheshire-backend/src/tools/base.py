@@ -40,7 +40,7 @@ def read_vulnerabilities_tool(vulnerability_state: str) -> Tool:
 
 @tool
 def finish(
-    _confirm: bool # the model needs one required argument for tool calling to work properly, but this is otherwise unnecessary
+    confirm: bool # the model needs one required argument for tool calling to work properly, but this is otherwise unnecessary
 ) -> str:
-    """Finish the audit. Call this tool when you are done with the audit."""
+    """Finish the audit. Call this tool when you are done with the audit. Be sure to provide an argument to this function when calling it."""
     return "Audit finished."

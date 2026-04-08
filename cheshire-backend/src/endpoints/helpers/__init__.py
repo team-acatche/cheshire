@@ -11,7 +11,7 @@ class ChatStore:
     knowledge_store: LanceDBDocumentStore
     
 
-async def create_vector_stores(sessions_path: str | Path, *, username: str, dimensions: int = 384) -> ChatStore:
+async def get_or_create_vector_stores(sessions_path: str | Path, *, username: str, dimensions: int = 384) -> ChatStore:
     EVENTS_TABLE: str = "events"
     KNOWLEDGE_TABLE: str = "knowledge"
 
