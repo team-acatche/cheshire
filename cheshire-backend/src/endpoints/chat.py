@@ -28,7 +28,7 @@ SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "
 class ChatBody(BaseModel):
     message: str
 
-@chat_router.get("/{username}/chat")
+@chat_router.get("/{username}")
 async def get_sessions(
     username: str
 ) -> list[Session]:
@@ -43,7 +43,7 @@ async def get_sessions(
         session_repo = SqliteSessionRepository(session_db)
         return session_repo.get_sessions()
     
-@chat_router.get("/{username}/chat/{session_id}")
+@chat_router.get("/{username}/{session_id}")
 async def chat_history(
     username: str,
     session_id: str,
@@ -65,7 +65,7 @@ async def chat_history(
         messages = [e.to_chat_message() for e in reversed(recent_events)]
         return {"messages": messages}
 
-@chat_router.post("/{username}/chat/{session_id}")
+@chat_router.post("/{username}/{session_id}")
 async def chat(
     username: str,
     session_id: str,

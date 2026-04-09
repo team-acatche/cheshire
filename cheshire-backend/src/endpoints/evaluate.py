@@ -1,4 +1,3 @@
-import aiofiles
 import os
 import tempfile
 from pathlib import Path
@@ -9,6 +8,7 @@ import uuid
 from datetime import datetime
 import re
 import sqlite3
+import shutil
 
 from fastapi import (
     APIRouter,
@@ -56,34 +56,33 @@ async def evaluate_document(
 
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
 
-    # save the file into a temporary directory
-    tmp_file_path: Path
-    with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_file:
-        tmp_file.write(await uploaded_document.read())
-        tmp_file_path = Path(tmp_file.name)
-
-        assert tmp_file_path and tmp_file_path.exists(), "Failed to save uploaded document"
-        logger.debug(f"save({filename}): Auditing {filename}...")
-        results = await evaluate_file(tmp_file_path, config)
-        logger.info(f"save({filename}): {filename} audited.")
-    
-    if results is None:
-        raise HTTPException(status_code=500, detail="Failed to evaluate document")
-    
-    # Save the uploaded document
     _session_id: str = session_id or str(uuid.uuid4())
     user_path = Path(SESSION_DIR) / username
 
-    document_path = user_path / _session_id / "documents" / f"{datetime.now().isoformat()}__{filename}"
+    # save the file into a temporary directory
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    tmp_file.write(await uploaded_document.read())
+    tmp_file.flush()
+    tmp_file_path = Path(tmp_file.name)
 
+    assert tmp_file_path and tmp_file_path.exists(), "Failed to save uploaded document"
+
+    logger.debug(f"save({filename}): Auditing {filename}...")
+    results = await evaluate_file(tmp_file_path, config)
+    if results is None:
+        raise HTTPException(status_code=500, detail="Failed to evaluate document")
+    logger.info(f"save({filename}): {filename} audited.")
+
+    # create new session
+    document_path = user_path / _session_id / "documents"
+    saved_filename = f"{datetime.now().isoformat()}__{filename}"
+    logger.info(f"save({filename}): Saving {filename} to {document_path}...")
+    os.makedirs(document_path, exist_ok=True)
+    shutil.move(tmp_file_path, document_path / saved_filename)
+    logger.info(f"save({filename}): {document_path} saved.")
+    
+    # Save the uploaded document
     if session_id is None:
-        # create new session
-        os.makedirs(os.path.dirname(document_path), exist_ok=True)
-        logger.info(f"save({filename}): Saving {filename} to {document_path}...")
-        async with aiofiles.open(document_path, "wb") as d:
-            await d.write(await uploaded_document.read())
-        logger.info(f"save({filename}): {document_path} saved.")
-
         # Initialize session DB
         logger.debug(f"save({filename}): Saving {filename} as a new session...")
         with sqlite3.connect(user_path / f"{username}.sqlite") as session_db:
@@ -112,27 +111,49 @@ async def evaluate_document(
 
 
 def _get_latest(session_path: Path) -> str:
-    timestamps = {}
+    latest_filename: Optional[str] = None
+
+    latest: Optional[datetime] = None
     for root, _, filenames in os.walk(session_path / "documents"):
         for filename in filenames:
             if filename.endswith(".pdf"):
-                timestamps[datetime.fromisoformat(filename.split("__")[0])] = filename
-    return timestamps[max(timestamps)]
+                timestamp = datetime.fromisoformat(filename.split("__")[0])
+                if latest is None or timestamp > latest:
+                    latest = timestamp
+                    latest_filename = filename
+    if latest is None or latest_filename is None:
+        raise HTTPException(status_code=404, detail="No documents found for this session")
+
+    return latest_filename
     
 
-@evaluate_router.get("/{session_id}/result")
-async def get_latest_evaluation_results(
-    history: Annotated[EventRepository, Depends(get_history)],
+@evaluate_router.get("/{username}/{session_id}/result")
+def get_latest_evaluation_results(
+    username: Annotated[str, PathParam(description="The username of the user.")],
     session_id: Annotated[str, PathParam(description="The session ID for the document.")]
 ) -> list[VulnerabilityDetails]:
-    findings_history: list[Event] = history.get_recent(session_id=session_id, event_types=[EventType.VULNERABILITY_FINDING])
-    return [VulnerabilityDetails.model_validate_json(event.content) for event in findings_history]
+    if not SESSION_DIR:
+        raise HTTPException(status_code=500, detail="SESSION_DIR not set within the server")
 
-@evaluate_router.get("/{session_id}/document")
-async def get_document(
+    user_path = Path(SESSION_DIR) / username
+    history_db_path = user_path / f"{username}.sqlite"
+    
+    if not history_db_path.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Connect to repositories
+    with sqlite3.connect(history_db_path) as history_db:
+        history_repo = SqliteEventRepository(history_db)
+        findings_history: list[Event] = history_repo.get_recent(session_id=session_id, event_types=[EventType.VULNERABILITY_FINDING])
+        return [VulnerabilityDetails.model_validate_json(event.content) for event in findings_history]
+
+@evaluate_router.get("/{username}/{session_id}/document")
+def get_document(
+    username: Annotated[str, PathParam(description="The username of the user.")],
     session_id: Annotated[str, PathParam(description="The session ID for the document.")]
 ) -> Response:
-    latest_document = Path(SESSION_DIR) / session_id / "documents" / _get_latest(Path(SESSION_DIR) / session_id)
+    session_path = Path(SESSION_DIR) / username / session_id
+    latest_document = session_path / "documents" / _get_latest(session_path)
     if not latest_document.exists():
         return Response(status_code=404, content=f"Document for session {session_id} not found")
     return FileResponse(latest_document, media_type="application/pdf")
