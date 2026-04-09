@@ -36,7 +36,7 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await fetch(`/api/v1/${username}/chat/${sessionId}`)
+        const response = await fetch(`/api/v1/${username}/${sessionId}`)
         if (!response.ok) throw new Error("Failed to fetch history")
 
         const data = await response.json() as ResponseMessages

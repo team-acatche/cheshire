@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/resizable"
 
 async function getChats(username: string): Promise<Chat[]> {
-  return await fetch(`/api/v1/${username}/chat`)
+  return await fetch(`/api/v1/${username}`)
     .then(response => {
       if (!response.ok) {
         throw new Error(`Error getting chats: ${response.statusText}`);
@@ -55,9 +55,9 @@ export function App() {
 
   // Restore a previous session — point directly at the API URL
   const handleSelectChat = async (chat: Chat) => {
-  const url = `/api/v1/${USERNAME}/evaluate/${chat.session_id}/document`;
+  const url = `/api/v1/${USERNAME}/${chat.session_id}/document`;
   const findings: VulnerabilityFinding[] = await fetch(
-    `/api/v1/${chat.session_id}/result?username=${encodeURIComponent(USERNAME)}`
+    `/api/v1/${USERNAME}/${chat.session_id}/result`
   )
     .then(r => r.ok ? r.json() : [])
     .catch(() => []);

@@ -73,7 +73,7 @@ async def evaluate_document(
         raise HTTPException(status_code=500, detail="Failed to evaluate document")
     logger.info(f"save({filename}): {filename} audited.")
 
-    # create new session
+    # Create new session
     document_path = user_path / _session_id / "documents"
     saved_filename = f"{datetime.now().isoformat()}__{filename}"
     logger.info(f"save({filename}): Saving {filename} to {document_path}...")
