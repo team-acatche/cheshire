@@ -381,9 +381,9 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
         ref={refs.setFloating}
         style={{ ...floatingStyles, zIndex: 9999 }}
         className="
-          w-80 rounded-xl border border-amber-200/60 bg-white shadow-xl
+          w-80 rounded-xl border border-blue-200/60 bg-white shadow-xl
           ring-1 ring-black/5 overflow-hidden
-          dark:bg-zinc-900 dark:border-amber-400/20
+          dark:bg-zinc-900 dark:border-blue-400/20
           origin-top-left
           animate-in fade-in-0 zoom-in-95 slide-in-from-top-2
           duration-300
@@ -391,7 +391,7 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-amber-50 dark:bg-amber-950/40 px-4 py-3 border-b border-amber-100/80 dark:border-amber-400/15">
+        <div className="bg-blue-50 dark:bg-blue-950/40 px-4 py-3 border-b border-blue-100/80 dark:border-blue-400/15">
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug flex-1">
               {finding.title}
@@ -399,15 +399,15 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
 
             <Badge
               variant="outline"
-              className="shrink-0 text-[10px] border-amber-300 text-amber-700 dark:text-amber-400 dark:border-amber-600"
+              className="shrink-0 text-[10px] border-blue-300 text-blue-700 dark:text-blue-400 dark:border-blue-600"
             >
               pg. {finding.page_no}
             </Badge>
           </div>
 
           {total > 1 && (
-            <div className="flex items-center justify-between mt-2 pt-2 border-t border-amber-100/60 dark:border-amber-400/10">
-              <div className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400 font-medium">
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-blue-100/60 dark:border-blue-400/10">
+              <div className="flex items-center gap-1 text-[11px] text-blue-700 dark:text-blue-400 font-medium">
                 <Layers className="size-3" />
                 <span>
                   {page + 1} of {total} findings
@@ -418,10 +418,10 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
                 <button
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                   disabled={page === 0}
-                  className="p-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   aria-label="Previous finding"
                 >
-                  <ChevronLeft className="size-3.5 text-amber-700 dark:text-amber-400" />
+                  <ChevronLeft className="size-3.5 text-blue-700 dark:text-blue-400" />
                 </button>
 
                 <div className="flex gap-0.5">
@@ -431,8 +431,8 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
                       onClick={() => setPage(i)}
                       className={`rounded-full transition-all ${
                         i === page
-                          ? "w-3 h-1.5 bg-amber-500"
-                          : "w-1.5 h-1.5 bg-amber-300 hover:bg-amber-400"
+                          ? "w-3 h-1.5 bg-blue-500"
+                          : "w-1.5 h-1.5 bg-blue-300 hover:bg-blue-400"
                       }`}
                       aria-label={`Go to finding ${i + 1}`}
                     />
@@ -442,10 +442,10 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
                 <button
                   onClick={() => setPage((p) => Math.min(total - 1, p + 1))}
                   disabled={page === total - 1}
-                  className="p-0.5 rounded hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  className="p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   aria-label="Next finding"
                 >
-                  <ChevronRight className="size-3.5 text-amber-700 dark:text-amber-400" />
+                  <ChevronRight className="size-3.5 text-blue-700 dark:text-blue-400" />
                 </button>
               </div>
             </div>
@@ -469,7 +469,7 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
                     key={i}
                     className="flex gap-2 text-xs text-zinc-700 dark:text-zinc-300 leading-snug"
                   >
-                    <ChevronRight className="size-3 mt-0.5 shrink-0 text-amber-500" />
+                    <ChevronRight className="size-3 mt-0.5 shrink-0 text-blue-500" />
                     {rec}
                   </li>
                 ))}
