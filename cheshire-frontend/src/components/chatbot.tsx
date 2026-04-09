@@ -13,6 +13,7 @@ import SentIcon from "./ui/sent-icon"
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
+import { EVALUATION_MODE, PROVIDER } from "@/globals";
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
@@ -79,7 +80,7 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
     setTyping(true)
 
     try {
-      const response = await fetch(`/api/v1/${username}/chat/${sessionId}`, {
+      const response = await fetch(`/api/v1/${username}/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userText }),
