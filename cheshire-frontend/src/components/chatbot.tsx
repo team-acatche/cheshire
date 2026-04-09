@@ -10,6 +10,7 @@ import {
   SelectItem,
 } from "./ui/select"
 import SentIcon from "./ui/sent-icon"
+import ReactMarkdown from "react-markdown"
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
@@ -167,7 +168,7 @@ export function Chatbot({ findings, sessionId, username }: ChatbotProps) {
                     try {
                       return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
                     } catch (_) {
-                      return <p>{msg.text}</p>
+                      return <ReactMarkdown>{msg.text}</ReactMarkdown>
                     }
                   })()
                 }

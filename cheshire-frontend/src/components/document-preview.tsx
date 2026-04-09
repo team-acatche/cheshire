@@ -347,6 +347,8 @@ function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
     setPage(0); // reset pagination whenever a new highlight is clicked
   }, [anchorEl, refs, findings]);
 
+
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -554,13 +556,18 @@ function HighlightLayer({
 interface DocumentPreviewProps {
   src: File | string;
   findings: VulnerabilityFinding[];
+  fileName?: string;
 }
 
-export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageMetaMap, setPageMetaMap] = useState<Record<number, PageMeta>>({});
   const [active, setActive] = useState<ActiveGroup | null>(null);
   const [containerWidth, setContainerWidth] = useState(800);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
 
   // Search state
   const [searchOpen, setSearchOpen] = useState(false);
@@ -572,7 +579,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
   const pageEls = useRef<Record<number, HTMLDivElement | null>>({});
 
   const isUrl = typeof src === "string";
-  const fileName = isUrl ? src.split("/").pop() ?? "document.pdf" : src.name;
+  const displayFileName = fileName ?? (isUrl ? "document.pdf" : src.name);
   const isPdf = isUrl ? true : src.type === "application/pdf";
   const pdfSource: File | string = src;
 
@@ -608,6 +615,41 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visiblePages = entries
+          .filter((entry) => entry.isIntersecting)
+          .map((entry) => ({
+            page: Number((entry.target as HTMLElement).dataset.pageNumber),
+            ratio: entry.intersectionRatio,
+          }))
+          .sort((a, b) => b.ratio - a.ratio);
+
+        if (visiblePages.length > 0) {
+          setCurrentPage(visiblePages[0].page);
+        }
+      },
+      {
+        root: null,
+        threshold: [0.25, 0.5, 0.75],
+      }
+    );
+
+    Object.entries(pageEls.current).forEach(([pageNum, el]) => {
+      if (el) {
+        el.dataset.pageNumber = pageNum;
+        observer.observe(el);
+      }
+    });
+
+    return () => observer.disconnect();
+  }, [numPages]);
+
   const scrollToPage = useCallback((pageNum: number) => {
     Object.entries(pageEls.current).forEach(([num, el]) => {
       if (el) {
@@ -620,6 +662,27 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
       block: "start",
     });
   }, []);
+
+  const scrollToPageNumber = useCallback((pageNum: number) => {
+    const el = pageEls.current[pageNum];
+    if (!el) return;
+
+    setCurrentPage(pageNum);
+    el.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
+
+  const goToNextPage = useCallback(() => {
+    if (currentPage >= numPages) return;
+    scrollToPageNumber(currentPage + 1);
+  }, [currentPage, numPages, scrollToPageNumber]);
+
+  const goToPrevPage = useCallback(() => {
+    if (currentPage <= 1) return;
+    scrollToPageNumber(currentPage - 1);
+  }, [currentPage, scrollToPageNumber]);
 
   const runSearch = useCallback(
     (query: string) => {
@@ -672,6 +735,16 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
     scrollToPage(matchPages[prev]);
   }, [matchIdx, matchPages, scrollToPage]);
 
+  const handlePageInputSubmit = useCallback(() => {
+    const page = Number(pageInput);
+
+    if (Number.isNaN(page)) return;
+
+    const validPage = Math.min(Math.max(page, 1), numPages);
+
+    scrollToPageNumber(validPage);
+  }, [pageInput, numPages, scrollToPageNumber]);
+
   const closeSearch = useCallback(() => {
     clearAllMarks();
     setMatchPages([]);
@@ -701,7 +774,7 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
       <div className="flex items-center justify-between text-sm text-muted-foreground px-1 shrink-0">
         <div className="inline-flex items-center gap-2">
           <FileText className="h-4 w-4" />
-          <span>{fileName}</span>
+          <span>{displayFileName}</span>
         </div>
 
         <button
@@ -743,7 +816,54 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
         </div>
       )}
 
-      {fileName.toLowerCase().endsWith(".docx") && (
+      {isPdf && numPages > 0 && (
+        <div className="flex items-center justify-between px-1 py-2 shrink-0">
+          <div className="text-xs text-muted-foreground">
+            Page {currentPage} of {numPages}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToPrevPage}
+              disabled={currentPage === 1}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Previous
+            </button>
+
+            {/* PAGE INPUT */}
+            <div className="flex items-center gap-1 text-xs">
+              <input
+                type="number"
+                min={1}
+                max={numPages}
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handlePageInputSubmit();
+                  }
+                }}
+                onBlur={handlePageInputSubmit}
+                className="w-14 h-7 px-2 text-center rounded border outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span className="text-muted-foreground">/ {numPages}</span>
+            </div>
+
+            <button
+              onClick={goToNextPage}
+              disabled={currentPage === numPages}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {displayFileName.toLowerCase().endsWith(".docx") && (
         <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
           Please upload a .pdf file.
         </div>
@@ -752,13 +872,16 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
       {isPdf && (
         <div
           ref={measuredRef}
-          className="flex-1 overflow-y-auto rounded-lg"
+          className="flex-1 overflow-y-auto rounded-lg bg-zinc-300"
           style={{ position: "relative" }}
           onClick={handlePageClick}
         >
           <Document
             file={pdfSource}
-            onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+            onLoadSuccess={({ numPages }) => {
+              setNumPages(numPages);
+              setCurrentPage(1);
+            }}
             loading={
               <div className="flex items-center justify-center h-40 text-sm text-muted-foreground animate-pulse">
                 Loading document…
@@ -776,39 +899,45 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
                 ref={(el) => {
                   pageEls.current[pageNumber] = el;
                 }}
-                style={{ position: "relative", marginBottom: 12 }}
+                data-page-number={pageNumber}
+                className="flex justify-center py-4"
               >
-                <Page
-                  pageNumber={pageNumber}
-                  width={containerWidth}
-                  renderTextLayer
-                  renderAnnotationLayer={false}
-                  onRenderSuccess={(page) => {
-                    setPageMetaMap((prev) => ({
-                      ...prev,
-                      [pageNumber]: {
-                        renderedWidth: page.width,
-                        renderedHeight: page.height,
-                        originalWidth: page.originalWidth,
-                        originalHeight: page.originalHeight,
-                      },
-                    }));
-
-                    if (searchQuery.trim() && pageEls.current[pageNumber]) {
-                      applyPageHighlights(pageEls.current[pageNumber]!, searchQuery);
-                    }
-                  }}
-                />
-
-                {pageMetaMap[pageNumber] && (
-                  <HighlightLayer
+                <div
+                  className="bg-white shadow-lg border border-gray-200"
+                  style={{ position: "relative" }}
+                >
+                  <Page
                     pageNumber={pageNumber}
-                    pageMeta={pageMetaMap[pageNumber]}
-                    findings={findings}
-                    activeBboxKey={active?.bboxKey ?? null}
-                    onClick={handleClick}
+                    width={Math.min(containerWidth, 900)}
+                    renderTextLayer
+                    renderAnnotationLayer={false}
+                    onRenderSuccess={(page) => {
+                      setPageMetaMap((prev) => ({
+                        ...prev,
+                        [pageNumber]: {
+                          renderedWidth: page.width,
+                          renderedHeight: page.height,
+                          originalWidth: page.originalWidth,
+                          originalHeight: page.originalHeight,
+                        },
+                      }));
+
+                      if (searchQuery.trim() && pageEls.current[pageNumber]) {
+                        applyPageHighlights(pageEls.current[pageNumber]!, searchQuery);
+                      }
+                    }}
                   />
-                )}
+
+                  {pageMetaMap[pageNumber] && (
+                    <HighlightLayer
+                      pageNumber={pageNumber}
+                      pageMeta={pageMetaMap[pageNumber]}
+                      findings={findings}
+                      activeBboxKey={active?.bboxKey ?? null}
+                      onClick={handleClick}
+                    />
+                  )}
+                </div>
               </div>
             ))}
           </Document>
