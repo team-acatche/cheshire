@@ -8,7 +8,7 @@ import {
   SidebarInset,
 } from "./components/ui/sidebar"
 import DocumentPreview from "./components/document-preview"
-import { evaluateDocument, saveResult } from "./lib/helpers/evaluate_document"
+import { evaluateDocument } from "./lib/helpers/evaluate_document"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
@@ -53,12 +53,18 @@ export function App() {
     setCurrentSessionId(null)
   }
 
-  // Restore a previous session — point directly at the API URL, no blob fetch needed
-  const handleSelectChat = (chat: Chat) => {
-    const url = `/api/v1/${USERNAME}/evaluate/${chat.session_id}/result`;
-    setFile(url)
-    setFindings(chat.findings || [])
-    setCurrentSessionId(chat.session_id)
+  // Restore a previous session — point directly at the API URL
+  const handleSelectChat = async (chat: Chat) => {
+  const url = `/api/v1/${USERNAME}/evaluate/${chat.session_id}/document`;
+  const findings: VulnerabilityFinding[] = await fetch(
+    `/api/v1/${chat.session_id}/result?username=${encodeURIComponent(USERNAME)}`
+  )
+    .then(r => r.ok ? r.json() : [])
+    .catch(() => []);
+
+  setFile(url)
+  setFindings(findings)
+  setCurrentSessionId(chat.session_id)
   }
 
   return (
@@ -111,10 +117,6 @@ export function App() {
                               alert("Failed to evaluate document.");
                               return;
                             }
-
-                            // Save the original, unmodified PDF as the stored result.
-                            // Highlights are now rendered as overlays — no pdf-lib mutation needed.
-                            await saveResult(response.session_id, fileInput);
 
                             const newChat: Chat = {
                               session_id: response.session_id,

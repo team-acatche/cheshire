@@ -320,19 +320,60 @@ function FindingOverlay({
 interface FindingPopoverProps {
   findings: VulnerabilityFinding[];
   anchorEl: HTMLElement;
+  onClose: () => void;
 }
 
-function FindingPopover({ findings, anchorEl }: FindingPopoverProps) {
+function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
   const [page, setPage] = useState(0);
   const finding = findings[page];
   const total = findings.length;
 
   const { refs, floatingStyles } = useFloating({
-    elements: { reference: anchorEl },
-    middleware: [offset(10), flip({ padding: 12 }), shift({ padding: 12 })],
-    whileElementsMounted: autoUpdate,
     placement: "bottom-start",
+    strategy: "fixed",
+    middleware: [
+      offset(10),
+      flip({
+        padding: 12,
+        fallbackPlacements: ["top-start", "right-start", "left-start"],
+      }),
+      shift({ padding: 12 }),
+    ],
+    whileElementsMounted: autoUpdate,
   });
+
+  useEffect(() => {
+    refs.setReference(anchorEl);
+    setPage(0); // reset pagination whenever a new highlight is clicked
+  }, [anchorEl, refs, findings]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+
+    const handlePointerDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      const floating = refs.floating.current;
+
+      if (
+        floating &&
+        target &&
+        !floating.contains(target) &&
+        !anchorEl.contains(target)
+      ) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [anchorEl, onClose, refs.floating]);
 
   return (
     <FloatingPortal>
@@ -343,8 +384,11 @@ function FindingPopover({ findings, anchorEl }: FindingPopoverProps) {
           w-80 rounded-xl border border-amber-200/60 bg-white shadow-xl
           ring-1 ring-black/5 overflow-hidden
           dark:bg-zinc-900 dark:border-amber-400/20
-          animate-in fade-in-0 zoom-in-95 duration-100
+          origin-top-left
+          animate-in fade-in-0 zoom-in-95 slide-in-from-top-2
+          duration-300
         "
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="bg-amber-50 dark:bg-amber-950/40 px-4 py-3 border-b border-amber-100/80 dark:border-amber-400/15">
@@ -638,11 +682,14 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
 
   const handleClick = useCallback(
     (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => {
-      setActive((prev) =>
-        prev?.bboxKey === bboxKey
-          ? null
-          : { findings: group, bboxKey, anchorEl: el }
-      );
+      setActive((prev) => {
+        if (prev?.bboxKey === bboxKey) return null;
+        return null;
+      });
+
+      requestAnimationFrame(() => {
+        setActive({ findings: group, bboxKey, anchorEl: el });
+      });
     },
     []
   );
@@ -770,8 +817,10 @@ export function DocumentPreview({ src, findings }: DocumentPreviewProps) {
 
       {active && (
         <FindingPopover
+          key={active.bboxKey}
           findings={active.findings}
           anchorEl={active.anchorEl}
+          onClose={() => setActive(null)}
         />
       )}
     </>
