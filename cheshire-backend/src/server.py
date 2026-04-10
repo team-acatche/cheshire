@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cheshire_configs.registry import configs
 from endpoints.evaluate import evaluate_router
 from endpoints.chat import chat_router
+from endpoints.user_auth import auth_router
 
 api = FastAPI(dependencies=[Depends(configs)])
 api.add_middleware(
@@ -27,6 +28,11 @@ api.include_router(
 
 api.include_router(
     chat_router,
+    prefix="/api/v1",
+)
+
+api.include_router(
+    auth_router,
     prefix="/api/v1",
 )
 
