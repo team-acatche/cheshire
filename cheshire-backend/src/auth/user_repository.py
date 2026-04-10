@@ -64,19 +64,19 @@ class SqliteUserRepository(UserRepository):
         self.hasher = hasher
     
     def create_table_if_not_exists(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user (
                     user_id TEXT PRIMARY KEY,
                     username TEXT NOT NULL UNIQUE,
                     sessions_folder TEXT NOT NULL,
-                    full_name TEXT NOT NULL DEFAULT '',
-                    avatar_uri TEXT NOT NULL DEFAULT 'avatars/default.png',
+                    full_name TEXT DEFAULT 'user',
+                    avatar_uri TEXT DEFAULT 'avatars/default.png',
                     password_hash TEXT NOT NULL,
                     prefix_salt TEXT NOT NULL,
                     suffix_salt TEXT NOT NULL,
-                    disabled BOOLEAN NOT NULL DEFAULT 0,
+                    disabled BOOLEAN DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
             """)
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS username_idx ON user(username);")
@@ -84,7 +84,7 @@ class SqliteUserRepository(UserRepository):
 
     def login(self, username: str, password: str) -> UserEntity:
         self.create_table_if_not_exists()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT user_id,
@@ -97,7 +97,7 @@ class SqliteUserRepository(UserRepository):
                        suffix_salt,
                        disabled,
                        created_at
-                FROM users
+                FROM user
                 WHERE username = ?
                 LIMIT 1;
             """, (username,))
@@ -164,11 +164,15 @@ class SqliteUserRepository(UserRepository):
         if full_name is not None:
             fields_and_values["full_name"] = full_name
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                f"INSERT INTO users ({', '.join(fields_and_values.keys())}) VALUES ({', '.join(['?'] * len(fields_and_values))})",
-                list(fields_and_values.values()),
-            )
+            try:
+                cursor.execute(
+                    f"INSERT INTO user ({', '.join(fields_and_values.keys())}) VALUES ({', '.join(['?'] * len(fields_and_values))})",
+                    list(fields_and_values.values()),
+                )
+            except sqlite3.IntegrityError:
+                raise HTTPException(status_code=409, detail=f"User {username} already exists")
+
             conn.commit()
             return new_user
