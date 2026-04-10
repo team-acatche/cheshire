@@ -33,6 +33,8 @@ from knowledge_base.session_manager import Session, SqliteSessionRepository
 from knowledge_base.history import Event, EventType, SqliteEventRepository, EventRepository
 from endpoints.helpers import get_or_create_vector_stores
 from auth.db_access import get_history
+from auth.models import User
+from auth.dependencies import get_current_user
 
 load_dotenv()
 SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
@@ -44,16 +46,17 @@ class EvaluateResponse(BaseModel):
     session_id: str
     vulnerabilities: list[VulnerabilityDetails]
 
-@evaluate_router.post("/{username}/evaluate")
+@evaluate_router.post("/evaluate")
 async def evaluate_document(
     config: Annotated[PipelineConfig, Depends(resolve_config)],
-    username: Annotated[str, PathParam(description="The username of the user")],
+    current_user: Annotated[User, Depends(get_current_user)],
     uploaded_document: Annotated[UploadFile, File(description="The document to be evaluated")],
     session_id: Annotated[Optional[str], Query(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
 ) -> EvaluateResponse:
     if not SESSION_DIR:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set within the server")
 
+    username = current_user.username
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
 
     _session_id: str = session_id or str(uuid.uuid4())
@@ -127,14 +130,15 @@ def _get_latest(session_path: Path) -> str:
     return latest_filename
     
 
-@evaluate_router.get("/{username}/{session_id}/result")
+@evaluate_router.get("/{session_id}/result")
 def get_latest_evaluation_results(
-    username: Annotated[str, PathParam(description="The username of the user.")],
-    session_id: Annotated[str, PathParam(description="The session ID for the document.")]
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[VulnerabilityDetails]:
     if not SESSION_DIR:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set within the server")
 
+    username = current_user.username
     user_path = Path(SESSION_DIR) / username
     history_db_path = user_path / f"{username}.sqlite"
     
@@ -147,14 +151,14 @@ def get_latest_evaluation_results(
         findings_history: list[Event] = history_repo.get_recent(session_id=session_id, event_types=[EventType.VULNERABILITY_FINDING])
         return [VulnerabilityDetails.model_validate_json(event.content) for event in findings_history]
 
-@evaluate_router.get("/{username}/{session_id}/document")
+@evaluate_router.get("/{session_id}/document")
 def get_document(
-    username: Annotated[str, PathParam(description="The username of the user.")],
-    session_id: Annotated[str, PathParam(description="The session ID for the document.")]
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
+    username = current_user.username
     session_path = Path(SESSION_DIR) / username / session_id
     latest_document = session_path / "documents" / _get_latest(session_path)
     if not latest_document.exists():
         return Response(status_code=404, content=f"Document for session {session_id} not found")
     return FileResponse(latest_document, media_type="application/pdf")
-    

@@ -21,6 +21,8 @@ from knowledge_base.history import Event, EventType, SqliteEventRepository, Stre
 from knowledge_base.session_manager import SqliteSessionRepository, Session
 from endpoints.helpers import get_or_create_vector_stores
 from tools.knowledge import get_relevant_facts_tool
+from auth.models import User
+from auth.dependencies import get_current_user
 
 chat_router = APIRouter()
 SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", ""))) if os.getenv("SESSIONS_PATH") else None
@@ -28,13 +30,14 @@ SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "
 class ChatBody(BaseModel):
     message: str
 
-@chat_router.get("/{username}")
+@chat_router.get("/")
 async def get_sessions(
-    username: str
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[Session]:
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
+    username = current_user.username
     session_db_path = Path(SESSION_DIR) / username / f"{username}.sqlite"
     if not session_db_path.exists():
         raise HTTPException(status_code=404, detail="Session not found")
@@ -43,14 +46,15 @@ async def get_sessions(
         session_repo = SqliteSessionRepository(session_db)
         return session_repo.get_sessions()
     
-@chat_router.get("/{username}/{session_id}")
+@chat_router.get("/{session_id}")
 async def chat_history(
-    username: str,
     session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
+    username = current_user.username
     history_db_path = Path(SESSION_DIR) / username / f"{username}.sqlite"
     
     if not history_db_path.exists():
@@ -65,17 +69,18 @@ async def chat_history(
         messages = [e.to_chat_message() for e in reversed(recent_events)]
         return {"messages": messages}
 
-@chat_router.post("/{username}/{session_id}")
+@chat_router.post("/{session_id}")
 async def chat(
-    username: str,
     session_id: str,
     body: ChatBody,
+    current_user: Annotated[User, Depends(get_current_user)],
     config: Annotated[PipelineConfig, Depends(resolve_config)],
 ):
     # TODO: make this SSE
     if SESSION_DIR is None:
         raise HTTPException(status_code=500, detail="SESSION_DIR not set")
 
+    username = current_user.username
     user_path = Path(SESSION_DIR) / username
     history_db_path = user_path / f"{username}.sqlite"
     
