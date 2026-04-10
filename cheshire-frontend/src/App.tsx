@@ -7,7 +7,7 @@
     SidebarTrigger,
     SidebarInset,
   } from "./components/ui/sidebar"
-  import DocumentPreview from "./components/document-preview"
+  import DocumentPreview from "./components/document-preview/DocumentPreview"
   import { evaluateDocument } from "./lib/helpers/evaluate_document"
   import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
   import { Chatbot } from "./components/chatbot"
