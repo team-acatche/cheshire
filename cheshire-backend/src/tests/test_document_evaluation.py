@@ -79,7 +79,7 @@ def _build_docling_doc(
             mimetype="image/png",
             dpi=72,
             size=Size(width=1, height=1),
-            uri="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQIHWNgAAIABQABNjN9GQAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAABl0RVh0U29mdHdhcmUAcGFpbnQubmV0IDQuMC41ZYUyZQAAAA1JREFUGFdjYGBg+A8AAQQBAB1MQ2wAAAAASUVORK5CYII=",
+            uri="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQIHWNgAAIABQABNjN9GQAAAAlwSFlzAAAWJQAAFiUBSVIk8AAAABl0RVh0U29mdHdhcmUAcGFpbnQubmV0IDQuMC41ZYUyZQAAAA1JREFUGFdjYGBg+A8AAQQBAB1MQ2wAAAAASUVORK5CYII=", # type: ignore
         )
         pic = doc.add_picture(caption=caption_item, image=placeholder_image)
         if picture_description:
@@ -121,30 +121,33 @@ PDF_BYTES = _make_pdf_bytes()
 class TestSuccessfulEvaluation:
     """Happy-path tests for the /evaluate endpoint."""
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_successful_pdf_evaluation(self):
         """Upload a PDF → 200, response is a list."""
         doc = _build_docling_doc(paragraphs=["Hello world."])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/evaluate",
+                "/api/v1/testuser/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        assert isinstance(response.json()["vulnerabilities"], list)
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_response_contains_expected_text(self):
         """Returned sources contain the text from the DoclingDocument."""
         doc = _build_docling_doc(paragraphs=["First paragraph.", "Second paragraph."])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/evaluate",
+                "/api/v1/testuser/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
-        data = response.json()
+        data = response.json()["vulnerabilities"]
         titles = [item["title"] for item in data]
         assert "Vulnerability 0" in titles
         assert "Vulnerability 1" in titles
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_response_metadata_fields(self):
         """Each source has all expected metadata fields with correct types."""
         doc = _build_docling_doc(
@@ -154,10 +157,10 @@ class TestSuccessfulEvaluation:
         )
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/evaluate",
+                "/api/v1/testuser/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
-        data = response.json()
+        data = response.json()["vulnerabilities"]
         assert len(data) == 1
 
         source = data[0]
@@ -170,15 +173,16 @@ class TestSuccessfulEvaluation:
 
         assert source["page_no"] == 1
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_source_ids_are_unique(self):
         """All source_id values in the response are unique valid UUIDs."""
         doc = _build_docling_doc(paragraphs=["A", "B", "C", "D", "E"])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/evaluate",
+                "/api/v1/testuser/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
-        data = response.json()
+        data = response.json()["vulnerabilities"]
         titles = [item["title"] for item in data]
 
         # All unique
@@ -188,30 +192,32 @@ class TestSuccessfulEvaluation:
 class TestEmptyAndEdgeCases:
     """Edge-case tests."""
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_empty_document_returns_empty_list(self):
         """A document with no text or picture items returns []."""
         doc = _build_docling_doc()
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/evaluate",
+                "/api/v1/testuser/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["vulnerabilities"] == []
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_filename_fallback(self):
         """When UploadFile.filename is None, the endpoint uses 'upload' fallback."""
         doc = _build_docling_doc(paragraphs=["Content here."])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/evaluate",
+                "/api/v1/testuser/evaluate",
                 # Use a real filename here; the fallback logic is already covered by
                 # the server.py code `filename = uploaded_document.filename or "upload"`.
                 # We verify it doesn't crash with an unusual filename.
                 files={"uploaded_document": ("upload", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        assert isinstance(response.json()["vulnerabilities"], list)
 
 
 # TestPictureHandling removed as document_source is obsolete
@@ -220,7 +226,8 @@ class TestEmptyAndEdgeCases:
 class TestRequestValidation:
     """Tests for invalid requests."""
 
+    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_missing_file_returns_422(self):
         """No file uploaded → 422 validation error."""
-        response = client.post("/api/v1/evaluate")
+        response = client.post("/api/v1/testuser/evaluate")
         assert response.status_code == 422
