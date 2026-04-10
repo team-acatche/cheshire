@@ -14,6 +14,7 @@ import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./sear
 import { SearchBar } from "./SearchBar";
 import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
+import { PdfPageSkeleton} from "./PdfPageSkeleton"
  
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -416,11 +417,7 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
               setNumPages(numPages);
               setCurrentPage(1);
             }}
-            loading={
-              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground animate-pulse">
-                Loading document…
-              </div>
-            }
+            loading={<PdfPageSkeleton zoomLevel={zoomLevel} />}
             error={
               <div className="flex items-center justify-center h-40 text-sm text-destructive">
                 Failed to load PDF.
