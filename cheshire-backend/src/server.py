@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from cheshire_configs.registry import configs
@@ -36,7 +36,7 @@ api.include_router(
     prefix="/api/v1",
 )
 
-@api.get("/healthcheck", status_code=200)
+@api.get("/healthcheck", status_code=status.HTTP_200_OK)
 def healthcheck() -> str:
     return "Cheshire is running"
 

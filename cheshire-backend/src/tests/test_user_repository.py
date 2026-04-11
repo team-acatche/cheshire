@@ -1,5 +1,5 @@
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from auth.models import User, UserEntity
 from auth.user_repository import InMemoryUserRepository, SqliteUserRepository
@@ -39,7 +39,7 @@ def test_register_duplicate_username(repo):
     with pytest.raises(HTTPException) as excinfo:
         repo.register(email="bob@example.com", username="bob", password="different_password")
         
-    assert excinfo.value.status_code == 409
+    assert excinfo.value.status_code == status.HTTP_409_CONFLICT
     assert excinfo.value.detail == "bob@example.com already exists"
 
 def test_login_success(repo):
@@ -53,7 +53,7 @@ def test_login_user_not_found(repo):
     with pytest.raises(HTTPException) as excinfo:
         repo.login(email="nonexistent@example.com", password="password")
         
-    assert excinfo.value.status_code == 404
+    assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
     assert excinfo.value.detail == "User nonexistent@example.com not found"
 
 def test_login_invalid_password(repo):
@@ -62,7 +62,7 @@ def test_login_invalid_password(repo):
     with pytest.raises(HTTPException) as excinfo:
         repo.login(email="david@example.com", password="wrong_password")
         
-    assert excinfo.value.status_code == 401
+    assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED
     assert excinfo.value.detail == "Invalid username or password for david@example.com"
 
 def test_login_disabled_user(repo):
@@ -73,7 +73,7 @@ def test_login_disabled_user(repo):
     with pytest.raises(HTTPException) as excinfo:
         repo.login(email="eve@example.com", password="password_eve")
         
-    assert excinfo.value.status_code == 403
+    assert excinfo.value.status_code == status.HTTP_403_FORBIDDEN
     assert excinfo.value.detail == "eve@example.com is disabled"
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def test_sqlite_register_duplicate_username(sqlite_repo):
     sqlite_repo.register(email="bob@example.com", username="bob", password="password123")
     with pytest.raises(HTTPException) as excinfo:
         sqlite_repo.register(email="bob@example.com", username="bob", password="different_password")
-    assert excinfo.value.status_code == 409
+    assert excinfo.value.status_code == status.HTTP_409_CONFLICT
     assert excinfo.value.detail == "User with email `bob@example.com` already exists"
 
 def test_sqlite_login_success(sqlite_repo):
@@ -104,10 +104,10 @@ def test_sqlite_login_success(sqlite_repo):
 def test_sqlite_login_user_not_found(sqlite_repo):
     with pytest.raises(HTTPException) as excinfo:
         sqlite_repo.login(email="nonexistent@example.com", password="password")
-    assert excinfo.value.status_code == 404
+    assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
 
 def test_sqlite_login_invalid_password(sqlite_repo):
     sqlite_repo.register(email="david@example.com", username="david", password="correct_password")
     with pytest.raises(HTTPException) as excinfo:
         sqlite_repo.login(email="david@example.com", password="wrong_password")
-    assert excinfo.value.status_code == 401
+    assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED

@@ -3,6 +3,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import status
 from fastapi.testclient import TestClient
 from docling_core.types.doc import DoclingDocument, BoundingBox
 from docling_core.types.doc.document import (
@@ -137,7 +138,7 @@ class TestSuccessfulEvaluation:
                 "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
-        assert response.status_code == 200
+        assert response.status_code == status.HTTP_200_OK
         assert isinstance(response.json()["vulnerabilities"], list)
 
     @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
@@ -208,7 +209,7 @@ class TestEmptyAndEdgeCases:
                 "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
-        assert response.status_code == 200
+        assert response.status_code == status.HTTP_200_OK
         assert response.json()["vulnerabilities"] == []
 
     @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
@@ -223,7 +224,7 @@ class TestEmptyAndEdgeCases:
                 # We verify it doesn't crash with an unusual filename.
                 files={"uploaded_document": ("upload", PDF_BYTES, "application/pdf")},
             )
-        assert response.status_code == 200
+        assert response.status_code == status.HTTP_200_OK
         assert isinstance(response.json()["vulnerabilities"], list)
 
 
@@ -237,4 +238,4 @@ class TestRequestValidation:
     def test_missing_file_returns_422(self):
         """No file uploaded → 422 validation error."""
         response = client.post("/api/v1/evaluate")
-        assert response.status_code == 422
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

@@ -4,7 +4,7 @@ import sqlite3
 from typing import Protocol, Optional
 from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from auth.models import User, UserEntity, generate_salt
 from auth.hashers import PasswordHasher
@@ -29,18 +29,18 @@ class InMemoryUserRepository(UserRepository):
 
     def login(self, email: str, password: str) -> UserEntity:
         if email not in self.users:
-            raise HTTPException(status_code=404, detail=f"User {email} not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {email} not found")
         user_entity = self.users[email]
 
         if not self.hasher.verify(f"{user_entity.prefix_salt}{password}{user_entity.suffix_salt}", user_entity.password_hash):
-            raise HTTPException(status_code=401, detail=f"Invalid username or password for {email}")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid username or password for {email}")
         if user_entity.disabled:
-            raise HTTPException(status_code=403, detail=f"{email} is disabled")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{email} is disabled")
         return user_entity
 
     def register(self, email: str, password: str, *, username: Optional[str] = None, full_name: Optional[str] = None) -> UserEntity:
         if email in self.users:
-            raise HTTPException(status_code=409, detail=f"{email} already exists")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"{email} already exists")
 
         prefix_salt = generate_salt()
         suffix_salt = generate_salt()
@@ -106,7 +106,7 @@ class SqliteUserRepository(UserRepository):
             """, (email,))
             row = cursor.fetchone()
             if row is None:
-                raise HTTPException(status_code=404, detail=f"User with email `{email}` not found")
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with email `{email}` not found")
 
             user = UserEntity(
                 user=User(
@@ -125,9 +125,9 @@ class SqliteUserRepository(UserRepository):
             )
 
             if not self.hasher.verify(f"{user.prefix_salt}{password}{user.suffix_salt}", user.password_hash):
-                raise HTTPException(status_code=401, detail=f"Invalid username or password for {email}")
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid username or password for {email}")
             if user.disabled:
-                raise HTTPException(status_code=403, detail=f"User for email `{email}` is disabled")
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User for email `{email}` is disabled")
 
             return user
 
@@ -181,7 +181,7 @@ class SqliteUserRepository(UserRepository):
                     list(fields_and_values.values()),
                 )
             except sqlite3.IntegrityError:
-                raise HTTPException(status_code=409, detail=f"User with email `{email}` already exists")
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"User with email `{email}` already exists")
             conn.commit()
 
             return new_user

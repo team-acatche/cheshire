@@ -19,6 +19,7 @@ from fastapi import (
     Form,
     Path as PathParam,
     Query,
+    status,
 )
 from fastapi.responses import FileResponse, Response
 
@@ -54,13 +55,13 @@ async def evaluate_document(
     session_id: Annotated[Optional[str], Query(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
 ) -> EvaluateResponse:
     if not SESSION_DIR:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set within the server")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set within the server")
 
-    username = current_user.username
+    user_id = current_user.user_id
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
 
     _session_id: str = session_id or str(uuid.uuid4())
-    user_path = Path(SESSION_DIR) / username
+    user_path = Path(SESSION_DIR) / user_id
 
     # save the file into a temporary directory
     tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -73,7 +74,7 @@ async def evaluate_document(
     logger.debug(f"save({filename}): Auditing {filename}...")
     results = await evaluate_file(tmp_file_path, config)
     if results is None:
-        raise HTTPException(status_code=500, detail="Failed to evaluate document")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to evaluate document")
     logger.info(f"save({filename}): {filename} audited.")
 
     # Create new session
@@ -88,19 +89,19 @@ async def evaluate_document(
     if session_id is None:
         # Initialize session DB
         logger.debug(f"save({filename}): Saving {filename} as a new session...")
-        with sqlite3.connect(user_path / f"{username}.sqlite") as session_db:
+        with sqlite3.connect(user_path / f"{user_id}.sqlite") as session_db:
             session_repo = SqliteSessionRepository(session_db)
             session_repo.save_new_session(Session(session_id=_session_id, title=filename))
         logger.info(f"save({filename}): {filename} saved as a new session.")
 
         # Initialize vector stores
         logger.debug(f"save({filename}): Initializing vector stores for {filename}...")
-        await get_or_create_vector_stores(user_path, username=username)
+        await get_or_create_vector_stores(user_path, username=user_id)
         logger.info(f"save({filename}): Vector stores for {filename} initialized.")
 
-    # Save results as first event in {username}.sqlite
-    with sqlite3.connect(user_path / f"{username}.sqlite") as history_db:
-        logger.debug(f"save({filename}): Saving results in {username}.sqlite...")
+    # Save results as first event in {user_id}.sqlite
+    with sqlite3.connect(user_path / f"{user_id}.sqlite") as history_db:
+        logger.debug(f"save({filename}): Saving results in {user_id}.sqlite...")
         history_repo = SqliteEventRepository(history_db)
         for vulnerability in results:
             history_repo.save(Event(
@@ -108,7 +109,7 @@ async def evaluate_document(
                 event_type=EventType.VULNERABILITY_FINDING,
                 content=vulnerability.model_dump_json()
             ))
-        logger.info(f"save({filename}): Results saved in {username}.sqlite.")
+        logger.info(f"save({filename}): Results saved in {user_id}.sqlite.")
 
     return EvaluateResponse(session_id=_session_id, vulnerabilities=results)
 
@@ -125,7 +126,7 @@ def _get_latest(session_path: Path) -> str:
                     latest = timestamp
                     latest_filename = filename
     if latest is None or latest_filename is None:
-        raise HTTPException(status_code=404, detail="No documents found for this session")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No documents found for this session")
 
     return latest_filename
     
@@ -136,14 +137,14 @@ def get_latest_evaluation_results(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[VulnerabilityDetails]:
     if not SESSION_DIR:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set within the server")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set within the server")
 
-    username = current_user.username
-    user_path = Path(SESSION_DIR) / username
-    history_db_path = user_path / f"{username}.sqlite"
+    user_id = current_user.user_id
+    user_path = Path(SESSION_DIR) / user_id
+    history_db_path = user_path / f"{user_id}.sqlite"
     
     if not history_db_path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Connect to repositories
     with sqlite3.connect(history_db_path) as history_db:
@@ -156,9 +157,9 @@ def get_document(
     session_id: Annotated[str, PathParam(description="The session ID for the document.")],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
-    username = current_user.username
-    session_path = Path(SESSION_DIR) / username / session_id
+    user_id = current_user.user_id
+    session_path = Path(SESSION_DIR) / user_id / session_id
     latest_document = session_path / "documents" / _get_latest(session_path)
     if not latest_document.exists():
-        return Response(status_code=404, content=f"Document for session {session_id} not found")
+        return Response(status_code=status.HTTP_404_NOT_FOUND, content=f"Document for session {session_id} not found")
     return FileResponse(latest_document, media_type="application/pdf")

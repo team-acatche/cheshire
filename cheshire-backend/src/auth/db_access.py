@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, AsyncGenerator
 import sqlite3
 
-from fastapi import HTTPException, Depends 
+from fastapi import HTTPException, Depends, status
 
 from auth.models import User
 from auth.dependencies import get_current_user
@@ -15,7 +15,7 @@ async def get_history(
     user: Annotated[User, Depends(get_current_user)]
 ) -> AsyncGenerator[EventRepository, None]:
     if not SESSION_DIR:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
     
     username = user.username
     user_path = Path(SESSION_DIR) / username
