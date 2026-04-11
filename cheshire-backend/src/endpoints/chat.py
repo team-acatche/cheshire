@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Annotated, Optional, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from haystack.components.agents import Agent
@@ -21,6 +21,8 @@ from knowledge_base.history import Event, EventType, SqliteEventRepository, Stre
 from knowledge_base.session_manager import SqliteSessionRepository, Session
 from endpoints.helpers import get_or_create_vector_stores
 from tools.knowledge import get_relevant_facts_tool
+from auth.models import User
+from auth.dependencies import get_current_user
 
 chat_router = APIRouter()
 SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", ""))) if os.getenv("SESSIONS_PATH") else None
@@ -28,33 +30,35 @@ SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "
 class ChatBody(BaseModel):
     message: str
 
-@chat_router.get("/{username}")
+@chat_router.get("/")
 async def get_sessions(
-    username: str
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> list[Session]:
     if SESSION_DIR is None:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
 
-    session_db_path = Path(SESSION_DIR) / username / f"{username}.sqlite"
+    user_id = current_user.user_id
+    session_db_path = Path(SESSION_DIR) / user_id / f"{user_id}.sqlite"
     if not session_db_path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     with sqlite3.connect(session_db_path) as session_db:
         session_repo = SqliteSessionRepository(session_db)
         return session_repo.get_sessions()
     
-@chat_router.get("/{username}/{session_id}")
+@chat_router.get("/{session_id}")
 async def chat_history(
-    username: str,
     session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
 ):
     if SESSION_DIR is None:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
 
-    history_db_path = Path(SESSION_DIR) / username / f"{username}.sqlite"
+    user_id = current_user.user_id
+    history_db_path = Path(SESSION_DIR) / user_id / f"{user_id}.sqlite"
     
     if not history_db_path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Connect to repositories
     with sqlite3.connect(history_db_path) as history_db:
@@ -65,22 +69,23 @@ async def chat_history(
         messages = [e.to_chat_message() for e in reversed(recent_events)]
         return {"messages": messages}
 
-@chat_router.post("/{username}/{session_id}")
+@chat_router.post("/{session_id}")
 async def chat(
-    username: str,
     session_id: str,
     body: ChatBody,
+    current_user: Annotated[User, Depends(get_current_user)],
     config: Annotated[PipelineConfig, Depends(resolve_config)],
 ):
     # TODO: make this SSE
     if SESSION_DIR is None:
-        raise HTTPException(status_code=500, detail="SESSION_DIR not set")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
 
-    user_path = Path(SESSION_DIR) / username
-    history_db_path = user_path / f"{username}.sqlite"
+    user_id = current_user.user_id
+    user_path = Path(SESSION_DIR) / user_id
+    history_db_path = user_path / f"{user_id}.sqlite"
     
     if not history_db_path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Connect to repositories
     history_db = sqlite3.connect(history_db_path)
@@ -96,7 +101,7 @@ async def chat(
     history_repo.save(user_event)
 
     # Initialize Vector Store (LanceDB)
-    vector_stores = await get_or_create_vector_stores(user_path, username=username)
+    vector_stores = await get_or_create_vector_stores(user_path, username=user_id)
 
     recent_events = history_repo.get_recent(session_id, 1000)
     # Events are returned in DESC order, we need them in ASC order for context
@@ -130,6 +135,6 @@ async def chat(
     except Exception as e:
         import logging
         logging.error(f"Agent error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         history_db.close()

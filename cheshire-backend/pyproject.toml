@@ -25,6 +25,8 @@ dependencies = [
     "togetherai-haystack (>=3.0.0,<4.0.0)",
     "fastembed-haystack (>=2.1.0,<3.0.0)",
     "lancedb-haystack (>=0.1.1,<0.2.0)",
+    "pyjwt (>=2.12.1,<3.0.0)",
+    "pwdlib[argon2] (>=0.3.0,<0.4.0)",
 ]
 
 

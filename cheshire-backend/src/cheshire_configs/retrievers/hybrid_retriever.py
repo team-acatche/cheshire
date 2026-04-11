@@ -10,8 +10,6 @@ from haystack_integrations.components.rankers.fastembed import FastembedRanker
 from haystack.document_stores.in_memory import InMemoryDocumentStore
 from haystack.components.retrievers import InMemoryEmbeddingRetriever, InMemoryBM25Retriever
 
-# TODO: refactor
-
 @super_component
 class HybridLanceDbRetriever:
     def __init__(

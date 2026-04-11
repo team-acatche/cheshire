@@ -1,7 +1,7 @@
 import os
 from typing import Callable, Optional
 from pathlib import Path
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
@@ -25,9 +25,9 @@ class DefaultRagPreprocessor(DocumentPreprocessor):
 
     def __call__(self, document: Path, document_store: Optional[DocumentStore] = None):
         if not document_store:
-            raise HTTPException(status_code=500, detail="Document store is required for DefaultRagPreprocessor")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Document store is required for DefaultRagPreprocessor")
         if not self.config.document_embedder:
-            raise HTTPException(status_code=500, detail="Document embedder is required for DefaultRagPreprocessor")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Document embedder is required for DefaultRagPreprocessor")
 
         docling_converter = DoclingConverter(
             converter=DOCUMENT_CONVERTER,

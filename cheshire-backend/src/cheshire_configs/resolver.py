@@ -5,7 +5,7 @@ from haystack import Pipeline
 from haystack.document_stores.in_memory import InMemoryDocumentStore
 from haystack.components.retrievers.in_memory import InMemoryEmbeddingRetriever
 from haystack_integrations.components.embedders.ollama import OllamaTextEmbedder
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, status
 
 from cheshire_configs.core import EvaluationType, Provider, PipelineConfig
 from cheshire_configs.preprocessors.core import DefaultRagPreprocessor
@@ -19,7 +19,7 @@ async def resolve_config(
 ) -> PipelineConfig:
     factory: PipelineConfig | None = configs.get(provider)
     if not factory:
-        raise HTTPException(status_code=400, detail=f"Unsupported: {provider}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported: {provider}")
 
     if evaluation_mode == EvaluationType.RAG and factory.embedder is not None:
         document_store = InMemoryDocumentStore(embedding_similarity_function="cosine")
