@@ -17,8 +17,8 @@ async def get_history(
     if not SESSION_DIR:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
     
-    username = user.username
-    user_path = Path(SESSION_DIR) / username
+    user_id = user.user_id
+    user_path = Path(SESSION_DIR) / user_id
 
-    with sqlite3.connect(user_path / f"{username}.sqlite") as history_db:
+    with sqlite3.connect(user_path / f"{user_id}.sqlite") as history_db:
         yield SqliteEventRepository(history_db)

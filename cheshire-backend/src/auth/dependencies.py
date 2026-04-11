@@ -53,7 +53,6 @@ def create_access_token(user: User) -> str:
         )
     payload = {
         "sub": user.user_id,
-        "username": user.username,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -75,8 +74,8 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        username: str | None = payload.get("username")
-        if username is None:
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
             raise credentials_exception
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -95,16 +94,18 @@ async def get_current_user(
     with sqlite3.connect(db_path, uri=True) as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT user_id, username, sessions_folder, full_name, avatar_uri, disabled "
-            "FROM user WHERE username = ? LIMIT 1;",
-            (username,),
+            """
+            SELECT user_id, username, email, sessions_folder, full_name, avatar_uri, disabled 
+            FROM user WHERE user_id = ? LIMIT 1;
+            """,
+            (user_id,),
         )
         row = cursor.fetchone()
 
     if row is None:
         raise credentials_exception
 
-    user_id, username, sessions_folder, full_name, avatar_uri, disabled = row
+    user_id, username, email, sessions_folder, full_name, avatar_uri, disabled = row
     if disabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -116,9 +117,11 @@ async def get_current_user(
             detail=f"User named {username} not found",
         )
 
+    assert user_id is not None # checked by the try...catch block earlier
     return User(
         user_id=user_id,
         username=username,
+        email=email,
         sessions_folder=sessions_folder,
         full_name=full_name,
         avatar_uri=avatar_uri,
