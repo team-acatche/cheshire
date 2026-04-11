@@ -32,6 +32,8 @@ export default function ChatPage({
   chats,
   onSelectChat
 }: ChatPageProps) {
+  const safeChats = Array.isArray(chats) ? chats : []
+
   return (
     <Sidebar>
 
@@ -65,13 +67,13 @@ export default function ChatPage({
         </div>
 
         <div className="flex flex-col gap-1">
-          {chats.length === 0 && (
+          {safeChats.length === 0 && (
             <div className="text-xs text-gray-400">
               No chats yet
             </div>
           )}
 
-          {chats.map((chat) => (
+          {safeChats.map((chat) => (
             <div
               key={chat.session_id}
               onClick={() => onSelectChat(chat)}
@@ -80,7 +82,7 @@ export default function ChatPage({
               <FileText className="h-4 w-4" />
               <span className="truncate">
                 {chat.title}
-              </span>
+                </span>
             </div>
           ))}
         </div>
