@@ -13,10 +13,10 @@ class UserRepository(Protocol):
     def create_table_if_not_exists(self):
         pass
 
-    def login(self, username: str, password: str) -> UserEntity:
+    def login(self, email: str, password: str) -> UserEntity:
         pass
 
-    def register(self, username: str, password: str, full_name: Optional[str] = None) -> UserEntity:
+    def register(self, email: str, password: str, *, username: Optional[str] = None, full_name: Optional[str] = None) -> UserEntity:
         pass
 
 class InMemoryUserRepository(UserRepository):
@@ -27,34 +27,34 @@ class InMemoryUserRepository(UserRepository):
     def create_table_if_not_exists(self):
         pass
 
-    def login(self, username: str, password: str) -> UserEntity:
-        if username not in self.users:
-            raise HTTPException(status_code=404, detail=f"User {username} not found")
-        user_entity = self.users[username]
+    def login(self, email: str, password: str) -> UserEntity:
+        if email not in self.users:
+            raise HTTPException(status_code=404, detail=f"User {email} not found")
+        user_entity = self.users[email]
 
         if not self.hasher.verify(f"{user_entity.prefix_salt}{password}{user_entity.suffix_salt}", user_entity.password_hash):
-            raise HTTPException(status_code=401, detail=f"Invalid password for user {username}")
+            raise HTTPException(status_code=401, detail=f"Invalid username or password for {email}")
         if user_entity.disabled:
-            raise HTTPException(status_code=403, detail=f"User {username} is disabled")
+            raise HTTPException(status_code=403, detail=f"{email} is disabled")
         return user_entity
 
-    def register(self, username: str, password: str, full_name: Optional[str] = None) -> UserEntity:
-        if username in self.users:
-            raise HTTPException(status_code=409, detail=f"User {username} already exists")
+    def register(self, email: str, password: str, *, username: Optional[str] = None, full_name: Optional[str] = None) -> UserEntity:
+        if email in self.users:
+            raise HTTPException(status_code=409, detail=f"{email} already exists")
 
         prefix_salt = generate_salt()
         suffix_salt = generate_salt()
         new_user = UserEntity(
             user=User(
+                email=email,
                 username=username,
-                sessions_folder=username,
                 full_name=full_name,
             ),
             password_hash=self.hasher.hash(f"{prefix_salt}{password}{suffix_salt}"),
             prefix_salt=prefix_salt,
             suffix_salt=suffix_salt,
         )
-        self.users[username] = new_user
+        self.users[email] = new_user
 
         return new_user
 
@@ -69,27 +69,30 @@ class SqliteUserRepository(UserRepository):
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user (
                     user_id TEXT PRIMARY KEY,
-                    username TEXT NOT NULL UNIQUE,
+                    email TEXT NOT NULL,
                     sessions_folder TEXT NOT NULL,
+                    username TEXT UNIQUE,
                     full_name TEXT DEFAULT 'user',
                     avatar_uri TEXT DEFAULT 'avatars/default.png',
                     password_hash TEXT NOT NULL,
                     prefix_salt TEXT NOT NULL,
                     suffix_salt TEXT NOT NULL,
                     disabled BOOLEAN DEFAULT 0,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP);
             """)
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS username_idx ON user(username);")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS email_idx ON user(email);")
             conn.commit()
 
-    def login(self, username: str, password: str) -> UserEntity:
+    def login(self, email: str, password: str) -> UserEntity:
         self.create_table_if_not_exists()
         with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT user_id,
-                       username,
+                       email,
                        sessions_folder,
+                       username,
                        full_name,
                        avatar_uri,
                        password_hash,
@@ -98,38 +101,41 @@ class SqliteUserRepository(UserRepository):
                        disabled,
                        created_at
                 FROM user
-                WHERE username = ?
+                WHERE email = ?
                 LIMIT 1;
-            """, (username,))
+            """, (email,))
             row = cursor.fetchone()
             if row is None:
-                raise HTTPException(status_code=404, detail=f"User {username} not found")
+                raise HTTPException(status_code=404, detail=f"User with email `{email}` not found")
 
             user = UserEntity(
                 user=User(
                     user_id=row[0],
-                    username=row[1],
+                    email=row[1],
                     sessions_folder=row[2],
-                    full_name=row[3],
-                    avatar_uri=row[4],
+                    username=row[3],
+                    full_name=row[4],
+                    avatar_uri=row[5],
                 ),
-                password_hash=row[5],
-                prefix_salt=row[6],
-                suffix_salt=row[7],
-                disabled=bool(row[8]),
-                created_at=row[9],
+                password_hash=row[6],
+                prefix_salt=row[7],
+                suffix_salt=row[8],
+                disabled=bool(row[9]),
+                created_at=row[10],
             )
 
             if not self.hasher.verify(f"{user.prefix_salt}{password}{user.suffix_salt}", user.password_hash):
-                raise HTTPException(status_code=401, detail=f"Invalid password for user {username}")
+                raise HTTPException(status_code=401, detail=f"Invalid username or password for {email}")
             if user.disabled:
-                raise HTTPException(status_code=403, detail=f"User {username} is disabled")
+                raise HTTPException(status_code=403, detail=f"User for email `{email}` is disabled")
 
             return user
 
     def register(self,
-        username: str,
+        email: str,
         password: str,
+        *,
+        username: Optional[str] = None,
         full_name: Optional[str] = None,
     ) -> UserEntity:
         self.create_table_if_not_exists()
@@ -138,8 +144,8 @@ class SqliteUserRepository(UserRepository):
         suffix_salt = generate_salt()
         new_user = UserEntity(
             user=User(
+                email=email,
                 username=username,
-                sessions_folder=username,
                 full_name=full_name,
             ),
             password_hash=self.hasher.hash(f"{prefix_salt}{password}{suffix_salt}"),
@@ -150,7 +156,7 @@ class SqliteUserRepository(UserRepository):
         fields_and_values = {
             # User
             "user_id": new_user.user.user_id,
-            "username": new_user.user.username,
+            "email": new_user.user.email,
             "sessions_folder": new_user.user.sessions_folder,
             "avatar_uri": new_user.user.avatar_uri,
             # UserEntity
@@ -164,6 +170,9 @@ class SqliteUserRepository(UserRepository):
         if full_name is not None:
             fields_and_values["full_name"] = full_name
 
+        if username is not None:
+            fields_and_values["username"] = username
+
         with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
             try:
@@ -172,7 +181,7 @@ class SqliteUserRepository(UserRepository):
                     list(fields_and_values.values()),
                 )
             except sqlite3.IntegrityError:
-                raise HTTPException(status_code=409, detail=f"User {username} already exists")
-
+                raise HTTPException(status_code=409, detail=f"User with email `{email}` already exists")
             conn.commit()
+
             return new_user

@@ -11,11 +11,16 @@ def generate_salt() -> str:
     return ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits + string.punctuation) for _ in range(SALT_LENGTH))
 
 class User(BaseModel):
-    username: str
-    sessions_folder: str
+    email: str
     user_id: str = Field(default_factory=lambda: str(uuid4()))
+    sessions_folder: Optional[str] = None
+    username: Optional[str] = None
     full_name: Optional[str] = None
-    avatar_uri: Optional[str] = None
+    avatar_uri: str = "avatars/default.png"
+
+    def model_post_init(self, __context):
+        if not self.sessions_folder:
+            self.sessions_folder = self.user_id
 
 class UserEntity(BaseModel):
     user: User

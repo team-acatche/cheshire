@@ -15,6 +15,8 @@ from docling_core.types.doc.labels import DocItemLabel
 from server import api
 from cheshire_configs.registry import configs
 from cheshire_configs.core import PipelineConfig, Provider, EvaluationType
+from auth.dependencies import get_current_user
+from auth.models import User
 
 # Override the registry dependency to avoid real model initialization
 # This also ensures resolve_config finds a valid config for the default OLLAMA provider
@@ -24,6 +26,11 @@ mock_config = PipelineConfig(
     mode=EvaluationType.RAG
 )
 api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
+
+def mock_get_current_user():
+    return User(user_id="test_id", email="test@example.com", sessions_folder="testuser", username="testuser", full_name="Test User", avatar_uri="default.png")
+
+api.dependency_overrides[get_current_user] = mock_get_current_user
 
 client = TestClient(api)
 
@@ -127,7 +134,7 @@ class TestSuccessfulEvaluation:
         doc = _build_docling_doc(paragraphs=["Hello world."])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/testuser/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
@@ -139,7 +146,7 @@ class TestSuccessfulEvaluation:
         doc = _build_docling_doc(paragraphs=["First paragraph.", "Second paragraph."])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/testuser/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         data = response.json()["vulnerabilities"]
@@ -157,7 +164,7 @@ class TestSuccessfulEvaluation:
         )
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/testuser/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         data = response.json()["vulnerabilities"]
@@ -179,7 +186,7 @@ class TestSuccessfulEvaluation:
         doc = _build_docling_doc(paragraphs=["A", "B", "C", "D", "E"])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/testuser/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         data = response.json()["vulnerabilities"]
@@ -198,7 +205,7 @@ class TestEmptyAndEdgeCases:
         doc = _build_docling_doc()
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/testuser/evaluate",
+                "/api/v1/evaluate",
                 files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == 200
@@ -210,7 +217,7 @@ class TestEmptyAndEdgeCases:
         doc = _build_docling_doc(paragraphs=["Content here."])
         with patch("endpoints.evaluate.evaluate_file", return_value=_mock_evaluate_result(doc)):
             response = client.post(
-                "/api/v1/testuser/evaluate",
+                "/api/v1/evaluate",
                 # Use a real filename here; the fallback logic is already covered by
                 # the server.py code `filename = uploaded_document.filename or "upload"`.
                 # We verify it doesn't crash with an unusual filename.
@@ -229,5 +236,5 @@ class TestRequestValidation:
     @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
     def test_missing_file_returns_422(self):
         """No file uploaded → 422 validation error."""
-        response = client.post("/api/v1/testuser/evaluate")
+        response = client.post("/api/v1/evaluate")
         assert response.status_code == 422

@@ -15,11 +15,16 @@ from endpoints.user_auth import auth_router
 api = FastAPI(dependencies=[Depends(configs)])
 api.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|cheshire-frontend|cheshire-backend)(:[0-9]+)?$",
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 logger = logging.getLogger("uvicorn.error")
+
+api.include_router(
+    auth_router,
+    prefix="/api/v1",
+)
 
 api.include_router(
     evaluate_router,
@@ -28,11 +33,6 @@ api.include_router(
 
 api.include_router(
     chat_router,
-    prefix="/api/v1",
-)
-
-api.include_router(
-    auth_router,
     prefix="/api/v1",
 )
 
