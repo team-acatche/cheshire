@@ -1,10 +1,14 @@
 import { LoginForm } from "@/components/ui/login"
 
-export default function LoginPage() {
+interface LoginPageProps {
+  onLogin: () => void
+}
+
+export default function LoginPage({ onLogin }: LoginPageProps) {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
       <div className="w-full max-w-sm md:max-w-4xl">
-        <LoginForm/>
+        <LoginForm onLogin={onLogin} />
       </div>
     </div>
   )

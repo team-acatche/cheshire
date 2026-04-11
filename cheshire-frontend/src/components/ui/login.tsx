@@ -1,4 +1,4 @@
-import { useState } from "react"
+import React, { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,15 +12,22 @@ import { Input } from "@/components/ui/input"
 
 export function LoginForm({
   className,
+  onLogin,
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> & { onLogin: () => void}) {
   const [showPassword, setShowPassword] = useState(false)
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    // TODO: add real auth check here
+    onLogin()
+  }
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card className="overflow-hidden p-0">
         <CardContent className="grid p-0 md:grid-cols-2">
-          <form className="p-6 md:p-8">
+          <form className="p-6 md:p-8" onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">Welcome back!</h1>
@@ -64,9 +71,7 @@ export function LoginForm({
 
               <Field>
                 <Button type="submit" className="w-full">
-                  <a href="src/App" className="text-white">
                     Login
-                  </a>
                 </Button>
               </Field>
 
