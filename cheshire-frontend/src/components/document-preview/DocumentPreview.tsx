@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   Plus,
   Minus,
+  ShieldAlert,
 } from "lucide-react";
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import type { PageMeta, ActiveGroup } from "./types";
@@ -14,7 +15,7 @@ import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./sear
 import { SearchBar } from "./SearchBar";
 import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
-import { PdfPageSkeleton} from "./PdfPageSkeleton"
+import { PdfPageSkeleton} from "./PdfPageSkeleton";
  
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -321,11 +322,19 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
  
       {isPdf && numPages > 0 && (
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
-          {/* LEFT: page indicator */}
-          <div className="text-xs text-muted-foreground justify-self-start">
-            Page {currentPage} of {numPages}
+          {/* LEFT: findings count */}
+          <div className="justify-self-start">
+            <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm">
+              <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
+              <span className="text-xs text-muted-foreground">  
+                Total Findings
+              </span>
+              <span className="text-sm font-semibold text-foreground">
+                {findings.length}
+              </span>
+            </div>
           </div>
- 
+        
           {/* CENTER: zoom controls */}
           <div className="justify-self-center">
             <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
