@@ -1,26 +1,38 @@
+// src/components/ui/login.tsx
 import React, { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { loginRequest, type AuthUser } from "@/lib/auth"
 
-export function LoginForm({
-  className,
-  onLogin,
-  ...props
-}: React.ComponentProps<"div"> & { onLogin: () => void}) {
+interface LoginFormProps extends React.ComponentProps<"div"> {
+  onLogin: (user: AuthUser) => void
+}
+
+export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    // TODO: add real auth check here
-    onLogin()
+    setError(null)
+    setLoading(true)
+
+    const data = new FormData(e.currentTarget)
+    const email    = data.get("email")    as string
+    const password = data.get("password") as string
+
+    try {
+      const user = await loginRequest(email, password)
+      onLogin(user)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -32,17 +44,25 @@ export function LoginForm({
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">Welcome back!</h1>
                 <p className="text-balance text-muted-foreground">
-                  Login using your Active Directory(AD) credentials
+                  Login using your Active Directory (AD) credentials
                 </p>
               </div>
+
+              {error && (
+                <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
 
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   placeholder="name@metrobank.com"
                   required
+                  disabled={loading}
                 />
               </Field>
 
@@ -54,10 +74,12 @@ export function LoginForm({
                   </a>
                 </div>
                 <div className="relative">
-                  <Input 
-                    id="password" 
-                    type={showPassword ? "text" : "password"} 
-                    required 
+                  <Input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    disabled={loading}
                   />
                   <button
                     type="button"
@@ -70,25 +92,28 @@ export function LoginForm({
               </Field>
 
               <Field>
-                <Button type="submit" className="w-full">
-                    Login
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Signing in…" : "Login"}
                 </Button>
               </Field>
-
             </FieldGroup>
           </form>
+
           <div className="relative hidden bg-white md:flex md:items-center md:justify-center border-l">
             <img
-              src="/cheshire.png" 
+              src="/cheshire.png"
               alt="Cheshire Logo"
               className="w-60 h-60 object-contain"
             />
           </div>
         </CardContent>
       </Card>
+
       <FieldDescription className="px-6 text-center text-xs">
-        By clicking continue, you agree to our <a href="#" className="underline underline-offset-4">Terms of Service</a>{" "}
-        and <a href="#" className="underline underline-offset-4">Privacy Policy</a>.
+        By clicking continue, you agree to our{" "}
+        <a href="#" className="underline underline-offset-4">Terms of Service</a>{" "}
+        and{" "}
+        <a href="#" className="underline underline-offset-4">Privacy Policy</a>.
       </FieldDescription>
     </div>
   )
