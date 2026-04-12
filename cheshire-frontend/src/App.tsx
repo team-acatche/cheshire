@@ -36,7 +36,7 @@ async function getChats(username: string): Promise<Chat[]> {
     });
 }
 
-export function App() {
+export default function App() {
   const [file, setFile] = useState<File | string | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [chats, setChats] = useState<Chat[]>([])
