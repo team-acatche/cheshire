@@ -7,14 +7,20 @@ import {
   ChevronLeft,
   Plus,
   Minus,
+  ShieldAlert,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import type { PageMeta, ActiveGroup } from "./types";
 import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./searchHelpers";
 import { SearchBar } from "./SearchBar";
 import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
-import { PdfPageSkeleton} from "./PdfPageSkeleton"
+import { PdfPageSkeleton} from "./PdfPageSkeleton";
  
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -179,6 +185,18 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
       block: "start",
     });
   }, []);
+
+  const sortedFindings = [...findings].sort(
+  (a, b) => a.page_no - b.page_no
+  );
+
+  const groupedFindings = sortedFindings.reduce((acc, finding) => {
+  if (!acc[finding.page_no]) {
+    acc[finding.page_no] = [];
+  }
+  acc[finding.page_no].push(finding);
+  return acc;
+}, {} as Record<number, typeof findings>);
  
   const goToNextPage = useCallback(() => {
     if (currentPage >= numPages) return;
@@ -321,11 +339,67 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
  
       {isPdf && numPages > 0 && (
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
-          {/* LEFT: page indicator */}
-          <div className="text-xs text-muted-foreground justify-self-start">
-            Page {currentPage} of {numPages}
-          </div>
- 
+          {/* LEFT: total findings count */}
+          <div className="justify-self-start">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
+                <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
+                <span className="text-xs text-muted-foreground">
+                  Total Findings
+                </span>
+                <span className="text-sm font-semibold text-foreground">
+                  {findings.length}
+                </span>
+              </button>
+            </PopoverTrigger>
+
+            <PopoverContent
+              className="w-[360px] p-0 border bg-background shadow-md"
+              align="start"
+            >
+              {/* Header */}
+              <div className="px-3 py-2 border-b bg-muted/40">
+                <div className="text-sm font-semibold text-foreground">
+                  Findings
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Jump directly to a finding
+                </div>
+              </div>
+
+              {/* List */}
+              <div className="max-h-72 overflow-y-auto">
+                {Object.entries(groupedFindings).map(([page, pageFindings]) => (
+                  <div key={page} className="mb-2">
+                    
+                    {/* Page header */}
+                    <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">
+                      Page {page}
+                    </div>
+
+                    {/* Findings under page */}
+                    {pageFindings.map((finding, index) => (
+                      <button
+                        key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}`}
+                        onClick={() => {
+                          scrollToPageNumber(finding.page_no);
+                        }}
+                        className="w-full px-3 py-2 text-left transition-colors
+                                  hover:bg-amber-100/60"
+                      >
+                        <div className="text-sm font-medium text-foreground truncate">
+                          {finding.title || `Finding ${index + 1}`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        
           {/* CENTER: zoom controls */}
           <div className="justify-self-center">
             <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
