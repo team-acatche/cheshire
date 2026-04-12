@@ -5,7 +5,6 @@ import {
 } from "@/components/ui/sidebar"
 
 import {
-  User,
   Pencil,
   Settings,
   FileText
@@ -24,12 +23,18 @@ interface ChatPageProps {
   onNewChat: () => void
   chats: Chat[]
   onSelectChat: (chat: Chat) => void
+  onGoAccount: () => void
+  profileImage: string
+  userName: string
 }
 
 export default function ChatPage({
   onNewChat,
   chats,
-  onSelectChat
+  onSelectChat,
+  onGoAccount,
+  profileImage,
+  userName
 }: ChatPageProps) {
   return (
     <Sidebar>
@@ -37,15 +42,16 @@ export default function ChatPage({
       <SidebarContent className="p-4 space-y-4">
 
         {/* ACCOUNT */}
-        <div className="flex items-center gap-3 text-sm text-black">
-          
-          {/* ICON WITH ROUND BORDER */}
-          <div className="h-9 w-9 flex items-center justify-center rounded-full border-2 border-black">
-            <User className="h-5 w-5" />
+        <div
+          onClick={onGoAccount}
+          className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-md"
+        >
+          <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-black">
+            <img src={profileImage} className="h-full w-full object-cover" />
           </div>
 
           <div>
-            <div className="font-medium">account name</div>
+            <div className="font-medium">{userName}</div>
             <div className="text-xs text-gray-400">account settings</div>
           </div>
         </div>

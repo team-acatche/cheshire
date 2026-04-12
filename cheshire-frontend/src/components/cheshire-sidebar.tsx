@@ -25,9 +25,10 @@ type Chat = {
 type Props = {
     onSelectChat: (chatId: string) => void;
     onNewChat: (chatId: string) => void;
+    onGoAccount: () => void; // ✅ ADDED
 };
 
-export function CheshireSidebar({ onSelectChat, onNewChat }: Props) {
+export function CheshireSidebar({ onSelectChat, onNewChat, onGoAccount }: Props) {
 
     const [chats, setChats] = useState<Chat[]>([]);
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -73,13 +74,18 @@ export function CheshireSidebar({ onSelectChat, onNewChat }: Props) {
 
                 <SidebarMenu className="flex flex-col gap-4">
 
-                    {/* Account */}
-                    <SidebarMenuItem className="flex items-center gap-2 m-2">
-                        <CircleUserRound size={18} />
-                        <AccountDetails />
+                    {/* ✅ UPDATED Account (CLICKABLE) */}
+                    <SidebarMenuItem>
+                        <div
+                            onClick={onGoAccount}
+                            className="flex items-center gap-2 m-2 p-2 rounded-md hover:bg-muted cursor-pointer"
+                        >
+                            <CircleUserRound size={18} />
+                            <AccountDetails />
+                        </div>
                     </SidebarMenuItem>
 
-                    {/* ✅ FIXED New Chat */}
+                    {/* New Chat */}
                     <SidebarMenuItem>
                         <div
                             className="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-muted cursor-pointer"
