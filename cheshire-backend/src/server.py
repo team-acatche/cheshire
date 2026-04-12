@@ -1,4 +1,5 @@
 import logging
+import os
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -12,7 +13,14 @@ from endpoints.evaluate import evaluate_router
 from endpoints.chat import chat_router
 from endpoints.user_auth import auth_router
 
-api = FastAPI(dependencies=[Depends(configs)])
+SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    os.makedirs(SESSION_DIR, exist_ok=True) # ensure that the SESSION_DIR exists
+    yield
+
+api = FastAPI(dependencies=[Depends(configs)], lifespan=lifespan)
 api.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|cheshire-frontend|cheshire-backend)(:[0-9]+)?$",

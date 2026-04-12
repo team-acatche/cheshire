@@ -1,85 +1,87 @@
-  import { useState, useEffect } from "react"
-  import { Upload } from "lucide-react"
-  import { Button } from "@/components/ui/button"
-  import { Card, CardAction, CardContent } from "./components/ui/card"
-  import {
-    SidebarProvider,
-    SidebarTrigger,
-    SidebarInset,
-  } from "./components/ui/sidebar"
-  import DocumentPreview from "./components/document-preview/DocumentPreview"
-  import { evaluateDocument } from "./lib/helpers/evaluate_document"
-  import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
-  import { Chatbot } from "./components/chatbot"
-  import ChatPage from "./ChatPage"
-  import { USERNAME } from "./globals"
-  import type { Chat } from "./ChatPage"
-  import { LoadingPage } from "./components/ui/loadingpage"
-  import {
-    ResizablePanelGroup,
-    ResizablePanel,
-    ResizableHandle,
-  } from "@/components/ui/resizable"
+import { useState, useEffect } from "react"
+import { Upload } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardAction, CardContent } from "./components/ui/card"
+import {
+  SidebarProvider,
+  SidebarTrigger,
+  SidebarInset,
+} from "./components/ui/sidebar"
+import DocumentPreview from "./components/document-preview"
+import { drawHighlight } from "./lib/helpers/page-highlights"
+import { evaluateDocument, saveResult } from "./lib/helpers/evaluate_document"
+import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
+import { Chatbot } from "./components/chatbot"
+import ChatPage from "./ChatPage"
+import { USERNAME } from "./globals"
+import type { Chat } from "./ChatPage"
+import { LoadingPage } from "./components/ui/loadingpage"
 
-  async function getChats(username: string): Promise<Chat[]> {
-    return await fetch(`/api/v1/${username}`)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`Error getting chats: ${response.statusText}`);
-        }
-        return response.json() as Promise<Chat[]>
-      })
-      .catch(error => {
-        console.error("Error getting chats:", error);
-        return [];
-      });
+async function getChats(username: string): Promise<Chat[]> {
+  return await fetch(`/api/v1/${username}/chat`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Error getting chats: ${response.statusText}`);
+      }
+      return response.json() as Promise<Chat[]>
+    })
+    .catch(error => {
+      console.error("Error getting chats:", error);
+      return [];
+    });
+}
+
+export function App() {
+  const [file, setFile] = useState<File | null>(null)
+  const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
+  const [chats, setChats] = useState<Chat[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  useEffect(() => {
+    getChats(USERNAME).then(setChats)
+  }, [])
+
+  // ✅ New Chat (reset only)
+  const handleNewChat = () => {
+    setFile(null)
+    setFindings([])
+    setCurrentSessionId(null)
   }
 
-  export function App() {
-    const [file, setFile] = useState<File | string | null>(null)
-    const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
-    const [chats, setChats] = useState<Chat[]>([])
-    const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-    const [isProcessing, setIsProcessing] = useState(false)
-    const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
+  // ✅ Load previous chat
+  const handleSelectChat = async (chat: Chat) => {
+    const file = await fetch(`/api/v1/${USERNAME}/evaluate/${chat.session_id}/result`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Error getting file: ${response.statusText}`);
+        }
+        return response.blob()
+      })
+      .then(blob => new File([blob], chat.title + ".pdf", {
+        type: "application/pdf",
+      }))
+      .catch(error => {
+        console.error("Error getting file:", error);
+        return null;
+      });
 
-    useEffect(() => {
-      getChats(USERNAME).then(setChats)
-    }, [])
-
-    // Reset to home screen
-    const handleNewChat = () => {
-      setFile(null)
-      setFindings([])
-      setCurrentSessionId(null)
-    }
-
-    // Restore a previous session — point directly at the API URL
-    const handleSelectChat = async (chat: Chat) => {
-    const url = `/api/v1/${USERNAME}/${chat.session_id}/document`;
-    const findings: VulnerabilityFinding[] = await fetch(
-      `/api/v1/${USERNAME}/${chat.session_id}/result`
-    )
-      .then(r => r.ok ? r.json() : [])
-      .catch(() => []);
-
-    setFile(url)
-    setFindings(findings)
+    setFile(file)
+    setFindings(chat.findings || [])
     setCurrentSessionId(chat.session_id)
-    setCurrentFileName(chat.title);
-    }
+  }
 
-    return (
-      <SidebarProvider>
-        <ChatPage
-          onNewChat={handleNewChat}
-          chats={chats}
-          onSelectChat={handleSelectChat}
-        />
+  return (
+    <SidebarProvider>
+      <ChatPage
+        onNewChat={handleNewChat}
+        chats={chats}
+        onSelectChat={handleSelectChat}
+      />
 
-        <SidebarTrigger />
-        <SidebarInset>
-          <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
+      <SidebarTrigger />
+      <SidebarInset>
+        <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
 
             <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} mt-2 shadow-none`}>
               {isProcessing ? (
@@ -155,24 +157,18 @@
 
                   <ResizableHandle withHandle />
 
-                  <ResizablePanel defaultSize={25} minSize={15}>
-                    {currentSessionId && (
-                      <Chatbot
-                        key={currentSessionId}
-                        findings={findings}
-                        sessionId={currentSessionId}
-                        username={USERNAME}
-                      />
-                    )}
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              )}
-            </Card>
+          {file && currentSessionId && (
+            <Chatbot
+              key={currentSessionId}
+              findings={findings}
+              sessionId={currentSessionId}
+              username={USERNAME}
+            />
+          )}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}
 
-          </main>
-        </SidebarInset>
-      </SidebarProvider>
-    )
-  }
-
-  export default App
+export default App
