@@ -1,7 +1,6 @@
 import asyncio
 
 from dotenv import load_dotenv
-load_dotenv()
 
 from fastapi import HTTPException
 import os
@@ -20,6 +19,10 @@ from haystack.components.agents import Agent
 
 from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.core import PipelineConfig, EvaluationType
+
+# Check if .env.user exists; if it does, load it
+load_dotenv("../.env.user", verbose=True)
+load_dotenv()
 
 async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional[list[VulnerabilityDetails]]:
 	if document_path.suffix != ".pdf" or not document_path.exists():
@@ -49,7 +52,7 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 				orientation_text += f"\n## Visual Index\n{visual_index_docs[0].content}\n"
 			
 			if orientation_text:
-				system_prompt += f"\n\nHere is the orientation bundle for the document you are analyzing. Use it to understand the structure and locate specific sections or figures before querying:\n{orientation_text}"
+				system_prompt += f"\n\nHere is the orientation bundle for the document you are analyzing. Use it to understand the structure and locate specific sections or figures before querying:\n<orientation_bundle>{orientation_text}</orientation_bundle>"
 			logger.info(f"agent({document_path.name}): Orientation bundle retrieved.")
 		except Exception as e:
 			logger.error(f"Failed to retrieve orientation bundle: {e}")
@@ -59,7 +62,7 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		chat_generator=config.model,
 		system_prompt=system_prompt,
 		tools=config.tools,
-		exit_conditions=["text"],
+		exit_conditions=["finish"],
 		streaming_callback=print_streaming_chunk, # TODO (feat): switch to logger
 		state_schema={
 			"vulnerabilities_list": {"type": list[VulnerabilityDetails]},

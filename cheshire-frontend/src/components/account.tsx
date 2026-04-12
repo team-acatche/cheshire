@@ -1,10 +1,6 @@
 import { useState } from "react"
 import { Pencil, Check } from "lucide-react"
-
-type Chat = {
-  id: string
-  file: { name: string }
-}
+import type { Chat } from "@/ChatPage"
 
 type Props = {
   profileImage: string
@@ -110,10 +106,10 @@ export default function Account({
           ) : (
             chats.slice(0, 5).map((chat) => (
               <div
-                key={chat.id}
+                key={chat.session_id}
                 className="p-2 border rounded-md text-sm"
               >
-                {chat.file.name}
+                {chat.title}
               </div>
             ))
           )}

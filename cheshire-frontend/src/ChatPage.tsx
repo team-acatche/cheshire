@@ -10,12 +10,13 @@ import {
   FileText
 } from "lucide-react"
 
-import { NamedFile } from "@/types/NamedFile"
+
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 
-type Chat = {
-  id: string
-  file: NamedFile
+// ✅ Chat type
+export type Chat = {
+  session_id: string
+  title: string
   findings: VulnerabilityFinding[]
 }
 
@@ -36,6 +37,8 @@ export default function ChatPage({
   profileImage,
   userName
 }: ChatPageProps) {
+  const safeChats = Array.isArray(chats) ? chats : []
+
   return (
     <Sidebar>
 
@@ -71,22 +74,22 @@ export default function ChatPage({
         </div>
 
         <div className="flex flex-col gap-1">
-          {chats.length === 0 && (
+          {safeChats.length === 0 && (
             <div className="text-xs text-gray-400">
               No chats yet
             </div>
           )}
 
-          {chats.map((chat) => (
+          {safeChats.map((chat) => (
             <div
-              key={chat.id}
+              key={chat.session_id}
               onClick={() => onSelectChat(chat)}
               className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm"
             >
               <FileText className="h-4 w-4" />
               <span className="truncate">
-                {chat.file.name}
-              </span>
+                {chat.title}
+                </span>
             </div>
           ))}
         </div>

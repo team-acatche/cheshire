@@ -1,14 +1,17 @@
-from haystack.core.pipeline import Pipeline
-from haystack.tools import Tool, create_tool_from_function, PipelineTool
+from typing import cast
+
+from haystack.core.component import Component
+from haystack.components.embedders.types import TextEmbedder
+from haystack.document_stores.in_memory import InMemoryDocumentStore
+from haystack.tools import Tool, create_tool_from_function, PipelineTool, tool, ComponentTool
 
 from tools.vulnerability_tools import add_vulnerability, read_vulnerabilities
 from tools.helpers import document_to_string, vulnerabilities_to_string
+from cheshire_configs.retrievers.hybrid_retriever import HybridInMemoryRetriever
 
-def query_document_tool(query_pipeline: Pipeline) -> Tool:
-    _query_document: Tool = PipelineTool(
-        pipeline=query_pipeline,
-        input_mapping={"query": ["embedder.text"]},
-        output_mapping={"retriever.documents": "documents"},
+def query_document_tool(document_store: InMemoryDocumentStore, embedder: TextEmbedder) -> Tool:
+    _query_document: Tool = ComponentTool(
+        component=cast(Component, HybridInMemoryRetriever(document_store, embedder)),
         name="query_document",
         description="Query the document store using keyword search for any relevant documents.",
         outputs_to_string={"source": "documents", "handler": document_to_string}
@@ -34,3 +37,10 @@ def read_vulnerabilities_tool(vulnerability_state: str) -> Tool:
     )
     _read_vulnerabilities_tool.warm_up()
     return _read_vulnerabilities_tool
+
+@tool
+def finish(
+    confirm: bool # the model needs one required argument for tool calling to work properly, but this is otherwise unnecessary
+) -> str:
+    """Finish the audit. Call this tool when you are done with the audit. Be sure to provide an argument to this function when calling it."""
+    return "Audit finished."

@@ -7,25 +7,43 @@ import {
   SidebarTrigger,
   SidebarInset,
 } from "./components/ui/sidebar"
-import DocumentPreview from "./components/document-preview"
-import { NamedFile } from "./types/NamedFile"
-import { drawHighlight } from "./lib/helpers/page-highlights"
+import DocumentPreview from "./components/document-preview/DocumentPreview"
 import { evaluateDocument } from "./lib/helpers/evaluate_document"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
+import { USERNAME } from "./globals"
+import type { Chat } from "./ChatPage"
+import { LoadingPage } from "./components/ui/loadingpage"
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable"
 import Account from "./components/account"
 
-type Chat = {
-  id: string
-  file: NamedFile
-  findings: VulnerabilityFinding[]
+async function getChats(username: string): Promise<Chat[]> {
+  return await fetch(`/api/v1/${username}`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Error getting chats: ${response.statusText}`);
+      }
+      return response.json() as Promise<Chat[]>
+    })
+    .catch(error => {
+      console.error("Error getting chats:", error);
+      return [];
+    });
 }
 
 export function App() {
-  const [file, setFile] = useState<NamedFile | null>(null)
+  const [file, setFile] = useState<File | string | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [chats, setChats] = useState<Chat[]>([])
+
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
 
   const [page, setPage] = useState<"chat" | "account">("chat")
 
@@ -52,16 +70,29 @@ export function App() {
     localStorage.setItem("email", email)
   }, [profileImage, userName, email])
 
+  
+  useEffect(() => {
+    getChats(USERNAME).then(setChats)
+  }, [])
+
   const handleNewChat = () => {
-    setFile(null)
     setFindings([])
     setPage("chat")
+    setCurrentSessionId(null)
   }
 
-  const handleSelectChat = (chat: Chat) => {
-    setFile(chat.file)
-    setFindings(chat.findings)
-    setPage("chat")
+  const handleSelectChat = async (chat: Chat) => {
+    const url = `/api/v1/${USERNAME}/${chat.session_id}/document`;
+    const findings: VulnerabilityFinding[] = await fetch(
+      `/api/v1/${USERNAME}/${chat.session_id}/result`
+    )
+      .then(r => r.ok ? r.json() : [])
+      .catch(() => []);
+  
+    setFile(url)
+    setFindings(findings)
+    setCurrentSessionId(chat.session_id)
+    setCurrentFileName(chat.title);
   }
 
   return (
@@ -92,8 +123,12 @@ export function App() {
         ) : (
           <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
 
-            <Card className={`${!file ? "col-span-full" : "col-span-3 size-full"} mt-2 shadow-none`}>
-              {!file ? (
+            <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} mt-2 shadow-none`}>
+              {isProcessing ? (
+                <CardContent className="col-span-full h-full flex items-center justify-center">
+                  <LoadingPage />
+                </CardContent>
+              ) : !file ? (
                 <CardContent className="size-full space-y-6 text-center">
                   <p className="font-bold text-xl">
                     Hi! Welcome to Cheshire. Please upload a document to evaluate.
@@ -119,26 +154,28 @@ export function App() {
                               return;
                             }
 
-                            const _findings = await evaluateDocument(fileInput);
-                            const pdfDoc = await drawHighlight(fileInput, _findings);
-                            const pdfBytes = await pdfDoc.save();
+                            setIsProcessing(true);
+                            try {
+                              const response = await evaluateDocument(fileInput);
+                              if (response === null) {
+                                alert("Failed to evaluate document.");
+                                return;
+                              }
 
-                            const pdfBlob = new Blob([pdfBytes as BlobPart], {
-                              type: "application/pdf",
-                            });
+                              const newChat: Chat = {
+                                session_id: response.session_id,
+                                title: fileInput.name,
+                                findings: response.vulnerabilities,
+                              }
 
-                            const newFile = new NamedFile(pdfBlob, fileInput.name)
-
-                            const newChat: Chat = {
-                              id: crypto.randomUUID(),
-                              file: newFile,
-                              findings: _findings,
+                              setChats((prev) => [newChat, ...prev])
+                              setFile(fileInput)
+                              setFindings(response.vulnerabilities)
+                              setCurrentSessionId(response.session_id)
+                              setCurrentFileName(fileInput.name)
+                            } finally {
+                              setIsProcessing(false);
                             }
-
-                            setChats((prev) => [newChat, ...prev])
-
-                            setFile(newFile)
-                            setFindings(_findings)
                           }}
                         />
                       </label>
@@ -146,13 +183,33 @@ export function App() {
                   </CardAction>
                 </CardContent>
               ) : (
-                <CardContent className="flex flex-col gap-3 size-full">
-                  <DocumentPreview src={file} />
-                </CardContent>
+                <ResizablePanelGroup orientation="horizontal" className="h-full">
+                  <ResizablePanel defaultSize={75} minSize={30}>
+                    <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
+                      {/* Pass the original file + findings separately — no burned-in highlights */}
+                      <DocumentPreview
+                      src={file}
+                      findings={findings}
+                      fileName={currentFileName}
+                      />
+                    </CardContent>
+                  </ResizablePanel>
+
+                  <ResizableHandle withHandle />
+
+                  <ResizablePanel defaultSize={25} minSize={15}>
+                    {currentSessionId && (
+                      <Chatbot
+                        key={currentSessionId}
+                        findings={findings}
+                        sessionId={currentSessionId}
+                        username={USERNAME}
+                      />
+                    )}
+                  </ResizablePanel>
+                </ResizablePanelGroup>
               )}
             </Card>
-
-            {file && <Chatbot key={file.name} findings={findings} />}
 
           </main>
         )}
@@ -161,5 +218,3 @@ export function App() {
     </SidebarProvider>
   )
 }
-
-export default App

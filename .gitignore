@@ -27,7 +27,7 @@ share/python-wheels/
 MANIFEST
 
 # Environments
-.env
+.env*
 .venv
 env/
 venv/
@@ -82,3 +82,6 @@ Thumbs.db
 GET
 Host:
 User-Agent:
+
+# Nginx Config
+nginx.conf
