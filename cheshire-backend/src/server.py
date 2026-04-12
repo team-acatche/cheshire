@@ -16,7 +16,7 @@ from endpoints.user_auth import auth_router
 SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
 
 @asynccontextmanager
-def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):
     os.makedirs(SESSION_DIR, exist_ok=True) # ensure that the SESSION_DIR exists
     yield
 
