@@ -127,9 +127,15 @@ export default function App({ user, onLogout }: AppProps) {
                 </CardContent>
               ) : !file ? (
                 <CardContent className="size-full space-y-6 text-center">
-                  <p className="font-bold text-xl">
-                    Hi {user.full_name ?? user.username ?? ""}! Welcome to Cheshire. Please upload a document to evaluate.
-                  </p>
+                  <div className="space-y-2">
+                    <h1 className="text-3xl font-bold tracking-tight">
+                      Hi, {user.full_name ?? user.username ?? ""}!
+                    </h1>
+
+                    <p className="text-muted-foreground text-sm">
+                      Welcome to Cheshire. Please upload a document to evaluate.
+                    </p>
+                  </div>
 
                   <CardAction className="flex justify-center m-auto">
                     <Button asChild className="w-40">
