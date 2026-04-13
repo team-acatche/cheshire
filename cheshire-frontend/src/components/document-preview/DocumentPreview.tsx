@@ -381,7 +381,7 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
                     {/* Findings under page */}
                     {pageFindings.map((finding, index) => (
                       <button
-                        key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}`}
+                        key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${index}`}
                         onClick={() => {
                           scrollToPageNumber(finding.page_no);
                         }}
