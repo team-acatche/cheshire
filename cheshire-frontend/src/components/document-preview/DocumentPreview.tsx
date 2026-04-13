@@ -9,14 +9,11 @@ import {
   Minus,
   ShieldAlert,
 } from "lucide-react";
-<<<<<<< HEAD
-=======
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
->>>>>>> @{-1}
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import type { PageMeta, ActiveGroup } from "./types";
 import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./searchHelpers";
@@ -188,8 +185,6 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
       block: "start",
     });
   }, []);
-<<<<<<< HEAD
-=======
 
   const sortedFindings = [...findings].sort(
   (a, b) => a.page_no - b.page_no
@@ -202,7 +197,6 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
   acc[finding.page_no].push(finding);
   return acc;
 }, {} as Record<number, typeof findings>);
->>>>>>> @{-1}
  
   const goToNextPage = useCallback(() => {
     if (currentPage >= numPages) return;
@@ -345,20 +339,6 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
  
       {isPdf && numPages > 0 && (
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
-<<<<<<< HEAD
-          {/* LEFT: findings count */}
-          <div className="justify-self-start">
-            <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm">
-              <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
-              <span className="text-xs text-muted-foreground">  
-                Total Findings
-              </span>
-              <span className="text-sm font-semibold text-foreground">
-                {findings.length}
-              </span>
-            </div>
-          </div>
-=======
           {/* LEFT: total findings count */}
           <div className="justify-self-start">
           <Popover>
@@ -419,7 +399,6 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
             </PopoverContent>
           </Popover>
         </div>
->>>>>>> @{-1}
         
           {/* CENTER: zoom controls */}
           <div className="justify-self-center">
