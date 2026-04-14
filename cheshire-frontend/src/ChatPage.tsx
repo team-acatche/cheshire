@@ -5,13 +5,26 @@ import {
 } from "@/components/ui/sidebar"
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+import {
   Pencil,
   Settings,
-  FileText
+  FileText,
+  MoreHorizontal,
+  Trash2,
+  PenLine,
 } from "lucide-react"
 
 
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
+import { useState } from "react"
 
 // ✅ Chat type
 export type Chat = {
@@ -27,6 +40,8 @@ interface ChatPageProps {
   onGoAccount: () => void
   profileImage: string
   userName: string
+  onDeleteChat?: (sessionId: string) => void
+  onRenameChat?: (sessionId: string, newTitle: string) => void
 }
 
 export default function ChatPage({
@@ -35,9 +50,35 @@ export default function ChatPage({
   onSelectChat,
   onGoAccount,
   profileImage,
-  userName
+  userName,
+  onDeleteChat,
+  onRenameChat,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
+
+
+  // Rename state
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState("")
+
+  const startRename = (chat:Chat) => {
+    setRenamingId(chat.session_id)
+    setRenameValue(chat.title)
+  }
+
+  const commitRename = (sessionId: string) => {
+    const trimmed = renameValue.trim()
+    if (trimmed && onRenameChat) {
+      onRenameChat(sessionId, trimmed)
+    }
+    setRenamingId(null)
+    setRenameValue("")
+  }
+
+  const cancelRename = () => {
+    setRenamingId(null)
+    setRenameValue("")
+  }
 
   return (
     <Sidebar>
@@ -83,13 +124,75 @@ export default function ChatPage({
           {safeChats.map((chat) => (
             <div
               key={chat.session_id}
-              onClick={() => onSelectChat(chat)}
-              className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm"
+              className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm cursor-pointer"
+              onClick={() => {
+                if (renamingId !== chat.session_id) {
+                  onSelectChat(chat)
+                }
+              }}
             >
-              <FileText className="h-4 w-4" />
-              <span className="truncate">
+              <FileText className="h-4 w-4 shrink-0" />
+
+              {renamingId === chat.session_id ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename(chat.session_id)
+                    if (e.key === "Escape") cancelRename()
+                  }}
+                  onBlur={() => commitRename(chat.session_id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-1 min-w-0 bg-white border border-gray-300 rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              ) : (
+                <span className="truncate flex-1 leading-none">
                 {chat.title}
                 </span>
+              )}
+
+              {/* —— Ellipsis Dropdown —— */}
+              {renamingId !== chat.session_id && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-auto shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-opacity"
+                      aria-label="Chat options"
+                    >
+                      <MoreHorizontal className="h-4 w-4 text-gray-500" />
+                    </button>
+                  </DropdownMenuTrigger>
+ 
+                  <DropdownMenuContent className="w-40" align="end">
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startRename(chat)
+                        }}
+                      >
+                        <PenLine className="h-4 w-4 mr-2" />
+                        Rename
+                      </DropdownMenuItem>
+ 
+                      <DropdownMenuSeparator />
+ 
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDeleteChat?.(chat.session_id)
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           ))}
         </div>

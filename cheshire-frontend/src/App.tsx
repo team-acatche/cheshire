@@ -107,6 +107,17 @@ export default function App({ user, onLogout }: AppProps) {
         onGoAccount={() => setPage("account")}
         profileImage={`/User.png`}
         userName={user.full_name ?? user.username ?? user.email}
+        onDeleteChat={(sessionId) => {
+          setChats(prev => prev.filter(c => c.session_id !== sessionId))
+          if (currentSessionId == sessionId) handleNewChat()
+          // TODO: call DELETE /api/v1/{sessionId} when backend endpoint exists
+        }}
+        onRenameChat={(sessionId, newTitle) => {
+          setChats(prev => prev.map (c =>
+            c.session_id === sessionId ? {...c, title: newTitle} : c
+          ))
+          // TODO: call PATCH /api/v1/{sessionId} when backend endpoint exists
+        }}
       />
 
       <SidebarTrigger />
