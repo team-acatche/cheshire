@@ -1,4 +1,3 @@
-// src/components/chatbot.tsx
 import { useState, useRef, useEffect, type KeyboardEvent } from "react"
 import { Card } from "./ui/card"
 import { Textarea } from "./ui/textarea"
@@ -12,6 +11,8 @@ import {
 } from "./ui/select"
 import SentIcon from "./ui/sent-icon"
 import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import remarkBreaks from "remark-breaks"
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
@@ -142,7 +143,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
               )}
 
               <div
-                className={`max-w-[70%] px-3 py-2 rounded-l ${
+                className={`max-w-[90%] px-3 py-2 rounded-l ${
                   msg.role === "user"
                     ? "bg-blue-800 text-white rounded-br-sm"
                     : "bg-gray-200 text-gray-800 rounded-bl-sm"
@@ -152,7 +153,54 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                   try {
                     return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
                   } catch {
-                    return <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    return <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
+                      components={{
+                        table: ({ children }) => (
+                          <div className="my-4 overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-sm">
+                            <table className="w-full border-collapse text-sm">
+                              {children}
+                            </table>
+                          </div>
+                        ),
+                        thead: ({ children }) => (
+                          <thead className="bg-gray-100 text-gray-700">
+                            {children}
+                          </thead>
+                        ),
+                        th: ({ children }) => (
+                          <th className="border border-gray-200 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                            {children}
+                          </th>
+                        ),
+                        td: ({ children }) => (
+                          <td className="border border-gray-200 px-4 py-2 text-sm">
+                            {children}
+                          </td>
+                        ),
+                        tr: ({ children }) => (
+                          <tr className="hover:bg-gray-50">
+                            {children}
+                          </tr>
+                        ),
+                        p: ({ children }) => <p className="leading-7 mb-2 last:mb-0">{children}</p>,
+                        ul: ({ children }) => <ul className="list-disc pl-5 my-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-5 my-2">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1">{children}</li>,
+                        code: ({ children }) => (
+                          <code className="rounded bg-black/10 px-1.5 py-0.5 text-[0.9em]">
+                            {children}
+                          </code>
+                        ),
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 my-2">
+                            {children}
+                          </blockquote>
+                        ),
+                      }}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
                   }
                 })()}
               </div>
