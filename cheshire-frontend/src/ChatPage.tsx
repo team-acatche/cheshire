@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Trash2,
   PenLine,
+  Share2,
 } from "lucide-react"
 
 
@@ -158,15 +159,24 @@ export default function ChatPage({
                   <DropdownMenuTrigger asChild>
                     <button
                       onClick={(e) => e.stopPropagation()}
-                      className="ml-auto shrink-0 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-opacity"
+                      className="ml-auto shrink-0 p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-all group-hover:opacity-100 data-[state-open]:opacity-100"
                       aria-label="Chat options"
                     >
                       <MoreHorizontal className="h-4 w-4 text-gray-500" />
                     </button>
                   </DropdownMenuTrigger>
  
-                  <DropdownMenuContent className="w-40" align="end">
+                  <DropdownMenuContent 
+                    className="w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-lg" 
+                    align="end"
+                    >
                     <DropdownMenuGroup>
+                      <div className="px-2 py-2">
+                        <p className="truncate text-sm font-medium text-gray-900">
+                          {chat.title}
+                        </p>
+                      </div>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={(e) => {
                           e.stopPropagation()
@@ -175,6 +185,15 @@ export default function ChatPage({
                       >
                         <PenLine className="h-4 w-4 mr-2" />
                         Rename
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                      >
+                        <Share2 className="h-4 w-4 mr-2" />
+                        Share
                       </DropdownMenuItem>
  
                       <DropdownMenuSeparator />
