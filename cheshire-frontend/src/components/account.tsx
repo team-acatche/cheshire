@@ -38,6 +38,7 @@ export default function Account({
       {/* LEFT */}
       <div className="w-[320px] bg-gray-200 flex flex-col items-center justify-center relative">
 
+        {/* ✅ FIXED IMAGE UPLOAD */}
         <input
           type="file"
           accept="image/*"
@@ -46,8 +47,15 @@ export default function Account({
           onChange={(e) => {
             const file = e.target.files?.[0]
             if (!file) return
-            const url = URL.createObjectURL(file)
-            setProfileImage(url)
+
+            const reader = new FileReader()
+
+            reader.onloadend = () => {
+              const base64 = reader.result as string
+              setProfileImage(base64) // ✅ persists after refresh
+            }
+
+            reader.readAsDataURL(file)
           }}
         />
 
@@ -59,6 +67,7 @@ export default function Account({
           <p className="text-xs text-gray-500">Change photo</p>
         </label>
 
+        {/* NAME */}
         {editing ? (
           <input
             value={tempName}
@@ -69,9 +78,11 @@ export default function Account({
           <h2 className="text-lg font-semibold mt-2">{userName}</h2>
         )}
 
+        {/* EDIT / SAVE BUTTON */}
         <button
           onClick={() => editing ? handleSave() : setEditing(true)}
           className="absolute bottom-10 w-10 h-10 flex items-center justify-center border rounded-lg hover:bg-gray-300"
+          title={editing ? "Save" : "Edit"}
         >
           {editing ? <Check size={18} /> : <Pencil size={18} />}
         </button>

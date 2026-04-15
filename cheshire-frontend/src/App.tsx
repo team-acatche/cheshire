@@ -47,30 +47,34 @@ export default function App() {
 
   const [page, setPage] = useState<"chat" | "account">("chat")
 
-  const [profileImage, setProfileImage] = useState(
-    "User.png"
-  )
+  // ✅ FIXED: initialize from localStorage
+  const [profileImage, setProfileImage] = useState(() => {
+    return localStorage.getItem("profileImage") || "User.png"
+  })
 
-  const [userName, setUserName] = useState("DELA CRUZ, JUAN")
-  const [email, setEmail] = useState("delacruz.juan@metrobank.com.ph")
+  const [userName, setUserName] = useState(() => {
+    return localStorage.getItem("userName") || "DELA CRUZ, JUAN"
+  })
+
+  const [email, setEmail] = useState(() => {
+    return localStorage.getItem("email") || "delacruz.juan@metrobank.com.ph"
+  })
+
+  // ✅ SAVE (separate effects = safer)
+  useEffect(() => {
+    if (profileImage) {
+      localStorage.setItem("profileImage", profileImage)
+    }
+  }, [profileImage])
 
   useEffect(() => {
-    const img = localStorage.getItem("profileImage")
-    const name = localStorage.getItem("userName")
-    const mail = localStorage.getItem("email")
-
-    if (img) setProfileImage(img)
-    if (name) setUserName(name)
-    if (mail) setEmail(mail)
-  }, [])
-
-  useEffect(() => {
-    localStorage.setItem("profileImage", profileImage)
     localStorage.setItem("userName", userName)
-    localStorage.setItem("email", email)
-  }, [profileImage, userName, email])
+  }, [userName])
 
-  
+  useEffect(() => {
+    localStorage.setItem("email", email)
+  }, [email])
+
   useEffect(() => {
     getChats(USERNAME).then(setChats)
   }, [])
@@ -83,12 +87,13 @@ export default function App() {
 
   const handleSelectChat = async (chat: Chat) => {
     const url = `/api/v1/${USERNAME}/${chat.session_id}/document`;
+
     const findings: VulnerabilityFinding[] = await fetch(
       `/api/v1/${USERNAME}/${chat.session_id}/result`
     )
       .then(r => r.ok ? r.json() : [])
       .catch(() => []);
-  
+
     setFile(url)
     setFindings(findings)
     setCurrentSessionId(chat.session_id)
@@ -118,7 +123,7 @@ export default function App() {
             setUserName={setUserName}
             email={email}
             setEmail={setEmail}
-            chats={chats} //Connected
+            chats={chats}
           />
         ) : (
           <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
@@ -184,13 +189,13 @@ export default function App() {
                 </CardContent>
               ) : (
                 <ResizablePanelGroup orientation="horizontal" className="h-full">
+
                   <ResizablePanel defaultSize={75} minSize={30}>
                     <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
-                      {/* Pass the original file + findings separately — no burned-in highlights */}
                       <DocumentPreview
-                      src={file}
-                      findings={findings}
-                      fileName={currentFileName}
+                        src={file}
+                        findings={findings}
+                        fileName={currentFileName}
                       />
                     </CardContent>
                   </ResizablePanel>
@@ -207,6 +212,7 @@ export default function App() {
                       />
                     )}
                   </ResizablePanel>
+
                 </ResizablePanelGroup>
               )}
             </Card>
