@@ -5953,6 +5953,18 @@ docs = ["setuptools-rust", "sphinx", "sphinx-rtd-theme"]
 testing = ["datasets", "numpy", "pytest", "pytest-asyncio", "requests", "ruff", "ty"]
 
 [[package]]
+name = "toon-format"
+version = "0.1.0"
+description = "Token-Oriented Object Notation – a token-efficient JSON alternative for LLM prompts"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "toon_format-0.1.0-py3-none-any.whl", hash = "sha256:f0c7bf3f63f1fc08739127ca895a55922617193f942f84474489770d7cd1ffc2"},
+    {file = "toon_format-0.1.0.tar.gz", hash = "sha256:77303c9b06956fe8b0066d2bca52dfdc63e2b3abba439c3c3545dbbd43a97d48"},
+]
+
+[[package]]
 name = "torch"
 version = "2.11.0"
 description = "Tensors and Dynamic neural networks in Python with strong GPU acceleration"
@@ -6734,4 +6746,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "2569892699b237e28b272cd5f21f25ac749017ea3b880ed6444ee492b9497ba4"
+content-hash = "72264b74731506304315e18abf2e142d7b4a7264c73bef9845e87db4a39bec03"

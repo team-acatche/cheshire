@@ -1,10 +1,10 @@
-import json
-
 from haystack.dataclasses import Document
 from docling.chunking import DocChunk
 from docling_core.types.doc import BoundingBox
 from pydantic import BaseModel, Field
 from typing import Annotated
+
+import toon_format as toon
 
 from tools.helpers.output_schema import VulnerabilityDetails
 
@@ -32,7 +32,7 @@ def document_to_string(documents: list[Document]) -> str:
             text=chunk.text,
         )
         document_sources.append(document_source)
-    return json.dumps([src.model_dump_json() for src in document_sources])
+    return toon.encode([src.model_dump() for src in document_sources])
 
 def vulnerabilities_to_string(vulnerabilities: list) -> str:
     result = ""
@@ -43,5 +43,5 @@ def vulnerabilities_to_string(vulnerabilities: list) -> str:
             if isinstance(bbox.get("coord_origin"), str):
                 bbox["coord_origin"] = bbox["coord_origin"].removeprefix("CoordOrigin.")
             vulnerability = VulnerabilityDetails.model_validate(vulnerability)
-        result += vulnerability.model_dump_json() + "\n"
+        result += toon.encode(vulnerability.model_dump()) + "\n"
     return result

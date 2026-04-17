@@ -27,6 +27,7 @@ dependencies = [
     "lancedb-haystack (>=0.1.1,<0.2.0)",
     "pyjwt (>=2.12.1,<3.0.0)",
     "pwdlib[argon2] (>=0.3.0,<0.4.0)",
+    "toon-format (>=0.1.0,<0.2.0)",
 ]
 
 
