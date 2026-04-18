@@ -26,6 +26,7 @@ import {
 
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
+import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 
 // ✅ Chat type
 export type Chat = {
@@ -61,6 +62,7 @@ export default function ChatPage({
   // Rename state
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
+  const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
 
   const startRename = (chat:Chat) => {
     setRenamingId(chat.session_id)
@@ -202,7 +204,7 @@ export default function ChatPage({
                         variant="destructive"
                         onClick={(e) => {
                           e.stopPropagation()
-                          onDeleteChat?.(chat.session_id)
+                          setChatToDelete(chat)
                         }}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
@@ -224,7 +226,13 @@ export default function ChatPage({
           <span>Settings</span>
         </div>
       </SidebarFooter>
-
+      <DeleteChatDialog
+        chat={chatToDelete}
+        onClose={() => setChatToDelete(null)}
+        onConfirm={(sessionId) => {
+          onDeleteChat?.(sessionId)
+        }}
+      />
     </Sidebar>
   )
 }
