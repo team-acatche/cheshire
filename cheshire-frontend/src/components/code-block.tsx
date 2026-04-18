@@ -1,11 +1,14 @@
 import { useState } from "react"
 import { Copy, CopyCheck } from "lucide-react"
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism"
 
 interface CodeBlockProps {
   children: string
+  language?: string
 }
 
-export default function CodeBlock({ children }: CodeBlockProps) {
+export default function CodeBlock({ children, language }: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -14,20 +17,15 @@ export default function CodeBlock({ children }: CodeBlockProps) {
     try {
       await navigator.clipboard.writeText(text)
     } catch {
-      try {
-        const textarea = document.createElement("textarea")
-        textarea.value = text
-        textarea.style.position = "fixed"
-        textarea.style.opacity = "0"
-        document.body.appendChild(textarea)
-        textarea.focus()
-        textarea.select()
-        document.execCommand("copy")
-        document.body.removeChild(textarea)
-      } catch {
-        console.error("Copy failed")
-        return
-      }
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.focus()
+      textarea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textarea)
     }
 
     setCopied(true)
@@ -36,6 +34,7 @@ export default function CodeBlock({ children }: CodeBlockProps) {
 
   return (
     <div className="relative my-4 group">
+      {/* Copy button */}
       <button
         onClick={handleCopy}
         title={copied ? "Copied!" : "Copy"}
@@ -48,9 +47,26 @@ export default function CodeBlock({ children }: CodeBlockProps) {
         )}
       </button>
 
-      <pre className="w-full whitespace-pre-wrap break-words rounded-xl bg-zinc-900 p-4 text-sm text-white">
-        <code>{children}</code>
-      </pre>
+      {language && (
+        <div className="absolute left-3 top-3 text-[10px] px-2 py-0.5 rounded bg-black/30 text-gray-300 uppercase">
+          {language}
+        </div>
+      )}
+
+
+      <SyntaxHighlighter
+        language={language || "text"}
+        style={vscDarkPlus}
+        customStyle={{
+          margin: 0,
+          borderRadius: "0.75rem",
+          padding: "2rem 1rem 1rem 1rem",
+          fontSize: "0.875rem",
+        }}
+        wrapLongLines
+      >
+        {children}
+      </SyntaxHighlighter>
     </div>
   )
 }

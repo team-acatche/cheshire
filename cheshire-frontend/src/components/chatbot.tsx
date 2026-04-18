@@ -214,19 +214,14 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                             </div>
                           ),
                           pre: ({ children }) => {
-                            const code = (children as any)?.props?.children || ""
-                            return <CodeBlock>{code}</CodeBlock>
-                          },
-                          code: ({ children, className }) => {
-                            const inline = !className
+                            const codeElement = children as any
+                            const code = codeElement?.props?.children || ""
+                            const className = codeElement?.props?.className || ""
 
-                            return inline ? (
-                              <code className="break-words rounded bg-black/10 px-1.5 py-0.5 text-[0.9em] whitespace-pre-wrap">
-                                {children}
-                              </code>
-                            ) : (
-                              <code className={className}>{children}</code>
-                            )
+                            const match = /language-(\w+)/.exec(className || "")
+                            const language = match ? match[1] : "text"
+
+                            return <CodeBlock language={language}>{code}</CodeBlock>
                           },
                         }}
                       >
