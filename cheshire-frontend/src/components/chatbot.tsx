@@ -140,8 +140,8 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
               }`}
             >
               {msg.role !== "user" && (
-                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
-                  <img src="/Agent.jpg" className="w-full h-full object-cover" alt="agent" />
+                <div className="w-8 h-8 overflow-hidden shrink-0">
+                  <img src="/cheshire-black.png" className="w-full h-full object-cover" alt="agent" />
                 </div>
               )}
 
