@@ -24,7 +24,6 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import Account from "./components/account"
-import { PROVIDER } from "./globals"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -66,8 +65,8 @@ export default function App({ user, onLogout }: AppProps) {
   }, [])
 
   const handleNewChat = () => {
-    setFile(null)
     setFindings([])
+    setPage("chat")
     setCurrentSessionId(null)
     setPage("chat")
   }
@@ -100,6 +99,7 @@ export default function App({ user, onLogout }: AppProps) {
 
   return (
     <SidebarProvider>
+
       <ChatPage
         onNewChat={handleNewChat}
         chats={chats}
@@ -213,6 +213,7 @@ export default function App({ user, onLogout }: AppProps) {
           </main>
         )}
       </SidebarInset>
+
     </SidebarProvider>
   )
 }
