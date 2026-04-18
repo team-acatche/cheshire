@@ -11,8 +11,12 @@ from cheshire_configs.registry import configs
 
 client = TestClient(api)
 
-# Mock configs to avoid dependency issues
-api.dependency_overrides[configs] = lambda: {}
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    # Mock configs to avoid dependency issues for auth tests
+    api.dependency_overrides[configs] = lambda: {}
+    yield
+    api.dependency_overrides.clear()
 
 TEST_USER = User(
     user_id="test-123",
