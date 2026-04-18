@@ -172,7 +172,7 @@ class TestGetCurrentUser:
         token = _mint_token()
 
         with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
-            user = asyncio.run(get_current_user(token=token, repo=MagicMock()))
+            user = asyncio.run(get_current_user(token=token, repo=get_user_repository()))
 
         assert user.user_id == TEST_USER.user_id
         assert user.username == TEST_USER.username
@@ -188,26 +188,28 @@ class TestGetCurrentUser:
 
         with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
             with pytest.raises(HTTPException) as exc_info:
-                asyncio.run(get_current_user(token=token, repo=MagicMock()))
+                asyncio.run(get_current_user(token=token, repo=get_user_repository()))
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
         assert "expired" in exc_info.value.detail.lower()
 
     @patch("auth.dependencies.JWT_SECRET", TEST_SECRET)
-    def test_invalid_token_raises_401(self):
+    def test_invalid_token_raises_401(self, tmp_path: Path):
         """Garbage token string → HTTP 401."""
-        with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(get_current_user(token="not.a.real.token", repo=MagicMock()))
+        with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(get_current_user(token="not.a.real.token", repo=get_user_repository()))
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
     @patch("auth.dependencies.JWT_SECRET", TEST_SECRET)
-    def test_wrong_secret_raises_401(self):
+    def test_wrong_secret_raises_401(self, tmp_path: Path):
         """Token signed with a different secret → HTTP 401."""
         token = _mint_token(secret="wrong-secret-but-long-enough-32b!")
 
-        with pytest.raises(HTTPException) as exc_info:
-            asyncio.run(get_current_user(token=token, repo=MagicMock()))
+        with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(get_current_user(token=token, repo=get_user_repository()))
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -220,7 +222,7 @@ class TestGetCurrentUser:
 
         with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
             with pytest.raises(HTTPException) as exc_info:
-                asyncio.run(get_current_user(token=token, repo=MagicMock()))
+                asyncio.run(get_current_user(token=token, repo=get_user_repository()))
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -233,7 +235,7 @@ class TestGetCurrentUser:
 
         with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
             with pytest.raises(HTTPException) as exc_info:
-                asyncio.run(get_current_user(token=token, repo=MagicMock()))
+                asyncio.run(get_current_user(token=token, repo=get_user_repository()))
 
         assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
         assert "disabled" in exc_info.value.detail.lower()
