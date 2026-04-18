@@ -6,11 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-<<<<<<< HEAD
 from fastapi import APIRouter, Depends, Response
-=======
-from fastapi import APIRouter, Depends
->>>>>>> main
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
