@@ -349,3 +349,54 @@ class TestCallbackFactoryFlush:
 
         assert response.status_code == status.HTTP_200_OK
         mock_factory.flush.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{session_id} — delete_session
+# ---------------------------------------------------------------------------
+
+class TestDeleteSession:
+    """Tests for DELETE /api/v1/{session_id}."""
+
+    def test_successful_delete(self, tmp_path: Path):
+        """Happy path: session and its messages are deleted."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, session_repo, event_repo = _create_session_db(db_path)
+        
+        # Create a session to delete
+        session_id = str(uuid.uuid4())
+        session_repo.save_new_session(Session(session_id=session_id, title="To be deleted"))
+        event_repo.save(Event(session_id=session_id, event_type=EventType.USER_MESSAGE, content="Hello"))
+        conn.close()
+
+        # Create session directory as required by the endpoint logic
+        (user_dir / session_id).mkdir(parents=True, exist_ok=True)
+
+        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+            response = client.delete(f"/api/v1/{session_id}")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        
+        # Verify it's gone from session repo and event repo
+        conn2 = sqlite3.connect(str(db_path))
+        session_repo2 = SqliteSessionRepository(conn2)
+        event_repo2 = SqliteEventRepository(conn2)
+        
+        assert session_repo2.get_session(session_id) is None
+        assert len(event_repo2.get_recent(session_id)) == 0
+        conn2.close()
+
+    def test_session_dir_not_configured(self):
+        """SESSION_DIR is None → 500."""
+        with patch("endpoints.chat.SESSION_DIR", None):
+            response = client.delete(f"/api/v1/{SESSION_ID}")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_session_db_not_found(self, tmp_path: Path):
+        """DB file doesn't exist → 404."""
+        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+            response = client.delete(f"/api/v1/{SESSION_ID}")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND

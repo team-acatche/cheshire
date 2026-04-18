@@ -1,4 +1,5 @@
 import os
+import shutil
 import sqlite3
 from dotenv import load_dotenv
 
@@ -7,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Optional, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel, Field
 
 from haystack.components.agents import Agent
@@ -138,3 +139,32 @@ async def chat(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         history_db.close()
+
+@chat_router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> Response:
+    if SESSION_DIR is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
+
+    user_id = current_user.user_id
+    user_path = Path(SESSION_DIR) / user_id
+    user_db_path = user_path / f"{user_id}.sqlite"
+    session_dir = user_path / session_id
+    
+    if not user_db_path.exists() or not session_dir.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    # Connect to repositories
+    user_db = sqlite3.connect(user_db_path)
+    event_repo = SqliteEventRepository(user_db)
+    session_repo = SqliteSessionRepository(user_db)
+
+    session_repo.delete_session(session_id)
+    event_repo.delete_messages_from_session(session_id)
+
+    shutil.rmtree(session_dir)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    
