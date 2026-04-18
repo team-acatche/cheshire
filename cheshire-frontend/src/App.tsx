@@ -184,7 +184,7 @@ export default function App({ user, onLogout }: AppProps) {
                 </CardContent>
               ) : (
                 <ResizablePanelGroup orientation="horizontal" className="h-full">
-                  <ResizablePanel defaultSize={75} minSize={30}>
+                  <ResizablePanel defaultSize={68} minSize={30}>
                     <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
                       <DocumentPreview
                         src={file}
@@ -196,7 +196,7 @@ export default function App({ user, onLogout }: AppProps) {
 
                   <ResizableHandle withHandle />
 
-                  <ResizablePanel defaultSize={25} minSize={15}>
+                  <ResizablePanel defaultSize={32} minSize={15}>
                     {currentSessionId && (
                       <Chatbot
                         key={currentSessionId}
