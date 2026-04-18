@@ -3,7 +3,7 @@
 import sqlite3
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 from fastapi import status
@@ -81,7 +81,7 @@ class TestGetSessions:
         session_repo.save_new_session(s2)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_200_OK
@@ -97,7 +97,7 @@ class TestGetSessions:
         conn, _, _ = _create_session_db(db_path)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_200_OK
@@ -105,15 +105,15 @@ class TestGetSessions:
 
     def test_session_dir_not_configured(self):
         """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "SESSION_DIR" in response.json()["detail"]
+        assert "SESSIONS_PATH" in response.json()["detail"]
 
     def test_session_db_not_found(self, tmp_path: Path):
         """User directory / DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -136,7 +136,7 @@ class TestChatHistory:
         event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.RESPONSE, content="Hi there"))
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_200_OK
@@ -157,7 +157,7 @@ class TestChatHistory:
         conn, _, _ = _create_session_db(db_path)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_200_OK
@@ -165,14 +165,14 @@ class TestChatHistory:
 
     def test_session_dir_not_configured(self):
         """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_session_db_not_found(self, tmp_path: Path):
         """DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -200,7 +200,7 @@ class TestPostChat:
         mock_vector_stores.knowledge_store = MagicMock()
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -241,7 +241,7 @@ class TestPostChat:
         mock_vector_stores.knowledge_store = MagicMock()
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -261,7 +261,7 @@ class TestPostChat:
 
     def test_session_dir_not_configured(self):
         """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
                 json={"message": "Hello"},
@@ -271,7 +271,7 @@ class TestPostChat:
 
     def test_session_db_not_found(self, tmp_path: Path):
         """DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
                 json={"message": "Hello"},
@@ -294,7 +294,7 @@ class TestPostChat:
         mock_vector_stores.knowledge_store = MagicMock()
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -309,7 +309,7 @@ class TestPostChat:
 
     def test_missing_message_body_returns_422(self):
         """Missing / invalid request body → 422."""
-        with patch("endpoints.chat.SESSION_DIR", "/tmp"):
+        with patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp")):
             response = client.post(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -336,7 +336,7 @@ class TestCallbackFactoryFlush:
         mock_factory.return_value = MagicMock()  # the __call__ returns a callback
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -373,7 +373,7 @@ class TestDeleteSession:
         # Create session directory as required by the endpoint logic
         (user_dir / session_id).mkdir(parents=True, exist_ok=True)
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.delete(f"/api/v1/{session_id}")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -389,14 +389,14 @@ class TestDeleteSession:
 
     def test_session_dir_not_configured(self):
         """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.delete(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_session_db_not_found(self, tmp_path: Path):
         """DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.delete(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
