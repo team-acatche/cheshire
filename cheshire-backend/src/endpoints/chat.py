@@ -32,6 +32,9 @@ chat_router = APIRouter()
 class ChatBody(BaseModel):
     message: str
 
+class RenameBody(BaseModel):
+    new_title: str
+
 @chat_router.get("/")
 async def get_sessions(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -151,4 +154,19 @@ def delete_session(
     shutil.rmtree(session_dir)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-    
+
+@chat_router.put("/{session_id}/rename")
+def rename_session(
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    body: RenameBody,
+) -> Session:
+    if not user_db_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    with sqlite3.connect(user_db_path) as user_db:
+        session_repo = SqliteSessionRepository(user_db)
+        if updated_session := session_repo.change_title(session_id, new_title=body.new_title):
+            return updated_session
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")

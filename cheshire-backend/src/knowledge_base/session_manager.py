@@ -85,9 +85,12 @@ class SqliteSessionRepository(SessionRepository):
     
     def change_title(self, session_id: str, *, new_title: str) -> Optional[Session]:
         """Changes the title of a session. Returns the updated session if it exists, None otherwise."""
-        self.cursor.execute("UPDATE session SET title = ? WHERE session_id = ?", (new_title, session_id))
+        self.cursor.execute("UPDATE session SET title = ? WHERE session_id = ? RETURNING *", (new_title, session_id))
+        row = self.cursor.fetchone()
         self.db.commit()
-        return self.get_session(session_id)
+        if row is not None:
+            return Session.from_row(row)
+        return None
     
     def delete_session(self, session_id: str):
         """Deletes a session from the repository."""

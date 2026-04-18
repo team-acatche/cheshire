@@ -400,3 +400,66 @@ class TestDeleteSession:
             response = client.delete(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# PUT /{session_id}/rename — rename_session
+# ---------------------------------------------------------------------------
+
+class TestRenameSession:
+    """Tests for PUT /api/v1/{session_id}/rename."""
+
+    def test_successful_rename(self, tmp_path: Path):
+        """Happy path: rename a session and return the updated object."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, session_repo, _ = _create_session_db(db_path)
+        
+        session_id = str(uuid.uuid4())
+        session_repo.save_new_session(Session(session_id=session_id, title="Old Title"))
+        conn.close()
+
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.put(
+                f"/api/v1/{session_id}/rename",
+                json={"new_title": "New Elegant Title"}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["session_id"] == session_id
+        assert data["title"] == "New Elegant Title"
+
+        # Double check DB
+        conn2 = sqlite3.connect(str(db_path))
+        repo2 = SqliteSessionRepository(conn2)
+        updated = repo2.get_session(session_id)
+        assert updated is not None
+        assert updated.title == "New Elegant Title"
+        conn2.close()
+
+    def test_rename_non_existent_session(self, tmp_path: Path):
+        """If session_id is not in DB → 404."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, _, _ = _create_session_db(db_path)
+        conn.close()
+
+        random_id = str(uuid.uuid4())
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.put(
+                f"/api/v1/{random_id}/rename",
+                json={"new_title": "Doesnt matter"}
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_session_db_not_found(self, tmp_path: Path):
+        """DB file doesn't exist → 404."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.put(
+                f"/api/v1/anything/rename",
+                json={"new_title": "Nope"}
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
