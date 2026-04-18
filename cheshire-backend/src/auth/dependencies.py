@@ -60,7 +60,6 @@ def create_access_token(user: User) -> str:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="JWT_SECRET is not configured on the server.",
         )
-
     payload = {
         "sub": user.user_id,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS),
@@ -91,7 +90,6 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id: str | None = payload.get("sub")

@@ -9,7 +9,6 @@ from fastapi import HTTPException, status
 from auth.models import User, UserEntity, generate_salt
 from auth.hashers import PasswordHasher
 
-
 class UserRepository(Protocol):
     def create_table_if_not_exists(self):
         pass
@@ -103,7 +102,6 @@ class SqliteUserRepository(UserRepository):
     def __init__(self, db_path: Path, *, hasher: PasswordHasher):
         self.db_path = db_path
         self.hasher = hasher
-
     def create_table_if_not_exists(self):
         with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
