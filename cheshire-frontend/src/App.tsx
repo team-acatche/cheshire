@@ -65,8 +65,8 @@ export default function App({ user, onLogout }: AppProps) {
   }, [])
 
   const handleNewChat = () => {
+    setFile(null)
     setFindings([])
-    setPage("chat")
     setCurrentSessionId(null)
     setPage("chat")
   }
@@ -84,7 +84,6 @@ export default function App({ user, onLogout }: AppProps) {
     const objectUrl = blob ? URL.createObjectURL(blob) : null
 
     const results = await getSessionResults(chat.session_id)
-
     setFile(objectUrl)
     setFindings(results)
     setCurrentSessionId(chat.session_id)
