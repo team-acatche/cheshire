@@ -65,8 +65,8 @@ export default function App({ user, onLogout }: AppProps) {
   }, [])
 
   const handleNewChat = () => {
-    setFile(null)
     setFindings([])
+    setPage("chat")
     setCurrentSessionId(null)
     setPage("chat")
   }
