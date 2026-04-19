@@ -27,12 +27,15 @@ mock_config = PipelineConfig(
     tools=[],
     mode=EvaluationType.RAG
 )
-api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
-
 def mock_get_current_user():
     return User(user_id="test_id", email="test@example.com", sessions_folder="testuser", username="testuser", full_name="Test User", avatar_uri="default.png")
 
-api.dependency_overrides[get_current_user] = mock_get_current_user
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
+    api.dependency_overrides[get_current_user] = mock_get_current_user
+    yield
+    api.dependency_overrides.clear()
 
 client = TestClient(api)
 

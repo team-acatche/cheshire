@@ -79,10 +79,10 @@ export default function App({ user, onLogout }: AppProps) {
   }, [])
 
   const handleNewChat = () => {
-    setFile(null)
     setFindings([])
-    setCurrentSessionId(null)
     setPage("chat")
+    setCurrentSessionId(null)
+    setFile(null)
   }
 
   const handleSelectChat = async (chat: Chat) => {
@@ -91,8 +91,8 @@ export default function App({ user, onLogout }: AppProps) {
       .catch(() => null)
 
     const objectUrl = blob ? URL.createObjectURL(blob) : null
-    const results   = await getSessionResults(chat.session_id)
 
+    const results = await getSessionResults(chat.session_id)
     setFile(objectUrl)
     setFindings(results)
     setCurrentSessionId(chat.session_id)
@@ -216,7 +216,7 @@ export default function App({ user, onLogout }: AppProps) {
                 </CardContent>
               ) : (
                 <ResizablePanelGroup orientation="horizontal" className="h-full">
-                  <ResizablePanel defaultSize={75} minSize={30}>
+                  <ResizablePanel defaultSize={68} minSize={30}>
                     <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
                       <DocumentPreview
                         src={file}
@@ -228,7 +228,7 @@ export default function App({ user, onLogout }: AppProps) {
 
                   <ResizableHandle withHandle />
 
-                  <ResizablePanel defaultSize={25} minSize={15}>
+                  <ResizablePanel defaultSize={32} minSize={15}>
                     {currentSessionId && (
                       <Chatbot
                         key={currentSessionId}
