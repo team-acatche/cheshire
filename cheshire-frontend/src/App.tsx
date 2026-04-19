@@ -68,7 +68,7 @@ export default function App({ user, onLogout }: AppProps) {
     setFindings([])
     setPage("chat")
     setCurrentSessionId(null)
-    setPage("chat")
+    setFile(null)
   }
 
   const handleSelectChat = async (chat: Chat) => {

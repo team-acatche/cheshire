@@ -50,10 +50,26 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
 
         if (backendMessages.length > 0) {
           setMessages(
-            backendMessages.map((msg: ResponseMessage): Message => ({
-              role: msg._role as "user" | "bot1" | "bot2" | "bot3",
-              text: msg._content.map(c => c.text ?? "").join("\n\n"),
-            }))
+            backendMessages
+              .map((msg: ResponseMessage): Message | null => {
+                const text = msg._content.map(c => c.text ?? "").join("\n\n").trim()
+
+                // Filter tool/system logs
+                if (
+                  text.startsWith("Tool:") ||
+                  text.startsWith("Arguments:") ||
+                  text === "" ||
+                  msg._role === "system"
+                ) {
+                  return null 
+                }
+
+                return {
+                  role: msg._role as "user" | "bot1" | "bot2" | "bot3",
+                  text,
+                }
+              })
+              .filter((m): m is Message => m !== null)
           )
         } else {
           // Seed with vulnerability summary when no chat history yet
@@ -127,7 +143,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
   }, [messages, typing])
 
   return (
-    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0">
+    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0 rounded-none">
 
       {/* Chat area */}
       <div className="flex-1 overflow-y-auto p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
