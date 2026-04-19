@@ -36,9 +36,7 @@ from endpoints.helpers import get_or_create_vector_stores
 from auth.db_access import get_history
 from auth.models import User
 from auth.dependencies import get_current_user
-
-load_dotenv()
-SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
+from dependencies.sessions import get_user_path, get_user_db_path
 
 evaluate_router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -52,16 +50,14 @@ async def evaluate_document(
     config: Annotated[PipelineConfig, Depends(resolve_config)],
     current_user: Annotated[User, Depends(get_current_user)],
     uploaded_document: Annotated[UploadFile, File(description="The document to be evaluated")],
+    user_path: Annotated[Path, Depends(get_user_path)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
     session_id: Annotated[Optional[str], Query(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
 ) -> EvaluateResponse:
-    if not SESSION_DIR:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set within the server")
-
     user_id = current_user.user_id
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
 
     _session_id: str = session_id or str(uuid.uuid4())
-    user_path = Path(SESSION_DIR) / user_id
 
     # save the file into a temporary directory
     tmp_file = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -89,7 +85,7 @@ async def evaluate_document(
     if session_id is None:
         # Initialize session DB
         logger.debug(f"save({filename}): Saving {filename} as a new session...")
-        with sqlite3.connect(user_path / f"{user_id}.sqlite") as session_db:
+        with sqlite3.connect(user_db_path) as session_db:
             session_repo = SqliteSessionRepository(session_db)
             session_repo.save_new_session(Session(session_id=_session_id, title=filename))
         logger.info(f"save({filename}): {filename} saved as a new session.")
@@ -135,14 +131,8 @@ def _get_latest(session_path: Path) -> str:
 def get_latest_evaluation_results(
     session_id: Annotated[str, PathParam(description="The session ID for the document.")],
     current_user: Annotated[User, Depends(get_current_user)],
+    history_db_path: Annotated[Path, Depends(get_user_db_path)],
 ) -> list[VulnerabilityDetails]:
-    if not SESSION_DIR:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set within the server")
-
-    user_id = current_user.user_id
-    user_path = Path(SESSION_DIR) / user_id
-    history_db_path = user_path / f"{user_id}.sqlite"
-    
     if not history_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -156,9 +146,9 @@ def get_latest_evaluation_results(
 def get_document(
     session_id: Annotated[str, PathParam(description="The session ID for the document.")],
     current_user: Annotated[User, Depends(get_current_user)],
+    user_path: Annotated[Path, Depends(get_user_path)],
 ) -> Response:
-    user_id = current_user.user_id
-    session_path = Path(SESSION_DIR) / user_id / session_id
+    session_path = user_path / session_id
     latest_document = session_path / "documents" / _get_latest(session_path)
     if not latest_document.exists():
         return Response(status_code=status.HTTP_404_NOT_FOUND, content=f"Document for session {session_id} not found")
