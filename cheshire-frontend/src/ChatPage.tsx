@@ -66,13 +66,31 @@ export default function ChatPage({
 
   const startRename = (chat:Chat) => {
     setRenamingId(chat.session_id)
-    setRenameValue(chat.title)
+    
+    const lastDotIndex = chat.title.lastIndexOf(".")
+    if (lastDotIndex !== -1) {
+      const nameOnly = chat.title.substring(0, lastDotIndex)
+      setRenameValue(nameOnly)
+    } else {
+      setRenameValue(chat.title)
+    }
   }
 
   const commitRename = (sessionId: string) => {
     const trimmed = renameValue.trim()
+
     if (trimmed && onRenameChat) {
-      onRenameChat(sessionId, trimmed)
+      const originalChat = chats.find((c) => c.session_id === sessionId)
+
+      if (originalChat) {
+        const lastDotIndex = originalChat.title.lastIndexOf(".")
+        const extension =
+          lastDotIndex !== -1
+            ? originalChat.title.substring(lastDotIndex)
+            : ""
+        const finalName = trimmed + extension
+        onRenameChat(sessionId, finalName)
+      }
     }
     setRenamingId(null)
     setRenameValue("")
