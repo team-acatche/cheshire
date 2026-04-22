@@ -14,7 +14,7 @@ from endpoints.chat import chat_router
 from endpoints.user_auth import auth_router
 from endpoints.user import user_router
 
-SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
+from globals import SESSION_DIR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
