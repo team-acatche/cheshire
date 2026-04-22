@@ -53,3 +53,19 @@ def test_ref_event_id(repo):
     
     recent = repo.get_recent(session_id, 2)
     assert recent[0].ref_event_id == parent_id
+
+def test_delete_messages_from_session(repo):
+    session_1 = "session_1"
+    session_2 = "session_2"
+    
+    repo.save(Event(session_id=session_1, event_type=EventType.USER_MESSAGE, content="Message 1"))
+    repo.save(Event(session_id=session_1, event_type=EventType.RESPONSE, content="Response 1"))
+    repo.save(Event(session_id=session_2, event_type=EventType.USER_MESSAGE, content="Message 2"))
+    
+    assert len(repo.get_recent(session_1)) == 2
+    assert len(repo.get_recent(session_2)) == 1
+    
+    repo.delete_messages_from_session(session_1)
+    
+    assert len(repo.get_recent(session_1)) == 0
+    assert len(repo.get_recent(session_2)) == 1

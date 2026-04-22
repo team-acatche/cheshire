@@ -66,6 +66,10 @@ class EventRepository(Protocol):
     def get_event(self, event_id: int) -> Optional[Event]:
         """Returns the event with the given id."""
         ...
+    
+    def delete_messages_from_session(self, session_id: str):
+        """Deletes all messages from a session."""
+        ...
 
 class SqliteEventRepository(EventRepository):
     def __init__(self, history: sqlite.Connection):
@@ -116,6 +120,11 @@ class SqliteEventRepository(EventRepository):
         if (row := self.cursor.fetchone()) is not None:
             return Event.from_row(row)
         return None
+    
+    def delete_messages_from_session(self, session_id: str):
+        """Deletes all messages from a given session."""
+        self.cursor.execute("DELETE FROM event WHERE session_id = ?", (session_id,))
+        self.history.commit()
     
 @dataclass(kw_only=True)
 class StreamCallbackFactory:

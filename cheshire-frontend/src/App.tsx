@@ -28,10 +28,25 @@ import Account from "./components/account"
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function fetchSessions(): Promise<Chat[]> {
-  // GET /api/v1/  — returns sessions for the authenticated user
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
+}
+
+async function deleteSession(sessionId: string): Promise<boolean> {
+  return authFetch(`/api/v1/${sessionId}`, { method: "DELETE" })
+    .then(r => r.ok || r.status === 204)
+    .catch(() => false)
+}
+
+async function renameSession(sessionId: string, newTitle: string): Promise<boolean> {
+  return authFetch(`/api/v1/${sessionId}/rename`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_title: newTitle }),
+  })
+    .then(r => r.ok)
+    .catch(() => false)
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -42,19 +57,18 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
-  const [file, setFile]                     = useState<File | string | null>(null)
-  const [findings, setFindings]             = useState<VulnerabilityFinding[]>([])
-  const [chats, setChats]                   = useState<Chat[]>([])
+  const [file, setFile]                         = useState<File | string | null>(null)
+  const [findings, setFindings]                 = useState<VulnerabilityFinding[]>([])
+  const [chats, setChats]                       = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing]     = useState(false)
-  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
-  const [page, setPage]                     = useState<"chat" | "account">("chat")
+  const [isProcessing, setIsProcessing]         = useState(false)
+  const [currentFileName, setCurrentFileName]   = useState<string>("document.pdf")
+  const [page, setPage]                         = useState<"chat" | "account">("chat")
 
   // Load sessions on mount
   useEffect(() => {
     fetchSessions().then(sessions =>
       setChats(
-        // Backend Session has session_id + title; Chat also needs a findings placeholder
         sessions.map((s: any) => ({
           session_id: s.session_id,
           title: s.title,
@@ -72,12 +86,7 @@ export default function App({ user, onLogout }: AppProps) {
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    // Fetch the stored PDF as an object URL so DocumentPreview can render it
-    const docUrl = `/api/v1/${chat.session_id}/document`
-    // Use a string URL with authFetch under the hood via DocumentPreview's fetch
-    // We pass the URL directly; the browser will use the cached JWT cookie alternative —
-    // instead let's fetch it properly and create a blob URL.
-    const blob = await authFetch(docUrl)
+    const blob = await authFetch(`/api/v1/${chat.session_id}/document`)
       .then(r => (r.ok ? r.blob() : null))
       .catch(() => null)
 
@@ -89,6 +98,28 @@ export default function App({ user, onLogout }: AppProps) {
     setCurrentSessionId(chat.session_id)
     setCurrentFileName(chat.title)
     setPage("chat")
+  }
+
+  const handleDeleteChat = async (sessionId: string) => {
+    const ok = await deleteSession(sessionId)
+    if (!ok) {
+      console.error(`Failed to delete session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.filter(c => c.session_id !== sessionId))
+    if (currentSessionId === sessionId) handleNewChat()
+  }
+
+  const handleRenameChat = async (sessionId: string, newTitle: string) => {
+    const ok = await renameSession(sessionId, newTitle)
+    if (!ok) {
+      console.error(`Failed to rename session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.map(c =>
+      c.session_id === sessionId ? { ...c, title: newTitle } : c
+    ))
+    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
   }
 
   const handleLogout = () => {
@@ -104,8 +135,10 @@ export default function App({ user, onLogout }: AppProps) {
         chats={chats}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
-        profileImage={`/User.png`}
+        profileImage="/User.png"
         userName={user.full_name ?? user.username ?? user.email}
+        onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
       />
 
       <SidebarTrigger />
@@ -130,7 +163,6 @@ export default function App({ user, onLogout }: AppProps) {
                     <h1 className="text-3xl font-bold tracking-tight">
                       Hi, {user.full_name ?? user.username ?? ""}!
                     </h1>
-
                     <p className="text-muted-foreground text-sm">
                       Welcome to Cheshire. Please upload a document to evaluate.
                     </p>
