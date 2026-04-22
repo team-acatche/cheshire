@@ -11,10 +11,16 @@ from auth.hashers import PasswordHasher
 
 class UserRepository(Protocol):
     def create_table_if_not_exists(self):
-        pass
+        """
+        Create the user table if it does not exist.
+        """
+        ...
 
     def login(self, email: str, password: str) -> UserEntity:
-        pass
+        """
+        Login a user with their email and password.
+        """
+        ...
 
     def register(
         self,
@@ -24,10 +30,22 @@ class UserRepository(Protocol):
         username: Optional[str] = None,
         full_name: Optional[str] = None,
     ) -> UserEntity:
-        pass
+        """
+        Register a new user.
+        """
+        ...
 
-    def get_by_user_id(self, user_id: str) -> UserEntity | None:
-        pass
+    def get_by_user_id(self, user_id: str) -> Optional[UserEntity]:
+        """
+        Get a user by their user ID.
+        """
+        ...
+
+    def update_avatar(self, user_id: str, avatar_uri: str) -> UserEntity:
+        """
+        Update the avatar URI for a given user.
+        """
+        ...
 
 
 class InMemoryUserRepository(UserRepository):
@@ -91,17 +109,27 @@ class InMemoryUserRepository(UserRepository):
 
         return new_user
 
-    def get_by_user_id(self, user_id: str) -> UserEntity | None:
+    def get_by_user_id(self, user_id: str) -> Optional[UserEntity]:
         for user_entity in self.users.values():
             if user_entity.user.user_id == user_id:
                 return user_entity
         return None
+    
+    def update_avatar(self, user_id: str, avatar_uri: str) -> UserEntity:
+        if user_id not in self.users:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with user ID `{user_id}` not found",
+            )
+        self.users[user_id].user.avatar_uri = avatar_uri
+        return self.users[user_id]
 
 
 class SqliteUserRepository(UserRepository):
     def __init__(self, db_path: Path, *, hasher: PasswordHasher):
         self.db_path = db_path
         self.hasher = hasher
+
     def create_table_if_not_exists(self):
         with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
@@ -150,21 +178,7 @@ class SqliteUserRepository(UserRepository):
                     detail=f"User with email `{email}` not found",
                 )
 
-            user = UserEntity(
-                user=User(
-                    user_id=row[0],
-                    email=row[1],
-                    sessions_folder=row[2],
-                    username=row[3],
-                    full_name=row[4],
-                    avatar_uri=row[5],
-                ),
-                password_hash=row[6],
-                prefix_salt=row[7],
-                suffix_salt=row[8],
-                disabled=bool(row[9]),
-                created_at=row[10],
-            )
+            user = UserEntity.from_row(row)
 
             if not self.hasher.verify(
                 f"{user.prefix_salt}{password}{user.suffix_salt}",
@@ -241,7 +255,7 @@ class SqliteUserRepository(UserRepository):
 
             return new_user
 
-    def get_by_user_id(self, user_id: str) -> UserEntity | None:
+    def get_by_user_id(self, user_id: str) -> Optional[UserEntity]:
         self.create_table_if_not_exists()
         with sqlite3.connect(self.db_path, uri=True) as conn:
             cursor = conn.cursor()
@@ -266,18 +280,19 @@ class SqliteUserRepository(UserRepository):
             if row is None:
                 return None
 
-            return UserEntity(
-                user=User(
-                    user_id=row[0],
-                    email=row[1],
-                    sessions_folder=row[2],
-                    username=row[3],
-                    full_name=row[4],
-                    avatar_uri=row[5],
-                ),
-                password_hash=row[6],
-                prefix_salt=row[7],
-                suffix_salt=row[8],
-                disabled=bool(row[9]),
-                created_at=row[10],
-            )
+            return UserEntity.from_row(row)
+    
+    def update_avatar(self, user_id: str, avatar_uri: str) -> UserEntity:
+        self.create_table_if_not_exists()
+        with sqlite3.connect(self.db_path, uri=True) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""UPDATE user SET avatar_uri = ? WHERE user_id = ? RETURNING *""", (avatar_uri, user_id))
+            row = cursor.fetchone()
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"User with user ID `{user_id}` not found",
+                )
+            conn.commit()
+
+            return UserEntity.from_row(row)
