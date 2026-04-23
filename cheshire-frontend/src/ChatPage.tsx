@@ -161,7 +161,7 @@ export default function ChatPage({
                   <DropdownMenuTrigger asChild>
                     <button
                       onClick={(e) => e.stopPropagation()}
-                      className="ml-auto shrink-0 p-1.5 rounded opacity-0 hover:bg-gray-200 transition-all group-hover:opacity-100 data-[state-open]:opacity-100"
+                      className="ml-auto shrink-0 p-1.5 rounded opacity-0 hover:bg-gray-200 transition-all group-hover:opacity-100 data-state-open:opacity-100"
                       aria-label="Chat options"
                     >
                       <MoreHorizontal className="h-4 w-4 text-gray-500" />

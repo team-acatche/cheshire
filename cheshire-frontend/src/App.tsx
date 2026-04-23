@@ -28,6 +28,7 @@ import Account from "./components/account"
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function fetchSessions(): Promise<Chat[]> {
+  // GET /api/v1/  — returns sessions for the authenticated user
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
@@ -99,7 +100,12 @@ export default function App({ user, onLogout }: AppProps) {
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    const blob = await authFetch(`/api/v1/${chat.session_id}/document`)
+    // Fetch the stored PDF as an object URL so DocumentPreview can render it
+    const docUrl = `/api/v1/${chat.session_id}/document`
+    // Use a string URL with authFetch under the hood via DocumentPreview's fetch
+    // We pass the URL directly; the browser will use the cached JWT cookie alternative —
+    // instead let's fetch it properly and create a blob URL.
+    const blob = await authFetch(docUrl)
       .then(r => (r.ok ? r.blob() : null))
       .catch(() => null)
 
