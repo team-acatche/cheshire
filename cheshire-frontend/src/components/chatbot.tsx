@@ -246,7 +246,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                     )
 
                     return msg.role === "user" ? content : (
-                      <div className="w-full max-w-[750px] space-y-4">
+                      <div className="w-full max-w-750px space-y-4">
                         {content}
                       </div>
                     )
