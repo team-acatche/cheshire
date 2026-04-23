@@ -62,13 +62,14 @@ export async function loginRequest(email: string, password: string): Promise<Aut
   }
 
   const data = await res.json()
+  const userData = data.user ?? data
   const user: AuthUser = {
-    user_id: data.user_id,
-    email: data.email,
-    sessions_folder: data.sessions_folder,
-    username: data.username ?? null,
-    full_name: data.full_name ?? null,
-    avatar_uri: data.avatar_uri ?? "avatars/default.png",
+    user_id: userData.user_id,
+    email: userData.email,
+    sessions_folder: userData.sessions_folder,
+    username: userData.username ?? null,
+    full_name: userData.full_name ?? null,
+    avatar_uri: userData.avatar_uri ?? "avatars/default.png",
   }
 
   saveAuth(user)
