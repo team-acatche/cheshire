@@ -67,6 +67,10 @@ class EventRepository(Protocol):
         """Returns the event with the given id."""
         ...
 
+    def get_last_event_timestamp(self, session_id: str) -> Optional[str]:
+        """Returns the timestamp of the last event for the given session."""
+        ...
+
 class SqliteEventRepository(EventRepository):
     def __init__(self, history: sqlite.Connection):
         self.history = history
@@ -75,11 +79,11 @@ class SqliteEventRepository(EventRepository):
         # initialize events table
         self.cursor.execute("""CREATE TABLE IF NOT EXISTS event (
             event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
+            session_id TEXT NOT NULL REFERENCES session(session_id) ON DELETE CASCADE,
             event_type TEXT NOT NULL,
             content TEXT NOT NULL,
             timestamp TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
-            ref_event_id INTEGER REFERENCES event(event_id)
+            ref_event_id INTEGER REFERENCES event(event_id) ON DELETE SET NULL
         )""")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_session_id ON event(session_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_event_event_type ON event(event_type)")
@@ -110,6 +114,13 @@ class SqliteEventRepository(EventRepository):
                 (session_id, *[e.value for e in event_types], k)
             )
         return [Event.from_row(row) for row in self.cursor.fetchall()]
+    
+    def get_last_event_timestamp(self, session_id: str) -> Optional[str]:
+        """Returns the timestamp of the last event for the given session."""
+        self.cursor.execute("SELECT MAX(timestamp) FROM event WHERE session_id = ?", (session_id,))
+        if (row := self.cursor.fetchone()) is not None:
+            return row[0]
+        return None
     
     def get_event(self, event_id: int) -> Optional[Event]:
         self.cursor.execute("SELECT * FROM event WHERE event_id = ? LIMIT 1", (event_id,))
