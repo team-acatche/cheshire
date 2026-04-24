@@ -71,7 +71,7 @@ async def login(
     response: Response,
     repo: Annotated[SqliteUserRepository, Depends(get_user_repository)],
     body: Annotated[OAuth2PasswordRequestForm, Depends()],
-) -> UserResponse:
+) -> dict:
     """Authenticate an existing user.
 
     On success the JWT is returned as an HttpOnly; SameSite=Strict cookie.
@@ -81,7 +81,7 @@ async def login(
     entity = repo.login(body.username, body.password)
     token = create_access_token(entity.user)
     _set_auth_cookie(response, token)
-    return _to_response(entity)
+    return {"access_token": token, "user": _to_response(entity)}
 
 
 @auth_router.post("/logout")
