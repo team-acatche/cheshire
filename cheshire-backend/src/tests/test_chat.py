@@ -318,6 +318,60 @@ class TestPostChat:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
+
+# ---------------------------------------------------------------------------
+# GET /{session_id}/latest-timestamp — get_latest_event_timestamp
+# ---------------------------------------------------------------------------
+
+class TestGetLatestTimestamp:
+    """Tests for GET /api/v1/{session_id}/latest-timestamp."""
+
+    def test_returns_latest_timestamp(self, tmp_path: Path):
+        """When events exist, return the latest timestamp."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, _, event_repo = _create_session_db(db_path)
+
+        ts1 = "2024-01-01 10:00:00"
+        ts2 = "2024-01-01 10:05:00"
+        event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.USER_MESSAGE, content="First", timestamp=ts1))
+        event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.RESPONSE, content="Second", timestamp=ts2))
+        conn.close()
+
+        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["last_timestamp"] == ts2
+
+    def test_returns_none_if_no_events(self, tmp_path: Path):
+        """When session exists but no events, return None for timestamp."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, _, _ = _create_session_db(db_path)
+        conn.close()
+
+        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_session_dir_not_configured(self):
+        """SESSION_DIR is None → 500."""
+        with patch("endpoints.chat.SESSION_DIR", None):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_session_db_not_found(self, tmp_path: Path):
+        """DB file doesn't exist → 404."""
+        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
 class TestCallbackFactoryFlush:
     """Verify that callback_factory.flush() is called after a successful agent run."""
 
