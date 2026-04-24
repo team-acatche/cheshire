@@ -47,6 +47,7 @@ class UserRepository(Protocol):
         """
         ...
 
+
 class InMemoryUserRepository(UserRepository):
     def __init__(self, *, hasher: PasswordHasher):
         self.users: dict[str, UserEntity] = {}

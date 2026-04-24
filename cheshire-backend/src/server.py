@@ -18,7 +18,7 @@ from globals import SESSION_DIR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    os.makedirs(SESSION_DIR, exist_ok=True) # ensure that the SESSION_DIR exists
+    os.makedirs(SESSIONS_PATH, exist_ok=True) # ensure that the SESSION_DIR exists
     yield
 
 api = FastAPI(dependencies=[Depends(configs)], lifespan=lifespan)

@@ -90,6 +90,13 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
   const handleSave = () => {
     setDisplayName(tempName)
     setEditing(false)
+
+    // TODO: create an endpoint that saves the changes made
+  }
+
+  const handleLogout = () => {
+    logout()
+    onLogout()
   }
 
   const handleLogout = () => {
@@ -163,6 +170,7 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
           )}
         </label>
 
+        {/* Display name */}
         {editing ? (
           <input
             value={tempName}
@@ -173,6 +181,7 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
           <h2 className="text-lg font-semibold">{displayName || "—"}</h2>
         )}
 
+        {/* Edit / Save toggle */}
         <button
           onClick={() => (editing ? handleSave() : setEditing(true))}
           className="absolute bottom-16 w-10 h-10 flex items-center justify-center border rounded-lg hover:bg-gray-300"
