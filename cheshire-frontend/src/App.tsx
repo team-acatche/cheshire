@@ -119,23 +119,28 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
-            <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} mt-2 shadow-none`}>
+          <main className="flex flex-col items-center justify-start h-dvh overflow p-25">
+
+            <h1 className="text-5xl font-bold tracking-tight p-1 h-20">
+              Hi, {user.full_name ?? user.username ?? ""}!
+              </h1>
+
+            
+            <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} shadow-none`}>
               {isProcessing ? (
                 <CardContent className="col-span-full h-full flex items-center justify-center">
                   <LoadingPage />
                 </CardContent>
               ) : !file ? (
-                <CardContent className="size-full space-y-6 text-center">
+                <CardContent className="space-y-6 text-center">
                   <div className="space-y-2">
-                    <h1 className="text-3xl font-bold tracking-tight">
-                      Hi, {user.full_name ?? user.username ?? ""}!
-                    </h1>
-
-                    <p className="text-muted-foreground text-sm">
-                      Welcome to Cheshire. Please upload a document to evaluate.
-                    </p>
+                    <div className="flex flex-col justify-center text-center">
+                      <p className="text-muted-foreground text-lg">
+                        Welcome to Cheshire. Please upload a document to evaluate.
+                      </p>
+                    </div>
                   </div>
+                
 
                   <CardAction className="flex justify-center m-auto">
                     <Button asChild className="w-40">
@@ -210,6 +215,66 @@ export default function App({ user, onLogout }: AppProps) {
                 </ResizablePanelGroup>
               )}
             </Card>
+
+            <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-6xl mx-auto py-10">
+              <div className="flex flex-col md:flex-row items-center gap-10 flex-1">
+                <div className="flex-shrink-0">
+                  <img
+                    src="/cheshire.png"
+                    alt="Cheshire Logo"
+                    className="w-48 h-48 md:w-56 md:h-56 object-contain"
+                  />
+                </div>
+
+                <div className="flex flex-col justify-center text-left max-w-sm">
+                  <h2 className="text-2xl font-bold mb-2 text-slate-800">
+                    About Cheshire
+                  </h2>
+                  <p className="text-lg text-muted-foreground leading-relaxed justify-center">
+                    Cheshire is an assessment tool designed to identify vulnerabilities 
+                    in your Technical Document Specification (TDS) using AI analysis.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-1 border-l border-slate-100 pl-16">
+                <h3 className="text-base font-semibold uppercase tracking-wider text-slate-400">
+                  Features
+                </h3>
+                <div className="grid grid-cols-1 gap-6">
+                  <div className="flex gap-4">
+                    <div className="text-500 font-bold">01</div>
+                    <div>
+                      <h4 className="font-semibold text-slate-800">
+                        Document Preview
+                      </h4>
+                      <p className="text-sm text-muted-foreground">A preview of your technical document before analysis.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="text-500 font-bold">02</div>
+                    <div>
+                      <h4 className="font-semibold text-slate-800">
+                        Document Preview
+                      </h4>
+                      <p className="text-sm text-muted-foreground">A preview of your technical document before analysis.</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="text-500 font-bold">03</div>
+                    <div>
+                      <h4 className="font-semibold text-slate-800">
+                        Document Preview
+                      </h4>
+                      <p className="text-sm text-muted-foreground">A preview of your technical document before analysis.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </main>
         )}
       </SidebarInset>
