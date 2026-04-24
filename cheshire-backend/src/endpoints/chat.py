@@ -165,4 +165,4 @@ async def get_latest_event_timestamp(
     if timestamp is None:
         response.status_code = status.HTTP_204_NO_CONTENT
         return
-    return {"last_timestamp": timestamp}
+    return {"latest_timestamp": timestamp}

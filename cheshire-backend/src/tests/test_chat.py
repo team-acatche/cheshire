@@ -343,7 +343,7 @@ class TestGetLatestTimestamp:
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["last_timestamp"] == ts2
+        assert data["latest_timestamp"] == ts2
 
     def test_returns_none_if_no_events(self, tmp_path: Path):
         """When session exists but no events, return None for timestamp."""
