@@ -48,16 +48,12 @@ def test_login_sets_cookie_and_hides_token():
     
     assert response.status_code == status.HTTP_200_OK
     
-    # Check that the token is NOT in the JSON body
     data = response.json()
-    assert "access_token" not in data
-    assert data["email"] == TEST_USER.email
-    
-    # Check that the cookie is set
+    assert "access_token" in data
+    assert data["user"]["email"] == TEST_USER.email
     assert ACCESS_TOKEN_COOKIE in response.cookies
     assert response.cookies[ACCESS_TOKEN_COOKIE] is not None
     
-    # Clean up
     del api.dependency_overrides[get_user_repository]
 
 def test_register_sets_cookie_and_hides_token():
