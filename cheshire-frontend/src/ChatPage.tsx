@@ -64,15 +64,33 @@ export default function ChatPage({
   const [renameValue, setRenameValue] = useState("")
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
 
-  const startRename = (chat: Chat) => {
+  const startRename = (chat:Chat) => {
     setRenamingId(chat.session_id)
-    setRenameValue(chat.title)
+    
+    const lastDotIndex = chat.title.lastIndexOf(".")
+    if (lastDotIndex !== -1) {
+      const nameOnly = chat.title.substring(0, lastDotIndex)
+      setRenameValue(nameOnly)
+    } else {
+      setRenameValue(chat.title)
+    }
   }
 
   const commitRename = (sessionId: string) => {
     const trimmed = renameValue.trim()
+
     if (trimmed && onRenameChat) {
-      onRenameChat(sessionId, trimmed)
+      const originalChat = chats.find((c) => c.session_id === sessionId)
+
+      if (originalChat) {
+        const lastDotIndex = originalChat.title.lastIndexOf(".")
+        const extension =
+          lastDotIndex !== -1
+            ? originalChat.title.substring(lastDotIndex)
+            : ""
+        const finalName = trimmed + extension
+        onRenameChat(sessionId, finalName)
+      }
     }
     setRenamingId(null)
     setRenameValue("")
@@ -127,14 +145,14 @@ export default function ChatPage({
           {safeChats.map((chat) => (
             <div
               key={chat.session_id}
-              className="flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm cursor-pointer"
+              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-gray-100"
               onClick={() => {
                 if (renamingId !== chat.session_id) {
                   onSelectChat(chat)
                 }
               }}
             >
-              <FileText className="h-4 w-4 shrink-0" />
+              <FileText className="h-4 w-4 shrink-0 text-gray-500" />
 
               {renamingId === chat.session_id ? (
                 <input
@@ -147,21 +165,21 @@ export default function ChatPage({
                   }}
                   onBlur={() => commitRename(chat.session_id)}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 bg-white border border-gray-300 rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 min-w-0 rounded border border-gray-300 bg-white px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                 />
               ) : (
-                <span className="truncate flex-1 leading-none">
+                <span className="flex-1 truncate leading-none text-gray-800">
                   {chat.title}
                 </span>
               )}
 
-              {/* —— Ellipsis Dropdown —— */}
               {renamingId !== chat.session_id && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
+                      type="button"
                       onClick={(e) => e.stopPropagation()}
-                      className="ml-auto shrink-0 p-1.5 rounded opacity-0 hover:bg-gray-200 transition-all group-hover:opacity-100 data-state-open:opacity-100"
+                      className="ml-auto shrink-0 rounded p-1.5 opacity-50 transition hover:bg-gray-200 hover:opacity-100 group-hover:opacity-100 data-[state=open]:bg-gray-200 data-[state=open]:opacity-100"
                       aria-label="Chat options"
                     >
                       <MoreHorizontal className="h-4 w-4 text-gray-500" />
@@ -169,8 +187,8 @@ export default function ChatPage({
                   </DropdownMenuTrigger>
 
                   <DropdownMenuContent
-                    className="w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
                     align="end"
+                    className="w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
                   >
                     <DropdownMenuGroup>
                       <div className="px-2 py-2">
@@ -178,24 +196,29 @@ export default function ChatPage({
                           {chat.title}
                         </p>
                       </div>
+
                       <DropdownMenuSeparator />
+
                       <DropdownMenuItem
                         onClick={(e) => {
                           e.stopPropagation()
                           startRename(chat)
                         }}
+                        className="cursor-pointer rounded-md"
                       >
-                        <PenLine className="h-4 w-4 mr-2" />
+                        <PenLine className="mr-2 h-4 w-4" />
                         Rename
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                        }}
+                        disabled
+                        className="cursor-not-allowed rounded-md text-gray-400 focus:bg-transparent"
                       >
-                        <Share2 className="h-4 w-4 mr-2" />
+                        <Share2 className="mr-2 h-4 w-4" />
                         Share
+                        <span className="ml-auto text-[10px] uppercase tracking-wide">
+                          Soon
+                        </span>
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator />
@@ -206,8 +229,9 @@ export default function ChatPage({
                           e.stopPropagation()
                           setChatToDelete(chat)
                         }}
+                        className="cursor-pointer rounded-md"
                       >
-                        <Trash2 className="h-4 w-4 mr-2" />
+                        <Trash2 className="mr-2 h-4 w-4" />
                         Delete
                       </DropdownMenuItem>
                     </DropdownMenuGroup>

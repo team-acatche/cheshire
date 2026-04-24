@@ -50,7 +50,6 @@ async function renameSession(sessionId: string, newTitle: string): Promise<boole
     .catch(() => false)
 }
 
-
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 interface AppProps {
@@ -105,7 +104,6 @@ export default function App({ user, onLogout }: AppProps) {
     const objectUrl = blob ? URL.createObjectURL(blob) : null
 
     const results = await getSessionResults(chat.session_id)
-
     setFile(objectUrl)
     setFindings(results)
     setCurrentSessionId(chat.session_id)
