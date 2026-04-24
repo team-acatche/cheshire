@@ -58,11 +58,18 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
     session_dir = Path(SESSION_DIR)
 
+    # delete old avatar if it exists and is not the default
+    if user.avatar_uri and user.avatar_uri != "default.png":
+        old_avatar_path = user_path / user.avatar_uri
+        if old_avatar_path.exists():
+            old_avatar_path.unlink()
+
     # write avatar to disk
     user_avatars_dir = user_path / "avatars"
+    user_avatars_dir.mkdir(parents=True, exist_ok=True)
     avatar_filename = f"{datetime.now()}__{avatar.filename}"
     with open(user_avatars_dir / avatar_filename, "wb") as f:
         f.write(await avatar.read())
+        
     updated_user = user_repository.update_avatar(user.user_id, f"avatars/{avatar_filename}")
-    
     return UploadAvatarResponse(avatar_url=f"/api/v1/{updated_user.user.avatar_uri}")

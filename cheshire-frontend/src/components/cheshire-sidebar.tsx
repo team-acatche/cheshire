@@ -16,7 +16,7 @@ import {
 
 import AccountDetails from "./account-details";
 import { useEffect, useState } from "react";
-import { USERNAME } from "@/globals";
+
 
 type Chat = {
     id: string;
@@ -36,7 +36,7 @@ export function CheshireSidebar({ onSelectChat, onNewChat, onGoAccount }: Props)
 
     // load chats
     useEffect(() => {
-        fetch(`/api/v1/${USERNAME}/chat`)
+        fetch(`/api/v1/{session_id}`)
             .then(res => res.json() as Promise<Chat[]>)
             .then(data => setChats(data))
             .catch(err => console.error("Error loading chats:", err));
@@ -47,7 +47,7 @@ export function CheshireSidebar({ onSelectChat, onNewChat, onGoAccount }: Props)
         try {
             console.log("Creating chat...");
 
-            const res = await fetch(`/api/v1/${USERNAME}/chat`, {
+            const res = await fetch(`/api/v1/{session_id}`, {
                 method: "POST",
             });
 

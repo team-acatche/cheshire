@@ -23,6 +23,12 @@ export function getStoredUser(): AuthUser | null {
   }
 }
 
+export function updateStoredUser(partial: Partial<AuthUser>): void {
+  const user = getStoredUser()
+  if (!user) return
+  saveAuth({ ...user, ...partial })
+}
+
 export function clearAuth(): void {
   sessionStorage.removeItem(USER_KEY)
 }

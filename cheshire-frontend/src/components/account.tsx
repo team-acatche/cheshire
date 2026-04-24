@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import { Pencil, Check, LogOut } from "lucide-react"
 import type { Chat } from "@/ChatPage"
 import type { AuthUser } from "@/lib/auth"
-import { logout } from "@/lib/auth"
+import { authFetch, logout, updateStoredUser } from "@/lib/auth"
 
 interface AccountProps {
   setProfileImage: (image: string) => void
@@ -14,18 +14,13 @@ interface AccountProps {
 
 export default function Account({ setProfileImage, user, chats, onLogout }: AccountProps) {
   const [editing, setEditing] = useState(false)
-
-  const [displayName, setDisplayName] = useState(
-    user.full_name ?? user.username ?? ""
+  const [displayName, setDisplayName] = useState(user.full_name ?? user.username ?? "")
+  const [tempName, setTempName] = useState(user.full_name ?? user.username ?? "")
+  const [avatarSrc, setAvatarSrc] = useState(
+    user.avatar_uri && user.avatar_uri !== "avatars/default.png"
+      ? `/api/v1/${user.avatar_uri}`
+      : "/api/v1/avatars/default.png"
   )
-  const [tempName, setTempName] = useState(
-    user.full_name ?? user.username ?? ""
-  )
-
-  const [localAvatar, _] = useState<string | null>(null)
-
-  const avatarSrc =
-    localAvatar ?? (user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/User.png")
 
   useEffect(() => {
     setDisplayName(user.full_name ?? user.username ?? "")
@@ -35,8 +30,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
   const handleSave = () => {
     setDisplayName(tempName)
     setEditing(false)
-
-    // TODO: create an endpoint that saves the changes made
   }
 
   const handleLogout = () => {
@@ -48,24 +41,42 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
     <div className="flex h-full">
       {/* LEFT panel */}
       <div className="w-[320px] bg-gray-200 flex flex-col items-center justify-center relative gap-3">
-        {/* Avatar upload */}
         <input
           type="file"
           accept="image/*"
           className="hidden"
           id="profile-upload"
-          onChange={(e) => {
+          onChange={async (e) => {
             const file = e.target.files?.[0]
             if (!file) return
 
+            // Preview immediately
             const reader = new FileReader()
-
             reader.onloadend = () => {
-              const base64 = reader.result as string
-              setProfileImage(base64) // ✅ persists after refresh
+              setAvatarSrc(reader.result as string)
+              setProfileImage(reader.result as string)
             }
-
             reader.readAsDataURL(file)
+
+            // Upload to backend
+            try {
+              const formData = new FormData()
+              formData.append("avatar", file)
+
+              const res = await authFetch("/api/v1/avatars", {
+                method: "POST",
+                body: formData,
+              })
+
+              if (res.ok) {
+                const data = await res.json()
+                setAvatarSrc(data.avatar_url)       // updates img in Account
+                setProfileImage(data.avatar_url)    // updates img in ChatPage sidebar
+                updateStoredUser({ avatar_uri: data.avatar_url.replace("/api/v1/", "") }) // updates stored user for persistence
+              }
+            } catch (err) {
+              console.error("Failed to upload avatar:", err)
+            }
           }}
         />
 
@@ -81,7 +92,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
           <p className="text-xs text-gray-500">Change photo</p>
         </label>
 
-        {/* Display name */}
         {editing ? (
           <input
             value={tempName}
@@ -92,7 +102,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
           <h2 className="text-lg font-semibold">{displayName || "—"}</h2>
         )}
 
-        {/* Edit / Save toggle */}
         <button
           onClick={() => (editing ? handleSave() : setEditing(true))}
           className="absolute bottom-16 w-10 h-10 flex items-center justify-center border rounded-lg hover:bg-gray-300"
@@ -101,7 +110,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
           {editing ? <Check size={18} /> : <Pencil size={18} />}
         </button>
 
-        {/* Logout */}
         <button
           onClick={handleLogout}
           className="absolute bottom-4 flex items-center gap-1.5 text-sm text-gray-600 hover:text-red-600"
@@ -122,7 +130,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
             <p className="text-sm font-medium text-gray-500">Email</p>
             <p className="text-gray-700">{user.email}</p>
           </div>
-
           <div>
             <p className="text-sm font-medium text-gray-500">Username</p>
             <p className="text-gray-700">{user.username ?? "—"}</p>
@@ -137,10 +144,7 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
             <p className="text-gray-400 text-sm">No reviews yet</p>
           ) : (
             chats.slice(0, 5).map((chat) => (
-              <div
-                key={chat.session_id}
-                className="p-2 border rounded-md text-sm"
-              >
+              <div key={chat.session_id} className="p-2 border rounded-md text-sm">
                 {chat.title}
               </div>
             ))

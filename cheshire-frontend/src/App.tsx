@@ -67,17 +67,10 @@ export default function App({ user, onLogout }: AppProps) {
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
 
-  // ✅ FIXED: initialize from localStorage
-  const [profileImage, setProfileImage] = useState(() => {
-    return localStorage.getItem("profileImage") || "User.png"
-  })
-
-  // ✅ SAVE (separate effects = safer)
-  useEffect(() => {
-    if (profileImage) {
-      localStorage.setItem("profileImage", profileImage)
-    }
-  }, [profileImage])
+  // Derive profile image URL from user data, with a fallback to default avatar
+  const [profileImage, setProfileImage] = useState(
+    user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
+  )
 
   // Load sessions on mount
   useEffect(() => {
@@ -155,7 +148,7 @@ export default function App({ user, onLogout }: AppProps) {
         chats={chats}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
-        profileImage="/User.png"
+        profileImage={profileImage || "/User.png"}
         userName={user.full_name ?? user.username ?? user.email}
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
