@@ -1,16 +1,12 @@
-import os
 from pathlib import Path
 from typing import Annotated, AsyncGenerator
 import sqlite3
 
-from fastapi import HTTPException, Depends, status
+from fastapi import Depends
 
-from auth.models import User
-from auth.dependencies import get_current_user
 from knowledge_base.history import EventRepository, SqliteEventRepository
 
 from dependencies.sessions import get_user_db_path
-from knowledge_base.history import EventRepository, SqliteEventRepository
 
 async def get_history(
     user_db_path: Annotated[Path, Depends(get_user_db_path)]

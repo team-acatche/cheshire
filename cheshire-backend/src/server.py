@@ -12,7 +12,9 @@ from cheshire_configs.registry import configs
 from endpoints.evaluate import evaluate_router
 from endpoints.chat import chat_router
 from endpoints.user_auth import auth_router
-from auth.dependencies import SESSIONS_PATH
+from endpoints.user import user_router
+
+from globals import SESSION_DIR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +37,11 @@ api.include_router(
 
 api.include_router(
     evaluate_router,
+    prefix="/api/v1",
+)
+
+api.include_router(
+    user_router,
     prefix="/api/v1",
 )
 

@@ -28,6 +28,7 @@ import Account from "./components/account"
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function fetchSessions(): Promise<Chat[]> {
+  // GET /api/v1/  — returns sessions for the authenticated user
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
@@ -57,13 +58,18 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
-  const [file, setFile]                         = useState<File | string | null>(null)
-  const [findings, setFindings]                 = useState<VulnerabilityFinding[]>([])
-  const [chats, setChats]                       = useState<Chat[]>([])
+  const [file, setFile] = useState<File | string | null>(null)
+  const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
+  const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing]         = useState(false)
-  const [currentFileName, setCurrentFileName]   = useState<string>("document.pdf")
-  const [page, setPage]                         = useState<"chat" | "account">("chat")
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
+  const [page, setPage] = useState<"chat" | "account">("chat")
+
+  // Derive profile image URL from user data, with a fallback to default avatar
+  const [profileImage, setProfileImage] = useState(
+    user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
+  )
 
   // Load sessions on mount
   useEffect(() => {
@@ -86,7 +92,12 @@ export default function App({ user, onLogout }: AppProps) {
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    const blob = await authFetch(`/api/v1/${chat.session_id}/document`)
+    // Fetch the stored PDF as an object URL so DocumentPreview can render it
+    const docUrl = `/api/v1/${chat.session_id}/document`
+    // Use a string URL with authFetch under the hood via DocumentPreview's fetch
+    // We pass the URL directly; the browser will use the cached JWT cookie alternative —
+    // instead let's fetch it properly and create a blob URL.
+    const blob = await authFetch(docUrl)
       .then(r => (r.ok ? r.blob() : null))
       .catch(() => null)
 
@@ -135,7 +146,7 @@ export default function App({ user, onLogout }: AppProps) {
         chats={chats}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
-        profileImage="/User.png"
+        profileImage={profileImage || "/User.png"}
         userName={user.full_name ?? user.username ?? user.email}
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
@@ -146,6 +157,7 @@ export default function App({ user, onLogout }: AppProps) {
       <SidebarInset>
         {page === "account" ? (
           <Account
+            setProfileImage={setProfileImage}
             user={user}
             chats={chats}
             onLogout={handleLogout}

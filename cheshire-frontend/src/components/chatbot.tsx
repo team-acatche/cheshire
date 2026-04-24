@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, type KeyboardEvent } from "react"
+// src/components/chatbot.tsx
+import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
 import { Textarea } from "./ui/textarea"
 import UploadSimpleIcon from "./ui/upload-icon"
@@ -33,8 +34,8 @@ interface ChatbotProps {
 
 export function Chatbot({ findings, sessionId }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput]       = useState<string>("")
-  const [typing, setTyping]     = useState<boolean>(false)
+  const [input, setInput] = useState<string>("")
+  const [typing, setTyping] = useState<boolean>(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
   // Load history when session changes
@@ -61,7 +62,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                   text === "" ||
                   msg._role === "system"
                 ) {
-                  return null 
+                  return null
                 }
 
                 return {
@@ -151,9 +152,8 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-start gap-3 ${
-                msg.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              className={`flex items-start gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"
+                }`}
             >
               {msg.role !== "user" && (
                 <div className="w-8 h-8 overflow-hidden shrink-0">
@@ -165,7 +165,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                 className={
                   msg.role === "user"
                     ? "max-w-[80%] px-3 py-2 bg-blue-800 text-white rounded-2xl rounded-br-sm"
-                    : "w-full min-w-0 px-4 text-gray-800 break-words"
+                    : "w-full min-w-0 px-4 text-gray-800 wrap-break-word"
                 }
               >
                 {(() => {
@@ -176,50 +176,50 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkBreaks]}
                         components={{
-                          table: ({ children }) => (
+                          table: ({ children }: { children?: ReactNode }) => (
                             <div className="my-4 overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-sm">
                               <table className="w-full border-collapse text-sm">
                                 {children}
                               </table>
                             </div>
                           ),
-                          thead: ({ children }) => (
+                          thead: ({ children }: { children?: ReactNode }) => (
                             <thead className="bg-gray-100 text-gray-700">
                               {children}
                             </thead>
                           ),
-                          th: ({ children }) => (
+                          th: ({ children }: { children?: ReactNode }) => (
                             <th className="border border-gray-200 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
                               {children}
                             </th>
                           ),
-                          td: ({ children }) => (
+                          td: ({ children }: { children?: ReactNode }) => (
                             <td className="border border-gray-200 px-4 py-2 text-sm align-top">
                               {children}
                             </td>
                           ),
-                          tr: ({ children }) => (
+                          tr: ({ children }: { children?: ReactNode }) => (
                             <tr className="hover:bg-gray-50">
                               {children}
                             </tr>
                           ),
-                          p: ({ children }) => (
+                          p: ({ children }: { children?: ReactNode }) => (
                             <p className="mb-3 text-[15px] leading-7">
                               {children}
                             </p>
                           ),
-                          ul: ({ children }) => (
+                          ul: ({ children }: { children?: ReactNode }) => (
                             <ul className="my-3 list-disc space-y-1 pl-6">
                               {children}
                             </ul>
                           ),
-                          ol: ({ children }) => (
+                          ol: ({ children }: { children?: ReactNode }) => (
                             <ol className="my-3 list-decimal space-y-1 pl-6">
                               {children}
                             </ol>
                           ),
-                          li: ({ children }) => <li className="mb-1 break-words">{children}</li>,
-                          blockquote: ({ children }) => (
+                          li: ({ children }: { children?: ReactNode }) => <li className="mb-1 wrap-break-word">{children}</li>,
+                          blockquote: ({ children }: { children?: ReactNode }) => (
                             <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600">
                               {children}
                             </blockquote>
@@ -229,7 +229,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                               <div className="flex-1 border-t border-gray-200" />
                             </div>
                           ),
-                          pre: ({ children }) => {
+                          pre: ({ children }: { children?: ReactNode }) => {
                             const codeElement = children as any
                             const code = codeElement?.props?.children || ""
                             const className = codeElement?.props?.className || ""
@@ -246,7 +246,7 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
                     )
 
                     return msg.role === "user" ? content : (
-                      <div className="w-full max-w-[750px] space-y-4">
+                      <div className="w-full max-w-750px space-y-4">
                         {content}
                       </div>
                     )
