@@ -21,12 +21,13 @@ import {
   Trash2,
   PenLine,
   Share2,
+  LogOut,
 } from "lucide-react"
-
 
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
+import { logout } from "@/lib/auth";
 
 // ✅ Chat type
 export type Chat = {
@@ -44,6 +45,7 @@ interface ChatPageProps {
   userName: string
   onDeleteChat?: (sessionId: string) => void
   onRenameChat?: (sessionId: string, newTitle: string) => void
+  onLogout: () => void
 }
 
 export default function ChatPage({
@@ -55,42 +57,23 @@ export default function ChatPage({
   userName,
   onDeleteChat,
   onRenameChat,
+  onLogout
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
-
-  // Rename state
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
 
-  const startRename = (chat:Chat) => {
+  const startRename = (chat: Chat) => {
     setRenamingId(chat.session_id)
-    
-    const lastDotIndex = chat.title.lastIndexOf(".")
-    if (lastDotIndex !== -1) {
-      const nameOnly = chat.title.substring(0, lastDotIndex)
-      setRenameValue(nameOnly)
-    } else {
-      setRenameValue(chat.title)
-    }
+    setRenameValue(chat.title)
   }
 
   const commitRename = (sessionId: string) => {
     const trimmed = renameValue.trim()
-
     if (trimmed && onRenameChat) {
-      const originalChat = chats.find((c) => c.session_id === sessionId)
-
-      if (originalChat) {
-        const lastDotIndex = originalChat.title.lastIndexOf(".")
-        const extension =
-          lastDotIndex !== -1
-            ? originalChat.title.substring(lastDotIndex)
-            : ""
-        const finalName = trimmed + extension
-        onRenameChat(sessionId, finalName)
-      }
+      onRenameChat(sessionId, trimmed)
     }
     setRenamingId(null)
     setRenameValue("")
@@ -101,6 +84,11 @@ export default function ChatPage({
     setRenameValue("")
   }
 
+  const handleLogout = () => {
+    logout()
+    onLogout()
+  }
+
   return (
     <Sidebar>
 
@@ -109,7 +97,7 @@ export default function ChatPage({
         {/* ACCOUNT */}
         <div
           onClick={onGoAccount}
-          className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-md"
+          className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-md transition-colors"
         >
           <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-black">
             <img src={profileImage} className="h-full w-full object-cover" />
@@ -124,10 +112,10 @@ export default function ChatPage({
         {/* NEW CHAT */}
         <div
           onClick={onNewChat}
-          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100"
+          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 transition-colors"
         >
-          <Pencil className="h-4 w-4" />
-          <span>New Chat</span>
+          <Pencil className="h-4 w-4 shrink-0 text-gray-500" />
+          <span className="leading-none">New Chat</span>
         </div>
 
         {/* CHAT HISTORY */}
@@ -145,7 +133,7 @@ export default function ChatPage({
           {safeChats.map((chat) => (
             <div
               key={chat.session_id}
-              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-gray-100"
+              className="group flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm cursor-pointer transition-colors"
               onClick={() => {
                 if (renamingId !== chat.session_id) {
                   onSelectChat(chat)
@@ -165,10 +153,10 @@ export default function ChatPage({
                   }}
                   onBlur={() => commitRename(chat.session_id)}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 rounded border border-gray-300 bg-white px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 min-w-0 bg-white border border-gray-300 rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
                 />
               ) : (
-                <span className="flex-1 truncate leading-none text-gray-800">
+                <span className="truncate flex-1 leading-none">
                   {chat.title}
                 </span>
               )}
@@ -177,9 +165,8 @@ export default function ChatPage({
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
-                      type="button"
                       onClick={(e) => e.stopPropagation()}
-                      className="ml-auto shrink-0 rounded p-1.5 opacity-50 transition hover:bg-gray-200 hover:opacity-100 group-hover:opacity-100 data-[state=open]:bg-gray-200 data-[state=open]:opacity-100"
+                      className="ml-auto shrink-0 p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-gray-200 transition-all"
                       aria-label="Chat options"
                     >
                       <MoreHorizontal className="h-4 w-4 text-gray-500" />
@@ -187,8 +174,8 @@ export default function ChatPage({
                   </DropdownMenuTrigger>
 
                   <DropdownMenuContent
-                    align="end"
                     className="w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
+                    align="end"
                   >
                     <DropdownMenuGroup>
                       <div className="px-2 py-2">
@@ -204,21 +191,18 @@ export default function ChatPage({
                           e.stopPropagation()
                           startRename(chat)
                         }}
-                        className="cursor-pointer rounded-md"
+                        className="flex items-center gap-2"
                       >
-                        <PenLine className="mr-2 h-4 w-4" />
+                        <PenLine className="h-4 w-4" />
                         Rename
                       </DropdownMenuItem>
 
                       <DropdownMenuItem
-                        disabled
-                        className="cursor-not-allowed rounded-md text-gray-400 focus:bg-transparent"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex items-center gap-2"
                       >
-                        <Share2 className="mr-2 h-4 w-4" />
+                        <Share2 className="h-4 w-4" />
                         Share
-                        <span className="ml-auto text-[10px] uppercase tracking-wide">
-                          Soon
-                        </span>
                       </DropdownMenuItem>
 
                       <DropdownMenuSeparator />
@@ -229,9 +213,9 @@ export default function ChatPage({
                           e.stopPropagation()
                           setChatToDelete(chat)
                         }}
-                        className="cursor-pointer rounded-md"
+                        className="flex items-center gap-2"
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        <Trash2 className="h-4 w-4" />
                         Delete
                       </DropdownMenuItem>
                     </DropdownMenuGroup>
@@ -244,12 +228,30 @@ export default function ChatPage({
 
       </SidebarContent>
 
+      {/* FIXED FOOTER */}
       <SidebarFooter className="p-4 border-t">
-        <div className="cursor-pointer flex items-center gap-2 text-sm hover:text-gray-600">
-          <Settings className="h-4 w-4" />
-          <span>Settings</span>
+        <div className="flex items-center gap-6 text-sm text-gray-600">
+
+          {/* Settings */}
+          <div
+            onClick={onGoAccount}
+            className="flex items-center gap-2 cursor-pointer hover:text-black transition-colors"
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            <span className="leading-none">Settings</span>
+          </div>
+
+          {/* Sign Out */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 hover:text-red-600 transition-colors"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span className="leading-none">Sign out</span>
+          </button>
         </div>
       </SidebarFooter>
+
       <DeleteChatDialog
         chat={chatToDelete}
         onClose={() => setChatToDelete(null)}
