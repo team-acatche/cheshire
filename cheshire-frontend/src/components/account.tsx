@@ -90,7 +90,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
   const handleSave = () => {
     setDisplayName(tempName)
     setEditing(false)
-
     // TODO: create an endpoint that saves the changes made
   }
 
@@ -99,10 +98,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
     onLogout()
   }
 
-  const handleLogout = () => {
-    logout()
-    onLogout()
-  }
 
   return (
     <div className="flex h-full">
