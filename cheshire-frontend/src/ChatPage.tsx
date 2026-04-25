@@ -5,13 +5,28 @@ import {
 } from "@/components/ui/sidebar"
 
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
+import {
   Pencil,
   Settings,
-  FileText
+  FileText,
+  MoreHorizontal,
+  Trash2,
+  PenLine,
+  Share2,
 } from "lucide-react"
 
 
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
+import { useState } from "react"
+import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 
 // ✅ Chat type
 export type Chat = {
@@ -27,6 +42,8 @@ interface ChatPageProps {
   onGoAccount: () => void
   profileImage: string
   userName: string
+  onDeleteChat?: (sessionId: string) => void
+  onRenameChat?: (sessionId: string, newTitle: string) => void
 }
 
 export default function ChatPage({
@@ -35,9 +52,54 @@ export default function ChatPage({
   onSelectChat,
   onGoAccount,
   profileImage,
-  userName
+  userName,
+  onDeleteChat,
+  onRenameChat,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
+
+
+  // Rename state
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState("")
+  const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
+
+  const startRename = (chat:Chat) => {
+    setRenamingId(chat.session_id)
+    
+    const lastDotIndex = chat.title.lastIndexOf(".")
+    if (lastDotIndex !== -1) {
+      const nameOnly = chat.title.substring(0, lastDotIndex)
+      setRenameValue(nameOnly)
+    } else {
+      setRenameValue(chat.title)
+    }
+  }
+
+  const commitRename = (sessionId: string) => {
+    const trimmed = renameValue.trim()
+
+    if (trimmed && onRenameChat) {
+      const originalChat = chats.find((c) => c.session_id === sessionId)
+
+      if (originalChat) {
+        const lastDotIndex = originalChat.title.lastIndexOf(".")
+        const extension =
+          lastDotIndex !== -1
+            ? originalChat.title.substring(lastDotIndex)
+            : ""
+        const finalName = trimmed + extension
+        onRenameChat(sessionId, finalName)
+      }
+    }
+    setRenamingId(null)
+    setRenameValue("")
+  }
+
+  const cancelRename = () => {
+    setRenamingId(null)
+    setRenameValue("")
+  }
 
   return (
     <Sidebar>
@@ -83,13 +145,99 @@ export default function ChatPage({
           {safeChats.map((chat) => (
             <div
               key={chat.session_id}
-              onClick={() => onSelectChat(chat)}
-              className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 text-sm"
+              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-gray-100"
+              onClick={() => {
+                if (renamingId !== chat.session_id) {
+                  onSelectChat(chat)
+                }
+              }}
             >
-              <FileText className="h-4 w-4" />
-              <span className="truncate">
-                {chat.title}
+              <FileText className="h-4 w-4 shrink-0 text-gray-500" />
+
+              {renamingId === chat.session_id ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename(chat.session_id)
+                    if (e.key === "Escape") cancelRename()
+                  }}
+                  onBlur={() => commitRename(chat.session_id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-1 min-w-0 rounded border border-gray-300 bg-white px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              ) : (
+                <span className="flex-1 truncate leading-none text-gray-800">
+                  {chat.title}
                 </span>
+              )}
+
+              {renamingId !== chat.session_id && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-auto shrink-0 rounded p-1.5 opacity-50 transition hover:bg-gray-200 hover:opacity-100 group-hover:opacity-100 data-[state=open]:bg-gray-200 data-[state=open]:opacity-100"
+                      aria-label="Chat options"
+                    >
+                      <MoreHorizontal className="h-4 w-4 text-gray-500" />
+                    </button>
+                  </DropdownMenuTrigger>
+
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
+                  >
+                    <DropdownMenuGroup>
+                      <div className="px-2 py-2">
+                        <p className="truncate text-sm font-medium text-gray-900">
+                          {chat.title}
+                        </p>
+                      </div>
+
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          startRename(chat)
+                        }}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <PenLine className="mr-2 h-4 w-4" />
+                        Rename
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        disabled
+                        className="cursor-not-allowed rounded-md text-gray-400 focus:bg-transparent"
+                      >
+                        <Share2 className="mr-2 h-4 w-4" />
+                        Share
+                        <span className="ml-auto text-[10px] uppercase tracking-wide">
+                          Soon
+                        </span>
+                      </DropdownMenuItem>
+
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setChatToDelete(chat)
+                        }}
+                        className="cursor-pointer rounded-md"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           ))}
         </div>
@@ -102,7 +250,13 @@ export default function ChatPage({
           <span>Settings</span>
         </div>
       </SidebarFooter>
-
+      <DeleteChatDialog
+        chat={chatToDelete}
+        onClose={() => setChatToDelete(null)}
+        onConfirm={(sessionId) => {
+          onDeleteChat?.(sessionId)
+        }}
+      />
     </Sidebar>
   )
 }

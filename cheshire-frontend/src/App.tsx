@@ -34,6 +34,22 @@ async function fetchSessions(): Promise<Chat[]> {
     .catch(() => [])
 }
 
+async function deleteSession(sessionId: string): Promise<boolean> {
+  return authFetch(`/api/v1/${sessionId}`, { method: "DELETE" })
+    .then(r => r.ok || r.status === 204)
+    .catch(() => false)
+}
+
+async function renameSession(sessionId: string, newTitle: string): Promise<boolean> {
+  return authFetch(`/api/v1/${sessionId}/rename`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_title: newTitle }),
+  })
+    .then(r => r.ok)
+    .catch(() => false)
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 interface AppProps {
@@ -42,19 +58,23 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
-  const [file, setFile]                     = useState<File | string | null>(null)
-  const [findings, setFindings]             = useState<VulnerabilityFinding[]>([])
-  const [chats, setChats]                   = useState<Chat[]>([])
+  const [file, setFile] = useState<File | string | null>(null)
+  const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
+  const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing]     = useState(false)
-  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
-  const [page, setPage]                     = useState<"chat" | "account">("chat")
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
+  const [page, setPage] = useState<"chat" | "account">("chat")
+
+  // Derive profile image URL from user data, with a fallback to default avatar
+  const [profileImage, setProfileImage] = useState(
+    user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
+  )
 
   // Load sessions on mount
   useEffect(() => {
     fetchSessions().then(sessions =>
       setChats(
-        // Backend Session has session_id + title; Chat also needs a findings placeholder
         sessions.map((s: any) => ({
           session_id: s.session_id,
           title: s.title,
@@ -91,6 +111,28 @@ export default function App({ user, onLogout }: AppProps) {
     setPage("chat")
   }
 
+  const handleDeleteChat = async (sessionId: string) => {
+    const ok = await deleteSession(sessionId)
+    if (!ok) {
+      console.error(`Failed to delete session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.filter(c => c.session_id !== sessionId))
+    if (currentSessionId === sessionId) handleNewChat()
+  }
+
+  const handleRenameChat = async (sessionId: string, newTitle: string) => {
+    const ok = await renameSession(sessionId, newTitle)
+    if (!ok) {
+      console.error(`Failed to rename session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.map(c =>
+      c.session_id === sessionId ? { ...c, title: newTitle } : c
+    ))
+    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
+  }
+
   const handleLogout = () => {
     clearAuth()
     onLogout()
@@ -104,8 +146,10 @@ export default function App({ user, onLogout }: AppProps) {
         chats={chats}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
-        profileImage={`/User.png`}
+        profileImage={profileImage || "/User.png"}
         userName={user.full_name ?? user.username ?? user.email}
+        onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
       />
 
       <SidebarTrigger />
@@ -113,6 +157,7 @@ export default function App({ user, onLogout }: AppProps) {
       <SidebarInset>
         {page === "account" ? (
           <Account
+            setProfileImage={setProfileImage}
             user={user}
             chats={chats}
             onLogout={handleLogout}
@@ -130,7 +175,6 @@ export default function App({ user, onLogout }: AppProps) {
                     <h1 className="text-3xl font-bold tracking-tight">
                       Hi, {user.full_name ?? user.username ?? ""}!
                     </h1>
-
                     <p className="text-muted-foreground text-sm">
                       Welcome to Cheshire. Please upload a document to evaluate.
                     </p>

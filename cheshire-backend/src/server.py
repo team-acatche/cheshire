@@ -12,12 +12,13 @@ from cheshire_configs.registry import configs
 from endpoints.evaluate import evaluate_router
 from endpoints.chat import chat_router
 from endpoints.user_auth import auth_router
+from endpoints.user import user_router
 
-SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", "")))
+from globals import SESSION_DIR
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    os.makedirs(SESSION_DIR, exist_ok=True) # ensure that the SESSION_DIR exists
+    os.makedirs(SESSIONS_PATH, exist_ok=True) # ensure that the SESSION_DIR exists
     yield
 
 api = FastAPI(dependencies=[Depends(configs)], lifespan=lifespan)
@@ -36,6 +37,11 @@ api.include_router(
 
 api.include_router(
     evaluate_router,
+    prefix="/api/v1",
+)
+
+api.include_router(
+    user_router,
     prefix="/api/v1",
 )
 

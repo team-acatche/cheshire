@@ -30,3 +30,20 @@ class UserEntity(BaseModel):
     disabled: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
+    @staticmethod
+    def from_row(row: tuple) -> "UserEntity":
+        return UserEntity(
+            user=User(
+                user_id=row[0],
+                email=row[1],
+                sessions_folder=row[2],
+                username=row[3],
+                full_name=row[4],
+                avatar_uri=row[5],
+            ),
+            password_hash=row[6],
+            prefix_salt=row[7],
+            suffix_salt=row[8],
+            disabled=bool(row[9]),
+            created_at=row[10],
+        )

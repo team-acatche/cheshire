@@ -5,6 +5,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Annotated, Optional, cast
@@ -27,21 +28,21 @@ from tools.knowledge import get_relevant_facts_tool
 from auth.models import User
 from auth.dependencies import get_current_user
 
+from dependencies.sessions import get_user_path, get_user_db_path
+
 chat_router = APIRouter()
-SESSION_DIR = os.path.expanduser(os.path.expandvars(os.getenv("SESSIONS_PATH", ""))) if os.getenv("SESSIONS_PATH") else None
 
 class ChatBody(BaseModel):
     message: str
 
+class RenameBody(BaseModel):
+    new_title: str
+
 @chat_router.get("/")
 async def get_sessions(
     current_user: Annotated[User, Depends(get_current_user)],
+    session_db_path: Annotated[Path, Depends(get_user_db_path)],
 ) -> list[Session]:
-    if SESSION_DIR is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
-
-    user_id = current_user.user_id
-    session_db_path = Path(SESSION_DIR) / user_id / f"{user_id}.sqlite"
     if not session_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -53,13 +54,8 @@ async def get_sessions(
 async def chat_history(
     session_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
+    history_db_path: Annotated[Path, Depends(get_user_db_path)],
 ):
-    if SESSION_DIR is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
-
-    user_id = current_user.user_id
-    history_db_path = Path(SESSION_DIR) / user_id / f"{user_id}.sqlite"
-    
     if not history_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -78,15 +74,11 @@ async def chat(
     body: ChatBody,
     current_user: Annotated[User, Depends(get_current_user)],
     config: Annotated[PipelineConfig, Depends(resolve_config)],
+    user_path: Annotated[Path, Depends(get_user_path)],
+    history_db_path: Annotated[Path, Depends(get_user_db_path)],
 ):
     # TODO: make this SSE
-    if SESSION_DIR is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
-
     user_id = current_user.user_id
-    user_path = Path(SESSION_DIR) / user_id
-    history_db_path = user_path / f"{user_id}.sqlite"
-    
     if not history_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
@@ -146,23 +138,56 @@ async def get_latest_event_timestamp(
     response: Response,
     session_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
 ):
-    if SESSION_DIR is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
-
-    user_id = current_user.user_id
-    history_db_path = Path(SESSION_DIR) / user_id / f"{user_id}.sqlite"
-    
-    if not history_db_path.exists():
+    if not user_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Connect to repositories
-    history_db = sqlite3.connect(history_db_path)
-    history_repo = SqliteEventRepository(history_db)
+    with sqlite3.connect(user_db_path) as user_db:
+        event_repo = SqliteEventRepository(user_db)
+        timestamp = event_repo.get_last_event_timestamp(session_id)
+        if timestamp is None:
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return
+        return {"latest_timestamp": timestamp}
+
+@chat_router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    user_path: Annotated[Path, Depends(get_user_path)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
+) -> Response:
+    session_dir = user_path / session_id
     
-    # Get last event timestamp
-    timestamp = history_repo.get_last_event_timestamp(session_id)
-    if timestamp is None:
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return
-    return {"latest_timestamp": timestamp}
+    if not user_db_path.exists() or not session_dir.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    # Connect to repositories
+    user_db = sqlite3.connect(user_db_path)
+    event_repo = SqliteEventRepository(user_db)
+    session_repo = SqliteSessionRepository(user_db)
+
+    session_repo.delete_session(session_id)
+    event_repo.delete_messages_from_session(session_id)
+
+    shutil.rmtree(session_dir)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@chat_router.put("/{session_id}/rename")
+def rename_session(
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    body: RenameBody,
+) -> Session:
+    if not user_db_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    with sqlite3.connect(user_db_path) as user_db:
+        session_repo = SqliteSessionRepository(user_db)
+        if updated_session := session_repo.change_title(session_id, new_title=body.new_title):
+            return updated_session
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
