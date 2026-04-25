@@ -107,7 +107,7 @@ class TestGetSessions:
         assert response.json() == []
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
+        """SESSIONS_PATH is None → 500."""
         with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get("/api/v1/")
 
@@ -167,7 +167,7 @@ class TestChatHistory:
         assert response.json()["messages"] == []
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
+        """SESSIONS_PATH is None → 500."""
         with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
@@ -263,7 +263,7 @@ class TestPostChat:
         assert len(messages) >= 3  # Hello, Hi, Follow-up question
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
+        """SESSIONS_PATH is None → 500."""
         with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
@@ -338,7 +338,7 @@ class TestGetLatestTimestamp:
         event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.RESPONSE, content="Second", timestamp=ts2))
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
 
         assert response.status_code == status.HTTP_200_OK
@@ -352,21 +352,21 @@ class TestGetLatestTimestamp:
         conn, _, _ = _create_session_db(db_path)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        """SESSIONS_PATH is None → 500."""
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_session_db_not_found(self, tmp_path: Path):
         """DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -445,7 +445,7 @@ class TestDeleteSession:
         conn2.close()
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
+        """SESSIONS_PATH is None → 500."""
         with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.delete(f"/api/v1/{SESSION_ID}")
 
