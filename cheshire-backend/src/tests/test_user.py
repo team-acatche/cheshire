@@ -53,7 +53,7 @@ def test_get_avatar_default(test_setup):
     
     api.dependency_overrides[get_user_path] = lambda: user_path
     
-    with patch("endpoints.user.SESSION_DIR", str(session_dir)), \
+    with patch("endpoints.user.SESSIONS_PATH", str(session_dir)), \
          patch("endpoints.user.GLOBAL_ASSETS_DIR", assets_dir):
         response = client.get("/api/v1/avatars/default.png")
     
@@ -68,7 +68,7 @@ def test_get_avatar_user_exists(test_setup):
     
     api.dependency_overrides[get_user_path] = lambda: user_path
     
-    with patch("endpoints.user.SESSION_DIR", str(session_dir)):
+    with patch("endpoints.user.SESSIONS_PATH", str(session_dir)):
         # Mock is_image to return True
         with patch("endpoints.user.is_image", return_value=True):
             response = client.get("/api/v1/avatars/my_avatar.png")
@@ -82,7 +82,7 @@ def test_get_avatar_not_found(test_setup):
     
     api.dependency_overrides[get_user_path] = lambda: user_path
     
-    with patch("endpoints.user.SESSION_DIR", str(session_dir)):
+    with patch("endpoints.user.SESSIONS_PATH", str(session_dir)):
         response = client.get("/api/v1/avatars/non_existent.png")
     
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -107,7 +107,7 @@ def test_upload_avatar(test_setup):
     api.dependency_overrides[get_user_path] = lambda: user_path
     api.dependency_overrides[get_user_repository] = lambda: mock_repo
     
-    with patch("endpoints.user.SESSION_DIR", str(session_dir)):
+    with patch("endpoints.user.SESSIONS_PATH", str(session_dir)):
         file_content = b"uploaded image content"
         files = {"avatar": ("test.png", io.BytesIO(file_content), "image/png")}
         response = client.post("/api/v1/avatars", files=files)

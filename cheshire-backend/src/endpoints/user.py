@@ -21,7 +21,7 @@ from dependencies.sessions import get_user_path
 from auth.dependencies import get_user_repository, get_current_user
 from auth.user_repository import UserRepository
 
-from globals import GLOBAL_ASSETS_DIR, SESSION_DIR
+from globals import GLOBAL_ASSETS_DIR, SESSIONS_PATH
 
 user_router = APIRouter()
 
@@ -30,10 +30,10 @@ def get_avatar(
     avatar_filename: Annotated[str, "the filename of the avatar as stored in the server"],
     user_path: Annotated[Path, Depends(get_user_path)],
 ) -> FileResponse:
-    if SESSION_DIR is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
+    if SESSIONS_PATH is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSIONS_PATH not set")
     
-    session_dir = Path(SESSION_DIR)
+    session_dir = Path(SESSIONS_PATH)
 
     # TODO: bugfix -- add the default avatar
     if avatar_filename == "default.png":
@@ -54,9 +54,9 @@ async def upload_avatar(
     user_path: Annotated[Path, Depends(get_user_path)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> UploadAvatarResponse:
-    if SESSION_DIR is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_DIR not set")
-    session_dir = Path(SESSION_DIR)
+    if SESSIONS_PATH is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSIONS_PATH not set")
+    session_dir = Path(SESSIONS_PATH)
 
     # delete old avatar if it exists and is not the default
     if user.avatar_uri and user.avatar_uri != "default.png":
