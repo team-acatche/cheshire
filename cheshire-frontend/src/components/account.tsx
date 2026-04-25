@@ -3,8 +3,20 @@ import { useEffect, useState } from "react"
 import { Pencil, Check, LogOut } from "lucide-react"
 import type { Chat } from "@/ChatPage"
 import type { AuthUser } from "@/lib/auth"
-import { logout, updateStoredUser } from "@/lib/auth"
+import { logout, updateStoredUser, authFetch } from "@/lib/auth"
 import AvatarCropperModal from "@/components/avatar-cropper-modal"
+import { formatTimestamp } from "@/lib/helpers/format_timestamps"
+
+// fetch session timestamp
+async function fetchSessionTimestamp(sessionId: string) : Promise<string | null> {
+  return authFetch(`/api/v1/${sessionId}/latest-timestamp`)
+  .then(r => {
+    if (r.status === 204) return null
+    if (!r.ok) return null
+    return r.json().then((d: { latest_timestamp: string}) => d.latest_timestamp)
+  })
+  .catch (() => null)
+}
 
 interface AccountProps {
   setProfileImage: (image: string) => void
@@ -28,7 +40,23 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
   // uploading state to disable inputs while upload is in progress
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
-  
+  const [chatTimestamps, setChatTimestamps] = useState<Record<string , string | null>>({})
+
+  useEffect(() => {
+    if (chats.length === 0) return
+
+    const loadTimestamps = async () => {
+      const entries = await Promise.all(
+        chats.slice(0, 5).map(async (chat) => {
+          const ts = await fetchSessionTimestamp(chat.session_id)
+          return [chat.session_id, ts] as const
+        })
+      )
+      setChatTimestamps(Object.fromEntries(entries))
+    }
+
+    loadTimestamps()
+  }, [chats])
 
   useEffect(() => {
     setDisplayName(user.full_name ?? user.username ?? "")
@@ -219,8 +247,18 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
             <p className="text-gray-400 text-sm">No reviews yet</p>
           ) : (
             chats.slice(0, 5).map((chat) => (
-              <div key={chat.session_id} className="p-2 border rounded-md text-sm">
-                {chat.title}
+              <div key={chat.session_id} className="p-2 border rounded-md text-sm flex items-center justify-between">
+                <span>{chat.title}</span>
+                <span 
+                  className="text-xs text-gray-400 tabular-nums hover:text-gray-600 transition-colors"
+                  title={chatTimestamps[chat.session_id] ?? ""}
+                  >
+                  Last Activity: {chatTimestamps[chat.session_id] !== undefined
+                    ? chatTimestamps[chat.session_id]
+                      ? formatTimestamp(chatTimestamps[chat.session_id])
+                      : "No activity yet"
+                    : "Loading..."}
+                </span>
               </div>
             ))
           )}

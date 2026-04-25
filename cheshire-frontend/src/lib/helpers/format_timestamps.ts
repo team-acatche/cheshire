@@ -2,7 +2,12 @@ export function formatTimestamp(timestamp: string | undefined | null): string {
     if (!timestamp) return "Unknown time"
 
     try {
-        const date = new Date(timestamp);
+        // SQLite CURRENT_TIMESTAMP has no timezone suffix - will treat it as UTC
+        const normalized = timestamp.endsWith("Z") || timestamp.includes("+")
+            ? timestamp
+            : timestamp.replace(" ", "T") + "Z"
+
+        const date = new Date(normalized);
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffSec = Math.floor(diffMs / 1000);
