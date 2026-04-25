@@ -119,7 +119,7 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className="flex flex-col items-center justify-start h-dvh overflow p-25">
+          <main className="flex flex-col items-center justify-start h-dvh overflow-hidden p-25">
 
             <h1 className="text-5xl font-bold tracking-tight p-1 h-20">
               Hi, {user.full_name ?? user.username ?? ""}!
@@ -216,8 +216,8 @@ export default function App({ user, onLogout }: AppProps) {
               )}
             </Card>
 
-            <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-6xl mx-auto py-10">
-              <div className="flex flex-col md:flex-row items-center gap-10 flex-1">
+            <div className="mt-10 flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
+              <div className="flex flex-col md:flex-row items-center gap-8 flex-[1.5]">
                 <div className="flex-shrink-0">
                   <img
                     src="/cheshire.png"
@@ -226,55 +226,50 @@ export default function App({ user, onLogout }: AppProps) {
                   />
                 </div>
 
-                <div className="flex flex-col justify-center text-left max-w-sm">
+                <div className="flex flex-col justify-center text-left max-w-md">
                   <h2 className="text-2xl font-bold mb-2 text-slate-800">
                     About Cheshire
                   </h2>
-                  <p className="text-lg text-muted-foreground leading-relaxed justify-center">
+                  <p className="text-base text-muted-foreground leading-relaxed text-justify">
                     Cheshire is an assessment tool designed to identify vulnerabilities 
                     in your Technical Document Specification (TDS) using AI analysis.
+                    It streamlines the review process by highlighting potential security 
+                    gaps and ensuring your documentation adheres to industry standards.
                   </p>
                 </div>
               </div>
 
               <div className="flex-1 border-l border-slate-100 pl-16">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-slate-400">
+                <h3 className="text-base font-semibold uppercase tracking-wider text-slate-400 mb-6">
                   Features
                 </h3>
                 <div className="grid grid-cols-1 gap-6">
                   <div className="flex gap-4">
-                    <div className="text-500 font-bold">01</div>
+                    <div className="text-slate-400 font-bold">01</div>
                     <div>
-                      <h4 className="font-semibold text-slate-800">
-                        Document Preview
-                      </h4>
-                      <p className="text-sm text-muted-foreground">A preview of your technical document before analysis.</p>
+                      <h4 className="font-semibold text-slate-800">Document Preview</h4>
+                      <p className="text-sm text-muted-foreground">A preview of your uploaded technical document.</p>
                     </div>
                   </div>
 
                   <div className="flex gap-4">
-                    <div className="text-500 font-bold">02</div>
+                    <div className="text-slate-400 font-bold">02</div>
                     <div>
-                      <h4 className="font-semibold text-slate-800">
-                        Document Preview
-                      </h4>
-                      <p className="text-sm text-muted-foreground">A preview of your technical document before analysis.</p>
+                      <h4 className="font-semibold text-slate-800">Document Highlights</h4>
+                      <p className="text-sm text-muted-foreground">Automatically find security risks and get clear suggestions on how to fix them.</p>
                     </div>
                   </div>
 
                   <div className="flex gap-4">
-                    <div className="text-500 font-bold">03</div>
+                    <div className="text-slate-400 font-bold">03</div>
                     <div>
-                      <h4 className="font-semibold text-slate-800">
-                        Document Preview
-                      </h4>
-                      <p className="text-sm text-muted-foreground">A preview of your technical document before analysis.</p>
+                      <h4 className="font-semibold text-slate-800">Chatbot</h4>
+                      <p className="text-sm text-muted-foreground">Discuss findings directly with the AI.</p>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-
           </main>
         )}
       </SidebarInset>
