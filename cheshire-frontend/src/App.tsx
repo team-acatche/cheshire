@@ -119,104 +119,106 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className="flex flex-col items-center justify-start h-dvh overflow-hidden p-25">
+          <main className="flex flex-col items-center justify-center h-dvh overflow-hidden p-9 gap-12">
 
-            <h1 className="text-5xl font-bold tracking-tight p-1 h-20">
-              Hi, {user.full_name ?? user.username ?? ""}!
+            <div className="w-full flex flex-col items-center gap-6">
+              <h1 className="text-5xl font-bold tracking-tight text-center">
+                  Hi, {user.full_name ?? user.username ?? ""}!
               </h1>
 
             
-            <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} shadow-none`}>
-              {isProcessing ? (
-                <CardContent className="col-span-full h-full flex items-center justify-center">
-                  <LoadingPage />
-                </CardContent>
-              ) : !file ? (
-                <CardContent className="space-y-6 text-center">
-                  <div className="space-y-2">
-                    <div className="flex flex-col justify-center text-center">
-                      <p className="text-muted-foreground text-lg">
-                        Welcome to Cheshire. Please upload a document to evaluate.
-                      </p>
+              <Card className={`${!file ? "w-full max-w-xl mt-1" : "size-full"} shadow-none`}>
+                {isProcessing ? (
+                  <CardContent className="col-span-full h-full flex items-center justify-center">
+                    <LoadingPage />
+                  </CardContent>
+                ) : !file ? (
+                  <CardContent className="space-y-6 text-center">
+                    <div className="space-y-2">
+                      <div className="flex flex-col justify-center text-center">
+                        <p className="text-muted-foreground text-xl">
+                          Welcome to Cheshire. Please upload a PDF document to start the evaluation.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                
+                  
 
-                  <CardAction className="flex justify-center m-auto">
-                    <Button asChild className="w-40">
-                      <label className="cursor-pointer inline-flex items-center gap-2">
-                        <Upload className="h-4 w-4" />
-                        Upload
-                        <input
-                          type="file"
-                          accept=".pdf"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const fileInput = e.target.files?.[0]
-                            if (!fileInput) return
+                    <CardAction className="flex justify-center m-auto">
+                      <Button asChild className="w-40">
+                        <label className="cursor-pointer inline-flex items-center gap-2">
+                          <Upload className="h-4 w-4" />
+                          Upload
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const fileInput = e.target.files?.[0]
+                              if (!fileInput) return
 
-                            if (fileInput.type !== "application/pdf") {
-                              alert("Only PDF files are supported.")
-                              return
-                            }
-
-                            setIsProcessing(true)
-                            try {
-                              const response = await evaluateDocument(fileInput)
-                              if (response === null) {
-                                alert("Failed to evaluate document.")
+                              if (fileInput.type !== "application/pdf") {
+                                alert("Only PDF files are supported.")
                                 return
                               }
 
-                              const newChat: Chat = {
-                                session_id: response.session_id,
-                                title: fileInput.name,
-                                findings: response.vulnerabilities,
+                              setIsProcessing(true)
+                              try {
+                                const response = await evaluateDocument(fileInput)
+                                if (response === null) {
+                                  alert("Failed to evaluate document.")
+                                  return
+                                }
+
+                                const newChat: Chat = {
+                                  session_id: response.session_id,
+                                  title: fileInput.name,
+                                  findings: response.vulnerabilities,
+                                }
+
+                                setChats(prev => [newChat, ...prev])
+                                setFile(fileInput)
+                                setFindings(response.vulnerabilities)
+                                setCurrentSessionId(response.session_id)
+                                setCurrentFileName(fileInput.name)
+                              } finally {
+                                setIsProcessing(false)
                               }
-
-                              setChats(prev => [newChat, ...prev])
-                              setFile(fileInput)
-                              setFindings(response.vulnerabilities)
-                              setCurrentSessionId(response.session_id)
-                              setCurrentFileName(fileInput.name)
-                            } finally {
-                              setIsProcessing(false)
-                            }
-                          }}
+                            }}
+                          />
+                        </label>
+                      </Button>
+                    </CardAction>
+                  </CardContent>
+                ) : (
+                  <ResizablePanelGroup orientation="horizontal" className="h-full">
+                    <ResizablePanel defaultSize={75} minSize={30}>
+                      <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
+                        <DocumentPreview
+                          src={file}
+                          findings={findings}
+                          fileName={currentFileName}
                         />
-                      </label>
-                    </Button>
-                  </CardAction>
-                </CardContent>
-              ) : (
-                <ResizablePanelGroup orientation="horizontal" className="h-full">
-                  <ResizablePanel defaultSize={75} minSize={30}>
-                    <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
-                      <DocumentPreview
-                        src={file}
-                        findings={findings}
-                        fileName={currentFileName}
-                      />
-                    </CardContent>
-                  </ResizablePanel>
+                      </CardContent>
+                    </ResizablePanel>
 
-                  <ResizableHandle withHandle />
+                    <ResizableHandle withHandle />
 
-                  <ResizablePanel defaultSize={25} minSize={15}>
-                    {currentSessionId && (
-                      <Chatbot
-                        key={currentSessionId}
-                        findings={findings}
-                        sessionId={currentSessionId}
-                        username={user.user_id}
-                      />
-                    )}
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              )}
-            </Card>
+                    <ResizablePanel defaultSize={25} minSize={15}>
+                      {currentSessionId && (
+                        <Chatbot
+                          key={currentSessionId}
+                          findings={findings}
+                          sessionId={currentSessionId}
+                          username={user.user_id}
+                        />
+                      )}
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
+                )}
+              </Card>
+            </div>
 
-            <div className="mt-10 flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
+            <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
               <div className="flex flex-col md:flex-row items-center gap-8 flex-[1.5]">
                 <div className="flex-shrink-0">
                   <img
@@ -230,7 +232,7 @@ export default function App({ user, onLogout }: AppProps) {
                   <h2 className="text-2xl font-bold mb-2 text-slate-800">
                     About Cheshire
                   </h2>
-                  <p className="text-base text-muted-foreground leading-relaxed text-justify">
+                  <p className="text-lg text-muted-foreground leading-relaxed text-justify">
                     Cheshire is an assessment tool designed to identify vulnerabilities 
                     in your Technical Document Specification (TDS) using AI analysis.
                     It streamlines the review process by highlighting potential security 
@@ -240,7 +242,7 @@ export default function App({ user, onLogout }: AppProps) {
               </div>
 
               <div className="flex-1 border-l border-slate-100 pl-16">
-                <h3 className="text-base font-semibold uppercase tracking-wider text-slate-400 mb-6">
+                <h3 className="text-lg font-semibold uppercase tracking-wider text-slate-400 mb-6">
                   Features
                 </h3>
                 <div className="grid grid-cols-1 gap-6">
@@ -248,7 +250,7 @@ export default function App({ user, onLogout }: AppProps) {
                     <div className="text-slate-400 font-bold">01</div>
                     <div>
                       <h4 className="font-semibold text-slate-800">Document Preview</h4>
-                      <p className="text-sm text-muted-foreground">A preview of your uploaded technical document.</p>
+                      <p className="text-base text-muted-foreground">A preview of your uploaded technical document.</p>
                     </div>
                   </div>
 
@@ -256,7 +258,7 @@ export default function App({ user, onLogout }: AppProps) {
                     <div className="text-slate-400 font-bold">02</div>
                     <div>
                       <h4 className="font-semibold text-slate-800">Document Highlights</h4>
-                      <p className="text-sm text-muted-foreground">Automatically find security risks and get clear suggestions on how to fix them.</p>
+                      <p className="text-base text-muted-foreground">Automatically find security risks and get clear suggestions on how to fix them.</p>
                     </div>
                   </div>
 
@@ -264,7 +266,7 @@ export default function App({ user, onLogout }: AppProps) {
                     <div className="text-slate-400 font-bold">03</div>
                     <div>
                       <h4 className="font-semibold text-slate-800">Chatbot</h4>
-                      <p className="text-sm text-muted-foreground">Discuss findings directly with the AI.</p>
+                      <p className="text-base text-muted-foreground">Discuss findings directly with the AI.</p>
                     </div>
                   </div>
                 </div>
