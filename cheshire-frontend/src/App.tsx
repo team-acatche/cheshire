@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { motion } from "framer-motion"
 import { Card, CardAction, CardContent } from "./components/ui/card"
 import {
   SidebarProvider,
@@ -28,7 +29,6 @@ import Account from "./components/account"
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function fetchSessions(): Promise<Chat[]> {
-  // GET /api/v1/  — returns sessions for the authenticated user
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
@@ -109,6 +109,48 @@ export default function App({ user, onLogout }: AppProps) {
     setCurrentSessionId(chat.session_id)
     setCurrentFileName(chat.title)
     setPage("chat")
+
+    try {
+      // Fetch the PDF blob and vulnerability results in parallel
+      const docUrl = `/api/v1/${chat.session_id}/document`
+      const [blob, results] = await Promise.all([
+        authFetch(docUrl).then(r => (r.ok ? r.blob() : null)).catch(() => null),
+        getSessionResults(chat.session_id),
+      ])
+
+      const objectUrl = blob ? URL.createObjectURL(blob) : null
+
+      // Batch all state updates together — React 18 handles this automatically
+      // inside async functions, so no intermediate renders between these lines
+      setFile(objectUrl)
+      setFindings(results)
+      setCurrentSessionId(chat.session_id)
+      setCurrentFileName(chat.title)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleDeleteChat = async (sessionId: string) => {
+    const ok = await deleteSession(sessionId)
+    if (!ok) {
+      console.error(`Failed to delete session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.filter(c => c.session_id !== sessionId))
+    if (currentSessionId === sessionId) handleNewChat()
+  }
+
+  const handleRenameChat = async (sessionId: string, newTitle: string) => {
+    const ok = await renameSession(sessionId, newTitle)
+    if (!ok) {
+      console.error(`Failed to rename session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.map(c =>
+      c.session_id === sessionId ? { ...c, title: newTitle } : c
+    ))
+    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
   }
 
   const handleDeleteChat = async (sessionId: string) => {
@@ -163,97 +205,165 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className="grid grid-cols-4 place-items-center h-dvh overflow-hidden">
-            <Card className={`${!file ? "col-span-full" : "col-span-full size-full"} mt-2 shadow-none`}>
-              {isProcessing ? (
-                <CardContent className="col-span-full h-full flex items-center justify-center">
+          <main className={`h-dvh overflow-hidden ${!file ? "p-8" : "p-0"}`}>
+          {isProcessing ? (
+            <div className="flex h-full items-center justify-center">
+              <Card className="w-full max-w-sm rounded-2xl border border-slate-200 shadow-sm">
+                <CardContent className="flex items-center justify-center p-6">
                   <LoadingPage />
                 </CardContent>
-              ) : !file ? (
-                <CardContent className="size-full space-y-6 text-center">
-                  <div className="space-y-2">
-                    <h1 className="text-3xl font-bold tracking-tight">
-                      Hi, {user.full_name ?? user.username ?? ""}!
-                    </h1>
-                    <p className="text-muted-foreground text-sm">
-                      Welcome to Cheshire. Please upload a document to evaluate.
+              </Card>
+            </div>
+          ) : !file ? (
+            <div className="flex h-full flex-col items-center justify-center gap-14">
+              <motion.section
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="flex w-full max-w-3xl flex-col items-center text-center"
+              >
+                <h1 className="text-5xl font-bold tracking-tight text-slate-950">
+                  Hi, {user.full_name ?? user.username ?? ""}!
+                </h1>
+
+                <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
+                  <CardContent className="space-y-4 p-2 text-center">
+                    <p className="text-lg text-muted-foreground text-center">
+                      Welcome to Cheshire. Please upload a PDF document to start the evaluation.
                     </p>
-                  </div>
 
-                  <CardAction className="flex justify-center m-auto">
-                    <Button asChild className="w-40">
-                      <label className="cursor-pointer inline-flex items-center gap-2">
-                        <Upload className="h-4 w-4" />
-                        Upload
-                        <input
-                          type="file"
-                          accept=".pdf"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const fileInput = e.target.files?.[0]
-                            if (!fileInput) return
+                    <CardAction className="w-full flex items-center justify-center">
+                      <Button
+                        asChild
+                        className="w-40 mx-auto block"
+                      >
+                        <label className="flex items-center justify-center gap-2 cursor-pointer">
+                          <Upload className="h-4 w-4" />
+                          Upload
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const fileInput = e.target.files?.[0]
+                              if (!fileInput) return
 
-                            if (fileInput.type !== "application/pdf") {
-                              alert("Only PDF files are supported.")
-                              return
-                            }
-
-                            setIsProcessing(true)
-                            try {
-                              const response = await evaluateDocument(fileInput)
-                              if (response === null) {
-                                alert("Failed to evaluate document.")
+                              if (fileInput.type !== "application/pdf") {
+                                alert("Only PDF files are supported.")
                                 return
                               }
 
-                              const newChat: Chat = {
-                                session_id: response.session_id,
-                                title: fileInput.name,
-                                findings: response.vulnerabilities,
+                              setIsProcessing(true)
+                              try {
+                                const response = await evaluateDocument(fileInput)
+                                if (response === null) {
+                                  alert("Failed to evaluate document.")
+                                  return
+                                }
+
+                                const newChat: Chat = {
+                                  session_id: response.session_id,
+                                  title: fileInput.name,
+                                  findings: response.vulnerabilities,
+                                }
+
+                                setChats(prev => [newChat, ...prev])
+                                setFile(fileInput)
+                                setFindings(response.vulnerabilities)
+                                setCurrentSessionId(response.session_id)
+                                setCurrentFileName(fileInput.name)
+                              } finally {
+                                setIsProcessing(false)
                               }
+                            }}
+                          />
+                        </label>
+                      </Button>
+                    </CardAction>
+                  </CardContent>
+                </Card>
+              </motion.section>
 
-                              setChats(prev => [newChat, ...prev])
-                              setFile(fileInput)
-                              setFindings(response.vulnerabilities)
-                              setCurrentSessionId(response.session_id)
-                              setCurrentFileName(fileInput.name)
-                            } finally {
-                              setIsProcessing(false)
-                            }
-                          }}
-                        />
-                      </label>
-                    </Button>
-                  </CardAction>
-                </CardContent>
-              ) : (
-                <ResizablePanelGroup orientation="horizontal" className="h-full">
-                  <ResizablePanel defaultSize={68} minSize={30}>
-                    <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
-                      <DocumentPreview
-                        src={file}
-                        findings={findings}
-                        fileName={currentFileName}
-                      />
-                    </CardContent>
-                  </ResizablePanel>
+              <motion.section
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
+                className="flex w-full max-w-6xl flex-col items-center justify-center gap-10 md:flex-row"
+              >
+                <div className="flex flex-col items-center gap-8 md:flex-row">
+                  <img
+                    src="/cheshire.png"
+                    alt="Cheshire Logo"
+                    className="h-44 w-44 object-contain md:h-52 md:w-52"
+                  />
 
-                  <ResizableHandle withHandle />
+                  <div className="max-w-md text-center md:text-left">
+                    <h2 className="mb-2 text-xl font-bold text-slate-800">
+                      About Cheshire
+                    </h2>
+                    <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
+                      Cheshire is an assessment tool designed to identify vulnerabilities
+                      in your Technical Document Specification (TDS) using AI analysis.
+                      It streamlines the review process by highlighting potential security
+                      gaps and ensuring your documentation adheres to industry standards.
+                    </p>
+                  </div>
+                </div>
 
-                  <ResizablePanel defaultSize={32} minSize={15}>
-                    {currentSessionId && (
-                      <Chatbot
-                        key={currentSessionId}
-                        findings={findings}
-                        sessionId={currentSessionId}
-                        username={user.user_id}
-                      />
-                    )}
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              )}
+                <div className="hidden h-56 w-px bg-slate-100 md:block" />
+
+                <div className="w-full max-w-sm">
+                  <h3 className="mb-6 text-lg font-semibold uppercase tracking-wider text-slate-400">
+                    Features
+                  </h3>
+
+                  <div className="grid gap-6">
+                    {[
+                      ["01", "Document Preview", "A preview of your uploaded technical document."],
+                      ["02", "Document Highlights", "Automatically find security risks and get clear suggestions on how to fix them."],
+                      ["03", "Chatbot", "Discuss findings directly with the AI."],
+                    ].map(([number, title, description]) => (
+                      <div key={number} className="flex gap-4">
+                        <div className="font-bold text-slate-400">{number}</div>
+                        <div>
+                          <h4 className="font-semibold text-slate-800">{title}</h4>
+                          <p className="text-base text-muted-foreground">{description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.section>
+            </div>
+          ) : (
+            <Card className="size-full shadow-none">
+              <ResizablePanelGroup orientation="horizontal" className="h-full">
+                <ResizablePanel defaultSize={65} minSize={30}>
+                  <CardContent className="flex size-full flex-col gap-3 overflow-hidden">
+                    <DocumentPreview
+                      src={file}
+                      findings={findings}
+                      fileName={currentFileName}
+                    />
+                  </CardContent>
+                </ResizablePanel>
+
+                <ResizableHandle withHandle />
+
+                <ResizablePanel defaultSize={35} minSize={25}>
+                  {currentSessionId && (
+                    <Chatbot
+                      key={currentSessionId}
+                      findings={findings}
+                      sessionId={currentSessionId}
+                      username={user.user_id}
+                    />
+                  )}
+                </ResizablePanel>
+              </ResizablePanelGroup>
             </Card>
-          </main>
+          )}
+        </main>
         )}
       </SidebarInset>
 
