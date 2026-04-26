@@ -65,7 +65,6 @@ export default function App({ user, onLogout }: AppProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
-  
 
   // Derive profile image URL from user data, with a fallback to default avatar
   const [profileImage, setProfileImage] = useState(
@@ -130,6 +129,28 @@ export default function App({ user, onLogout }: AppProps) {
     } finally {
       setIsProcessing(false)
     }
+  }
+
+  const handleDeleteChat = async (sessionId: string) => {
+    const ok = await deleteSession(sessionId)
+    if (!ok) {
+      console.error(`Failed to delete session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.filter(c => c.session_id !== sessionId))
+    if (currentSessionId === sessionId) handleNewChat()
+  }
+
+  const handleRenameChat = async (sessionId: string, newTitle: string) => {
+    const ok = await renameSession(sessionId, newTitle)
+    if (!ok) {
+      console.error(`Failed to rename session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.map(c =>
+      c.session_id === sessionId ? { ...c, title: newTitle } : c
+    ))
+    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
   }
 
   const handleDeleteChat = async (sessionId: string) => {
