@@ -17,14 +17,14 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyCookie, OAuth2PasswordBearer
 
-from globals import SESSION_DIR
+from globals import SESSIONS_PATH
 from auth.hashers import Argon2PasswordHasher
 from auth.models import User
 from auth.user_repository import SqliteUserRepository
 
 dotenv.load_dotenv()
 
-SESSIONS_PATH = Path(SESSION_DIR)
+SESSIONS_PATH = Path(SESSIONS_PATH)
 
 JWT_SECRET: str = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM: str = "HS256"

@@ -1,9 +1,12 @@
-import os
-import shutil
-import sqlite3
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
+
+import os
+import shutil
+import sqlite3
 from pathlib import Path
 from typing import Annotated, Optional, cast
 from uuid import UUID
@@ -125,11 +128,29 @@ async def chat(
         callback_factory.flush()
         return {"response": response.get("last_message", "")}
     except Exception as e:
-        import logging
         logging.error(f"Agent error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         history_db.close()
+
+@chat_router.get("/{session_id}/latest-timestamp", status_code=status.HTTP_200_OK)
+async def get_latest_event_timestamp(
+    response: Response,
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
+):
+    if not user_db_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    # Connect to repositories
+    with sqlite3.connect(user_db_path) as user_db:
+        event_repo = SqliteEventRepository(user_db)
+        timestamp = event_repo.get_last_event_timestamp(session_id)
+        if timestamp is None:
+            response.status_code = status.HTTP_204_NO_CONTENT
+            return
+        return {"latest_timestamp": timestamp}
 
 @chat_router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_session(

@@ -14,11 +14,11 @@ from endpoints.chat import chat_router
 from endpoints.user_auth import auth_router
 from endpoints.user import user_router
 
-from globals import SESSION_DIR
+from globals import SESSIONS_PATH
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    os.makedirs(SESSIONS_PATH, exist_ok=True) # ensure that the SESSION_DIR exists
+    os.makedirs(SESSIONS_PATH, exist_ok=True) # ensure that the SESSIONS_PATH exists
     yield
 
 api = FastAPI(dependencies=[Depends(configs)], lifespan=lifespan)
