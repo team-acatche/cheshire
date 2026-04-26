@@ -1,5 +1,5 @@
 // src/components/chatbot.tsx
-import { useState, useRef, useEffect, type KeyboardEvent } from "react"
+import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
 import { Textarea } from "./ui/textarea"
 import UploadSimpleIcon from "./ui/upload-icon"
@@ -12,7 +12,10 @@ import {
 } from "./ui/select"
 import SentIcon from "./ui/sent-icon"
 import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import remarkBreaks from "remark-breaks"
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
+import CodeBlock from "@/components/code-block"
 import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 import { EVALUATION_MODE, PROVIDER } from "@/globals"
@@ -31,8 +34,8 @@ interface ChatbotProps {
 
 export function Chatbot({ findings, sessionId }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput]       = useState<string>("")
-  const [typing, setTyping]     = useState<boolean>(false)
+  const [input, setInput] = useState<string>("")
+  const [typing, setTyping] = useState<boolean>(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
   // Load history when session changes
@@ -48,10 +51,26 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
 
         if (backendMessages.length > 0) {
           setMessages(
-            backendMessages.map((msg: ResponseMessage): Message => ({
-              role: msg._role as "user" | "bot1" | "bot2" | "bot3",
-              text: msg._content.map(c => c.text ?? "").join("\n\n"),
-            }))
+            backendMessages
+              .map((msg: ResponseMessage): Message | null => {
+                const text = msg._content.map(c => c.text ?? "").join("\n\n").trim()
+
+                // Filter tool/system logs
+                if (
+                  text.startsWith("Tool:") ||
+                  text.startsWith("Arguments:") ||
+                  text === "" ||
+                  msg._role === "system"
+                ) {
+                  return null
+                }
+
+                return {
+                  role: msg._role as "user" | "bot1" | "bot2" | "bot3",
+                  text,
+                }
+              })
+              .filter((m): m is Message => m !== null)
           )
         } else {
           // Seed with vulnerability summary when no chat history yet
@@ -125,34 +144,112 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
   }, [messages, typing])
 
   return (
-    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0">
+    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0 rounded-none">
 
       {/* Chat area */}
-      <div className="flex-1 overflow-y-scroll p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-        <div className="flex flex-col gap-3">
+      <div className="flex-1 overflow-y-auto p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+        <div className="flex flex-col gap-6">
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-end gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex items-start gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"
+                }`}
             >
               {msg.role !== "user" && (
-                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
-                  <img src="/Agent.jpg" className="w-full h-full object-cover" alt="agent" />
+                <div className="w-8 h-8 overflow-hidden shrink-0">
+                  <img src="/cheshire-black.png" className="w-full h-full object-cover" alt="agent" />
                 </div>
               )}
 
               <div
-                className={`max-w-[70%] px-3 py-2 rounded-l ${
+                className={
                   msg.role === "user"
-                    ? "bg-blue-800 text-white rounded-br-sm"
-                    : "bg-gray-200 text-gray-800 rounded-bl-sm"
-                }`}
+                    ? "max-w-[80%] px-3 py-2 bg-blue-800 text-white rounded-2xl rounded-br-sm"
+                    : "w-full min-w-0 px-4 text-gray-800 wrap-break-word"
+                }
               >
                 {(() => {
                   try {
                     return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
                   } catch {
-                    return <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    const content = (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkBreaks]}
+                        components={{
+                          table: ({ children }: { children?: ReactNode }) => (
+                            <div className="my-4 overflow-x-auto rounded-xl border border-gray-300 bg-white shadow-sm">
+                              <table className="w-full border-collapse text-sm">
+                                {children}
+                              </table>
+                            </div>
+                          ),
+                          thead: ({ children }: { children?: ReactNode }) => (
+                            <thead className="bg-gray-100 text-gray-700">
+                              {children}
+                            </thead>
+                          ),
+                          th: ({ children }: { children?: ReactNode }) => (
+                            <th className="border border-gray-200 px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+                              {children}
+                            </th>
+                          ),
+                          td: ({ children }: { children?: ReactNode }) => (
+                            <td className="border border-gray-200 px-4 py-2 text-sm align-top">
+                              {children}
+                            </td>
+                          ),
+                          tr: ({ children }: { children?: ReactNode }) => (
+                            <tr className="hover:bg-gray-50">
+                              {children}
+                            </tr>
+                          ),
+                          p: ({ children }: { children?: ReactNode }) => (
+                            <p className="mb-3 text-[15px] leading-7">
+                              {children}
+                            </p>
+                          ),
+                          ul: ({ children }: { children?: ReactNode }) => (
+                            <ul className="my-3 list-disc space-y-1 pl-6">
+                              {children}
+                            </ul>
+                          ),
+                          ol: ({ children }: { children?: ReactNode }) => (
+                            <ol className="my-3 list-decimal space-y-1 pl-6">
+                              {children}
+                            </ol>
+                          ),
+                          li: ({ children }: { children?: ReactNode }) => <li className="mb-1 wrap-break-word">{children}</li>,
+                          blockquote: ({ children }: { children?: ReactNode }) => (
+                            <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600">
+                              {children}
+                            </blockquote>
+                          ),
+                          hr: () => (
+                            <div className="my-8 flex items-center">
+                              <div className="flex-1 border-t border-gray-200" />
+                            </div>
+                          ),
+                          pre: ({ children }: { children?: ReactNode }) => {
+                            const codeElement = children as any
+                            const code = codeElement?.props?.children || ""
+                            const className = codeElement?.props?.className || ""
+
+                            const match = /language-(\w+)/.exec(className || "")
+                            const language = match ? match[1] : "text"
+
+                            return <CodeBlock language={language}>{code}</CodeBlock>
+                          },
+                        }}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    )
+
+                    return msg.role === "user" ? content : (
+                      <div className="w-full max-w-750px space-y-4">
+                        {content}
+                      </div>
+                    )
                   }
                 })()}
               </div>

@@ -24,7 +24,6 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import Account from "./components/account"
-import { PROVIDER } from "./globals"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -32,6 +31,22 @@ async function fetchSessions(): Promise<Chat[]> {
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
+}
+
+async function deleteSession(sessionId: string): Promise<boolean> {
+  return authFetch(`/api/v1/${sessionId}`, { method: "DELETE" })
+    .then(r => r.ok || r.status === 204)
+    .catch(() => false)
+}
+
+async function renameSession(sessionId: string, newTitle: string): Promise<boolean> {
+  return authFetch(`/api/v1/${sessionId}/rename`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ new_title: newTitle }),
+  })
+    .then(r => r.ok)
+    .catch(() => false)
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -42,13 +57,18 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
-  const [file, setFile]                         = useState<File | string | null>(null)
-  const [findings, setFindings]                 = useState<VulnerabilityFinding[]>([])
-  const [chats, setChats]                       = useState<Chat[]>([])
+  const [file, setFile] = useState<File | string | null>(null)
+  const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
+  const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing]         = useState(false)
-  const [currentFileName, setCurrentFileName]   = useState<string>("document.pdf")
-  const [page, setPage]                         = useState<"chat" | "account">("chat")
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
+  const [page, setPage] = useState<"chat" | "account">("chat")
+
+  // Derive profile image URL from user data, with a fallback to default avatar
+  const [profileImage, setProfileImage] = useState(
+    user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
+  )
 
   // Load sessions on mount
   useEffect(() => {
@@ -64,17 +84,29 @@ export default function App({ user, onLogout }: AppProps) {
   }, [])
 
   const handleNewChat = () => {
-    setFile(null)
     setFindings([])
-    setCurrentSessionId(null)
     setPage("chat")
+    setCurrentSessionId(null)
+    setFile(null)
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    // Show loading immediately — prevents flash of the empty upload screen
-    setIsProcessing(true)
-    // Clear old document so the previous PDF doesn't briefly re-render
-    setFile(null)
+    // Fetch the stored PDF as an object URL so DocumentPreview can render it
+    const docUrl = `/api/v1/${chat.session_id}/document`
+    // Use a string URL with authFetch under the hood via DocumentPreview's fetch
+    // We pass the URL directly; the browser will use the cached JWT cookie alternative —
+    // instead let's fetch it properly and create a blob URL.
+    const blob = await authFetch(docUrl)
+      .then(r => (r.ok ? r.blob() : null))
+      .catch(() => null)
+
+    const objectUrl = blob ? URL.createObjectURL(blob) : null
+
+    const results = await getSessionResults(chat.session_id)
+    setFile(objectUrl)
+    setFindings(results)
+    setCurrentSessionId(chat.session_id)
+    setCurrentFileName(chat.title)
     setPage("chat")
 
     try {
@@ -98,6 +130,28 @@ export default function App({ user, onLogout }: AppProps) {
     }
   }
 
+  const handleDeleteChat = async (sessionId: string) => {
+    const ok = await deleteSession(sessionId)
+    if (!ok) {
+      console.error(`Failed to delete session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.filter(c => c.session_id !== sessionId))
+    if (currentSessionId === sessionId) handleNewChat()
+  }
+
+  const handleRenameChat = async (sessionId: string, newTitle: string) => {
+    const ok = await renameSession(sessionId, newTitle)
+    if (!ok) {
+      console.error(`Failed to rename session ${sessionId}`)
+      return
+    }
+    setChats(prev => prev.map(c =>
+      c.session_id === sessionId ? { ...c, title: newTitle } : c
+    ))
+    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
+  }
+
   const handleLogout = () => {
     clearAuth()
     onLogout()
@@ -105,13 +159,16 @@ export default function App({ user, onLogout }: AppProps) {
 
   return (
     <SidebarProvider>
+
       <ChatPage
         onNewChat={handleNewChat}
         chats={chats}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
-        profileImage={`/User.png`}
+        profileImage={profileImage || "/User.png"}
         userName={user.full_name ?? user.username ?? user.email}
+        onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
       />
 
       <SidebarTrigger />
@@ -119,6 +176,7 @@ export default function App({ user, onLogout }: AppProps) {
       <SidebarInset>
         {page === "account" ? (
           <Account
+            setProfileImage={setProfileImage}
             user={user}
             chats={chats}
             onLogout={handleLogout}
@@ -282,6 +340,7 @@ export default function App({ user, onLogout }: AppProps) {
           </main>
         )}
       </SidebarInset>
+
     </SidebarProvider>
   )
 }

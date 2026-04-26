@@ -67,6 +67,9 @@ COPY --from=build /root/.EasyOCR /root/.EasyOCR
 # Copy application source
 COPY src ./src
 
+# Copy assets
+COPY assets ./assets
+
 EXPOSE 8000
 
 # Optional healthcheck

@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 
 from auth.dependencies import (
     create_access_token,
+    get_token,
     get_current_user,
     get_user_repository,
     JWT_ALGORITHM,
@@ -158,6 +159,31 @@ class TestCreateAccessToken:
 
 
 # ---------------------------------------------------------------------------
+# get_token
+# ---------------------------------------------------------------------------
+
+class TestGetToken:
+    """Tests for the get_token dependency which extracts JWT from header or cookie."""
+
+    def test_prefers_bearer_token(self):
+        """If both are present, bearer token should be preferred (or at least one of them)."""
+        # Testing the logic of bearer_token or cookie_token
+        token = asyncio.run(get_token(bearer_token="bearer-val", cookie_token="cookie-val"))
+        assert token == "bearer-val"
+
+    def test_falls_back_to_cookie_token(self):
+        """If bearer token is missing, use cookie token."""
+        token = asyncio.run(get_token(bearer_token=None, cookie_token="cookie-val"))
+        assert token == "cookie-val"
+
+    def test_raises_401_if_both_missing(self):
+        """Neither header nor cookie present → HTTP 401."""
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(get_token(bearer_token=None, cookie_token=None))
+        assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ---------------------------------------------------------------------------
 # get_current_user
 # ---------------------------------------------------------------------------
 
@@ -172,7 +198,9 @@ class TestGetCurrentUser:
         token = _mint_token()
 
         with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
-            user = asyncio.run(get_current_user(token=token, repo=MagicMock()))
+            mock_repo = MagicMock()
+            mock_repo.get_by_user_id.return_value = MagicMock(disabled=False, user=TEST_USER)
+            user = asyncio.run(get_current_user(token=token, repo=mock_repo))
 
         assert user.user_id == TEST_USER.user_id
         assert user.username == TEST_USER.username
@@ -219,8 +247,10 @@ class TestGetCurrentUser:
         token = _mint_token()
 
         with patch("auth.dependencies.SESSIONS_PATH", tmp_path):
+            mock_repo = MagicMock()
+            mock_repo.get_by_user_id.return_value = None
             with pytest.raises(HTTPException) as exc_info:
-                asyncio.run(get_current_user(token=token, repo=MagicMock()))
+                asyncio.run(get_current_user(token=token, repo=mock_repo))
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 

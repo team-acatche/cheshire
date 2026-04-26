@@ -3,7 +3,7 @@
 import sqlite3
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 from fastapi import status
@@ -26,8 +26,6 @@ mock_config = PipelineConfig(
     tools=[],
     mode=EvaluationType.RAG,
 )
-api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
-
 TEST_USER = User(
     user_id="test_id",
     email="test@example.com",
@@ -42,7 +40,12 @@ def mock_get_current_user():
     return TEST_USER
 
 
-api.dependency_overrides[get_current_user] = mock_get_current_user
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
+    api.dependency_overrides[get_current_user] = mock_get_current_user
+    yield
+    api.dependency_overrides.clear()
 
 client = TestClient(api)
 
@@ -81,7 +84,7 @@ class TestGetSessions:
         session_repo.save_new_session(s2)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_200_OK
@@ -97,23 +100,23 @@ class TestGetSessions:
         conn, _, _ = _create_session_db(db_path)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        """SESSIONS_PATH is None → 500."""
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "SESSION_DIR" in response.json()["detail"]
+        assert "SESSIONS_PATH" in response.json()["detail"]
 
     def test_session_db_not_found(self, tmp_path: Path):
         """User directory / DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get("/api/v1/")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -136,7 +139,7 @@ class TestChatHistory:
         event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.RESPONSE, content="Hi there"))
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_200_OK
@@ -157,22 +160,22 @@ class TestChatHistory:
         conn, _, _ = _create_session_db(db_path)
         conn.close()
 
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["messages"] == []
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        """SESSIONS_PATH is None → 500."""
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_session_db_not_found(self, tmp_path: Path):
         """DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.get(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -200,7 +203,7 @@ class TestPostChat:
         mock_vector_stores.knowledge_store = MagicMock()
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -241,7 +244,7 @@ class TestPostChat:
         mock_vector_stores.knowledge_store = MagicMock()
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -260,8 +263,8 @@ class TestPostChat:
         assert len(messages) >= 3  # Hello, Hi, Follow-up question
 
     def test_session_dir_not_configured(self):
-        """SESSION_DIR is None → 500."""
-        with patch("endpoints.chat.SESSION_DIR", None):
+        """SESSIONS_PATH is None → 500."""
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
                 json={"message": "Hello"},
@@ -271,7 +274,7 @@ class TestPostChat:
 
     def test_session_db_not_found(self, tmp_path: Path):
         """DB file doesn't exist → 404."""
-        with patch("endpoints.chat.SESSION_DIR", str(tmp_path)):
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
                 json={"message": "Hello"},
@@ -294,7 +297,7 @@ class TestPostChat:
         mock_vector_stores.knowledge_store = MagicMock()
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -309,10 +312,64 @@ class TestPostChat:
 
     def test_missing_message_body_returns_422(self):
         """Missing / invalid request body → 422."""
-        with patch("endpoints.chat.SESSION_DIR", "/tmp"):
+        with patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp")):
             response = client.post(f"/api/v1/{SESSION_ID}")
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+
+# ---------------------------------------------------------------------------
+# GET /{session_id}/latest-timestamp — get_latest_event_timestamp
+# ---------------------------------------------------------------------------
+
+class TestGetLatestTimestamp:
+    """Tests for GET /api/v1/{session_id}/latest-timestamp."""
+
+    def test_returns_latest_timestamp(self, tmp_path: Path):
+        """When events exist, return the latest timestamp."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, _, event_repo = _create_session_db(db_path)
+
+        ts1 = "2024-01-01 10:00:00"
+        ts2 = "2024-01-01 10:05:00"
+        event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.USER_MESSAGE, content="First", timestamp=ts1))
+        event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.RESPONSE, content="Second", timestamp=ts2))
+        conn.close()
+
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["latest_timestamp"] == ts2
+
+    def test_returns_none_if_no_events(self, tmp_path: Path):
+        """When session exists but no events, return None for timestamp."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, _, _ = _create_session_db(db_path)
+        conn.close()
+
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_session_dir_not_configured(self):
+        """SESSIONS_PATH is None → 500."""
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_session_db_not_found(self, tmp_path: Path):
+        """DB file doesn't exist → 404."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestCallbackFactoryFlush:
@@ -336,7 +393,7 @@ class TestCallbackFactoryFlush:
         mock_factory.return_value = MagicMock()  # the __call__ returns a callback
 
         with (
-            patch("endpoints.chat.SESSION_DIR", str(tmp_path)),
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
@@ -349,3 +406,117 @@ class TestCallbackFactoryFlush:
 
         assert response.status_code == status.HTTP_200_OK
         mock_factory.flush.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{session_id} — delete_session
+# ---------------------------------------------------------------------------
+
+class TestDeleteSession:
+    """Tests for DELETE /api/v1/{session_id}."""
+
+    def test_successful_delete(self, tmp_path: Path):
+        """Happy path: session and its messages are deleted."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, session_repo, event_repo = _create_session_db(db_path)
+        
+        # Create a session to delete
+        session_id = str(uuid.uuid4())
+        session_repo.save_new_session(Session(session_id=session_id, title="To be deleted"))
+        event_repo.save(Event(session_id=session_id, event_type=EventType.USER_MESSAGE, content="Hello"))
+        conn.close()
+
+        # Create session directory as required by the endpoint logic
+        (user_dir / session_id).mkdir(parents=True, exist_ok=True)
+
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.delete(f"/api/v1/{session_id}")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        
+        # Verify it's gone from session repo and event repo
+        conn2 = sqlite3.connect(str(db_path))
+        session_repo2 = SqliteSessionRepository(conn2)
+        event_repo2 = SqliteEventRepository(conn2)
+        
+        assert session_repo2.get_session(session_id) is None
+        assert len(event_repo2.get_recent(session_id)) == 0
+        conn2.close()
+
+    def test_session_dir_not_configured(self):
+        """SESSIONS_PATH is None → 500."""
+        with patch("dependencies.sessions.SESSIONS_PATH", None):
+            response = client.delete(f"/api/v1/{SESSION_ID}")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_session_db_not_found(self, tmp_path: Path):
+        """DB file doesn't exist → 404."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.delete(f"/api/v1/{SESSION_ID}")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# PUT /{session_id}/rename — rename_session
+# ---------------------------------------------------------------------------
+
+class TestRenameSession:
+    """Tests for PUT /api/v1/{session_id}/rename."""
+
+    def test_successful_rename(self, tmp_path: Path):
+        """Happy path: rename a session and return the updated object."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, session_repo, _ = _create_session_db(db_path)
+        
+        session_id = str(uuid.uuid4())
+        session_repo.save_new_session(Session(session_id=session_id, title="Old Title"))
+        conn.close()
+
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.put(
+                f"/api/v1/{session_id}/rename",
+                json={"new_title": "New Elegant Title"}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["session_id"] == session_id
+        assert data["title"] == "New Elegant Title"
+
+        # Double check DB
+        conn2 = sqlite3.connect(str(db_path))
+        repo2 = SqliteSessionRepository(conn2)
+        updated = repo2.get_session(session_id)
+        assert updated is not None
+        assert updated.title == "New Elegant Title"
+        conn2.close()
+
+    def test_rename_non_existent_session(self, tmp_path: Path):
+        """If session_id is not in DB → 404."""
+        user_dir = tmp_path / TEST_USER.user_id
+        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
+        conn, _, _ = _create_session_db(db_path)
+        conn.close()
+
+        random_id = str(uuid.uuid4())
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.put(
+                f"/api/v1/{random_id}/rename",
+                json={"new_title": "Doesnt matter"}
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_session_db_not_found(self, tmp_path: Path):
+        """DB file doesn't exist → 404."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.put(
+                f"/api/v1/anything/rename",
+                json={"new_title": "Nope"}
+            )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND

@@ -1,5 +1,6 @@
 import io
 import uuid
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,12 +27,15 @@ mock_config = PipelineConfig(
     tools=[],
     mode=EvaluationType.RAG
 )
-api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
-
 def mock_get_current_user():
     return User(user_id="test_id", email="test@example.com", sessions_folder="testuser", username="testuser", full_name="Test User", avatar_uri="default.png")
 
-api.dependency_overrides[get_current_user] = mock_get_current_user
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
+    api.dependency_overrides[get_current_user] = mock_get_current_user
+    yield
+    api.dependency_overrides.clear()
 
 client = TestClient(api)
 
@@ -129,7 +133,7 @@ PDF_BYTES = _make_pdf_bytes()
 class TestSuccessfulEvaluation:
     """Happy-path tests for the /evaluate endpoint."""
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_successful_pdf_evaluation(self):
         """Upload a PDF → 200, response is a list."""
         doc = _build_docling_doc(paragraphs=["Hello world."])
@@ -141,7 +145,7 @@ class TestSuccessfulEvaluation:
         assert response.status_code == status.HTTP_200_OK
         assert isinstance(response.json()["vulnerabilities"], list)
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_response_contains_expected_text(self):
         """Returned sources contain the text from the DoclingDocument."""
         doc = _build_docling_doc(paragraphs=["First paragraph.", "Second paragraph."])
@@ -155,7 +159,7 @@ class TestSuccessfulEvaluation:
         assert "Vulnerability 0" in titles
         assert "Vulnerability 1" in titles
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_response_metadata_fields(self):
         """Each source has all expected metadata fields with correct types."""
         doc = _build_docling_doc(
@@ -181,7 +185,7 @@ class TestSuccessfulEvaluation:
 
         assert source["page_no"] == 1
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_source_ids_are_unique(self):
         """All source_id values in the response are unique valid UUIDs."""
         doc = _build_docling_doc(paragraphs=["A", "B", "C", "D", "E"])
@@ -200,7 +204,7 @@ class TestSuccessfulEvaluation:
 class TestEmptyAndEdgeCases:
     """Edge-case tests."""
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_empty_document_returns_empty_list(self):
         """A document with no text or picture items returns []."""
         doc = _build_docling_doc()
@@ -212,7 +216,7 @@ class TestEmptyAndEdgeCases:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["vulnerabilities"] == []
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_filename_fallback(self):
         """When UploadFile.filename is None, the endpoint uses 'upload' fallback."""
         doc = _build_docling_doc(paragraphs=["Content here."])
@@ -234,7 +238,7 @@ class TestEmptyAndEdgeCases:
 class TestRequestValidation:
     """Tests for invalid requests."""
 
-    @patch("endpoints.evaluate.SESSION_DIR", "/tmp")
+    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
     def test_missing_file_returns_422(self):
         """No file uploaded → 422 validation error."""
         response = client.post("/api/v1/evaluate")
