@@ -119,15 +119,17 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className="flex flex-col items-center justify-center h-dvh overflow-hidden p-9 gap-12">
-
-            <div className="w-full flex flex-col items-center gap-6">
-              <h1 className="text-5xl font-bold tracking-tight text-center">
-                  Hi, {user.full_name ?? user.username ?? ""}!
-              </h1>
-
+          <main className={`flex flex-col h-dvh overflow-hidden ${!file ? "items-center justify-center p-9 gap-12" : "p-0 gap-0"}`}>
             
-              <Card className={`${!file ? "w-full max-w-xl mt-1" : "size-full"} shadow-none`}>
+            {!file && (
+              <div className="w-full flex flex-col items-center gap-6">
+                <h1 className="text-4xl font-bold tracking-tight text-center">
+                    Hi, {user.full_name ?? user.username ?? ""}!
+                </h1>
+              </div>
+            )}
+
+              <Card className={`${!file ? "w-full max-w-md mt-1" : "size-full"} shadow-none`}>
                 {isProcessing ? (
                   <CardContent className="col-span-full h-full flex items-center justify-center">
                     <LoadingPage />
@@ -136,7 +138,7 @@ export default function App({ user, onLogout }: AppProps) {
                   <CardContent className="space-y-6 text-center">
                     <div className="space-y-2">
                       <div className="flex flex-col justify-center text-center">
-                        <p className="text-muted-foreground text-xl">
+                        <p className="text-muted-foreground text-lg">
                           Welcome to Cheshire. Please upload a PDF document to start the evaluation.
                         </p>
                       </div>
@@ -216,62 +218,63 @@ export default function App({ user, onLogout }: AppProps) {
                   </ResizablePanelGroup>
                 )}
               </Card>
-            </div>
-
-            <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
-              <div className="flex flex-col md:flex-row items-center gap-8 flex-[1.5]">
-                <div className="flex-shrink-0">
-                  <img
-                    src="/cheshire.png"
+            
+            {!file && (
+              <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
+                <div className="flex flex-col md:flex-row items-center gap-8 flex-[1.5]">
+                  <div className="flex-shrink-0">
+                    <img
+                      src="/cheshire.png"
                     alt="Cheshire Logo"
                     className="w-48 h-48 md:w-56 md:h-56 object-contain"
                   />
                 </div>
 
                 <div className="flex flex-col justify-center text-left max-w-md">
-                  <h2 className="text-2xl font-bold mb-2 text-slate-800">
-                    About Cheshire
-                  </h2>
-                  <p className="text-lg text-muted-foreground leading-relaxed text-justify">
-                    Cheshire is an assessment tool designed to identify vulnerabilities 
-                    in your Technical Document Specification (TDS) using AI analysis.
-                    It streamlines the review process by highlighting potential security 
-                    gaps and ensuring your documentation adheres to industry standards.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex-1 border-l border-slate-100 pl-16">
-                <h3 className="text-lg font-semibold uppercase tracking-wider text-slate-400 mb-6">
-                  Features
-                </h3>
-                <div className="grid grid-cols-1 gap-6">
-                  <div className="flex gap-4">
-                    <div className="text-slate-400 font-bold">01</div>
-                    <div>
-                      <h4 className="font-semibold text-slate-800">Document Preview</h4>
-                      <p className="text-base text-muted-foreground">A preview of your uploaded technical document.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="text-slate-400 font-bold">02</div>
-                    <div>
-                      <h4 className="font-semibold text-slate-800">Document Highlights</h4>
-                      <p className="text-base text-muted-foreground">Automatically find security risks and get clear suggestions on how to fix them.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="text-slate-400 font-bold">03</div>
-                    <div>
-                      <h4 className="font-semibold text-slate-800">Chatbot</h4>
-                      <p className="text-base text-muted-foreground">Discuss findings directly with the AI.</p>
-                    </div>
+                    <h2 className="text-xl font-bold mb-2 text-slate-800">
+                      About Cheshire
+                    </h2>
+                    <p className="text-base text-muted-foreground leading-relaxed text-justify">
+                      Cheshire is an assessment tool designed to identify vulnerabilities 
+                      in your Technical Document Specification (TDS) using AI analysis.
+                      It streamlines the review process by highlighting potential security 
+                      gaps and ensuring your documentation adheres to industry standards.
+                    </p>
                   </div>
                 </div>
+
+                <div className="flex-1 border-l border-slate-100 pl-16">
+                  <h3 className="text-lg font-semibold uppercase tracking-wider text-slate-400 mb-6">
+                    Features
+                  </h3>
+                  <div className="grid grid-cols-1 gap-6">
+                    <div className="flex gap-4">
+                      <div className="text-slate-400 font-bold">01</div>
+                      <div>
+                        <h4 className="font-semibold text-slate-800">Document Preview</h4>
+                        <p className="text-base text-muted-foreground">A preview of your uploaded technical document.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <div className="text-slate-400 font-bold">02</div>
+                      <div>
+                        <h4 className="font-semibold text-slate-800">Document Highlights</h4>
+                        <p className="text-base text-muted-foreground">Automatically find security risks and get clear suggestions on how to fix them.</p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <div className="text-slate-400 font-bold">03</div>
+                      <div>
+                        <h4 className="font-semibold text-slate-800">Chatbot</h4>
+                        <p className="text-base text-muted-foreground">Discuss findings directly with the AI.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </main>
         )}
       </SidebarInset>
