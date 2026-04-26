@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { motion } from "framer-motion"
 import { Card, CardAction, CardContent } from "./components/ui/card"
 import {
   SidebarProvider,
@@ -64,6 +65,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
+  
 
   // Derive profile image URL from user data, with a fallback to default avatar
   const [profileImage, setProfileImage] = useState(
@@ -182,34 +184,39 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className={`flex flex-col h-dvh overflow-hidden ${!file ? "items-center justify-center p-9 gap-12" : "p-0 gap-0"}`}>
-
-            {!file && (
-              <div className="w-full flex flex-col items-center gap-6">
-                <h1 className="text-4xl font-bold tracking-tight text-center">
-                    Hi, {user.full_name ?? user.username ?? ""}!
+          <main className={`h-dvh overflow-hidden ${!file ? "p-8" : "p-0"}`}>
+          {isProcessing ? (
+            <div className="flex h-full items-center justify-center">
+              <Card className="w-full max-w-sm rounded-2xl border border-slate-200 shadow-sm">
+                <CardContent className="flex items-center justify-center p-6">
+                  <LoadingPage />
+                </CardContent>
+              </Card>
+            </div>
+          ) : !file ? (
+            <div className="flex h-full flex-col items-center justify-center gap-14">
+              <motion.section
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="flex w-full max-w-3xl flex-col items-center text-center"
+              >
+                <h1 className="text-5xl font-bold tracking-tight text-slate-950">
+                  Hi, {user.full_name ?? user.username ?? ""}!
                 </h1>
-              </div>
-            )}
 
-              <Card className={`${!file ? "w-full max-w-md mt-1" : "size-full"} shadow-none`}>
-                {isProcessing ? (
-                  <CardContent className="col-span-full h-full flex items-center justify-center">
-                    <LoadingPage />
-                  </CardContent>
-                ) : !file ? (
-                  <CardContent className="space-y-6 text-center">
-                    <div className="space-y-2">
-                      <div className="flex flex-col justify-center text-center">
-                        <p className="text-muted-foreground text-lg">
-                          Welcome to Cheshire. Please upload a PDF document to start the evaluation.
-                        </p>
-                      </div>
-                    </div>
+                <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
+                  <CardContent className="space-y-4 p-2 text-center">
+                    <p className="text-lg text-muted-foreground text-center">
+                      Welcome to Cheshire. Please upload a PDF document to start the evaluation.
+                    </p>
 
-                    <CardAction className="flex justify-center m-auto">
-                      <Button asChild className="w-40">
-                        <label className="cursor-pointer inline-flex items-center gap-2">
+                    <CardAction className="w-full flex items-center justify-center">
+                      <Button
+                        asChild
+                        className="w-40 mx-auto block"
+                      >
+                        <label className="flex items-center justify-center gap-2 cursor-pointer">
                           <Upload className="h-4 w-4" />
                           Upload
                           <input
@@ -253,50 +260,27 @@ export default function App({ user, onLogout }: AppProps) {
                       </Button>
                     </CardAction>
                   </CardContent>
-                ) : (
-                  <ResizablePanelGroup orientation="horizontal" className="h-full">
-                    <ResizablePanel defaultSize={65} minSize={30}>
-                      <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
-                        <DocumentPreview
-                          src={file}
-                          findings={findings}
-                          fileName={currentFileName}
-                        />
-                      </CardContent>
-                    </ResizablePanel>
+                </Card>
+              </motion.section>
 
-                    <ResizableHandle withHandle />
+              <motion.section
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
+                className="flex w-full max-w-6xl flex-col items-center justify-center gap-10 md:flex-row"
+              >
+                <div className="flex flex-col items-center gap-8 md:flex-row">
+                  <img
+                    src="/cheshire.png"
+                    alt="Cheshire Logo"
+                    className="h-44 w-44 object-contain md:h-52 md:w-52"
+                  />
 
-                    <ResizablePanel defaultSize={35} minSize={25}>
-                      {currentSessionId && (
-                        <Chatbot
-                          key={currentSessionId}
-                          findings={findings}
-                          sessionId={currentSessionId}
-                          username={user.user_id}
-                        />
-                      )}
-                    </ResizablePanel>
-                  </ResizablePanelGroup>
-                )}
-              </Card>
-
-            {!file && (
-              <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
-                <div className="flex flex-col md:flex-row items-center gap-8 flex-[1.5]">
-                  <div className="flex-shrink-0">
-                    <img
-                      src="/cheshire.png"
-                      alt="Cheshire Logo"
-                      className="w-48 h-48 md:w-56 md:h-56 object-contain"
-                    />
-                  </div>
-
-                  <div className="flex flex-col justify-center text-left max-w-md">
-                    <h2 className="text-xl font-bold mb-2 text-slate-800">
+                  <div className="max-w-md text-center md:text-left">
+                    <h2 className="mb-2 text-xl font-bold text-slate-800">
                       About Cheshire
                     </h2>
-                    <p className="text-base text-muted-foreground leading-relaxed text-justify">
+                    <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
                       Cheshire is an assessment tool designed to identify vulnerabilities
                       in your Technical Document Specification (TDS) using AI analysis.
                       It streamlines the review process by highlighting potential security
@@ -305,39 +289,60 @@ export default function App({ user, onLogout }: AppProps) {
                   </div>
                 </div>
 
-                <div className="flex-1 border-l border-slate-100 pl-16">
-                  <h3 className="text-lg font-semibold uppercase tracking-wider text-slate-400 mb-6">
+                <div className="hidden h-56 w-px bg-slate-100 md:block" />
+
+                <div className="w-full max-w-sm">
+                  <h3 className="mb-6 text-lg font-semibold uppercase tracking-wider text-slate-400">
                     Features
                   </h3>
-                  <div className="grid grid-cols-1 gap-6">
-                    <div className="flex gap-4">
-                      <div className="text-slate-400 font-bold">01</div>
-                      <div>
-                        <h4 className="font-semibold text-slate-800">Document Preview</h4>
-                        <p className="text-base text-muted-foreground">A preview of your uploaded technical document.</p>
-                      </div>
-                    </div>
 
-                    <div className="flex gap-4">
-                      <div className="text-slate-400 font-bold">02</div>
-                      <div>
-                        <h4 className="font-semibold text-slate-800">Document Highlights</h4>
-                        <p className="text-base text-muted-foreground">Automatically find security risks and get clear suggestions on how to fix them.</p>
+                  <div className="grid gap-6">
+                    {[
+                      ["01", "Document Preview", "A preview of your uploaded technical document."],
+                      ["02", "Document Highlights", "Automatically find security risks and get clear suggestions on how to fix them."],
+                      ["03", "Chatbot", "Discuss findings directly with the AI."],
+                    ].map(([number, title, description]) => (
+                      <div key={number} className="flex gap-4">
+                        <div className="font-bold text-slate-400">{number}</div>
+                        <div>
+                          <h4 className="font-semibold text-slate-800">{title}</h4>
+                          <p className="text-base text-muted-foreground">{description}</p>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="flex gap-4">
-                      <div className="text-slate-400 font-bold">03</div>
-                      <div>
-                        <h4 className="font-semibold text-slate-800">Chatbot</h4>
-                        <p className="text-base text-muted-foreground">Discuss findings directly with the AI.</p>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            )}
-          </main>
+              </motion.section>
+            </div>
+          ) : (
+            <Card className="size-full shadow-none">
+              <ResizablePanelGroup orientation="horizontal" className="h-full">
+                <ResizablePanel defaultSize={65} minSize={30}>
+                  <CardContent className="flex size-full flex-col gap-3 overflow-hidden">
+                    <DocumentPreview
+                      src={file}
+                      findings={findings}
+                      fileName={currentFileName}
+                    />
+                  </CardContent>
+                </ResizablePanel>
+
+                <ResizableHandle withHandle />
+
+                <ResizablePanel defaultSize={35} minSize={25}>
+                  {currentSessionId && (
+                    <Chatbot
+                      key={currentSessionId}
+                      findings={findings}
+                      sessionId={currentSessionId}
+                      username={user.user_id}
+                    />
+                  )}
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </Card>
+          )}
+        </main>
         )}
       </SidebarInset>
 
