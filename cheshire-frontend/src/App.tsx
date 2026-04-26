@@ -29,7 +29,6 @@ import { PROVIDER } from "./globals"
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
 async function fetchSessions(): Promise<Chat[]> {
-  // GET /api/v1/  — returns sessions for the authenticated user
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
@@ -43,19 +42,18 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
-  const [file, setFile]                     = useState<File | string | null>(null)
-  const [findings, setFindings]             = useState<VulnerabilityFinding[]>([])
-  const [chats, setChats]                   = useState<Chat[]>([])
+  const [file, setFile]                         = useState<File | string | null>(null)
+  const [findings, setFindings]                 = useState<VulnerabilityFinding[]>([])
+  const [chats, setChats]                       = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing]     = useState(false)
-  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
-  const [page, setPage]                     = useState<"chat" | "account">("chat")
+  const [isProcessing, setIsProcessing]         = useState(false)
+  const [currentFileName, setCurrentFileName]   = useState<string>("document.pdf")
+  const [page, setPage]                         = useState<"chat" | "account">("chat")
 
   // Load sessions on mount
   useEffect(() => {
     fetchSessions().then(sessions =>
       setChats(
-        // Backend Session has session_id + title; Chat also needs a findings placeholder
         sessions.map((s: any) => ({
           session_id: s.session_id,
           title: s.title,
@@ -73,24 +71,31 @@ export default function App({ user, onLogout }: AppProps) {
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    // Fetch the stored PDF as an object URL so DocumentPreview can render it
-    const docUrl = `/api/v1/${chat.session_id}/document`
-    // Use a string URL with authFetch under the hood via DocumentPreview's fetch
-    // We pass the URL directly; the browser will use the cached JWT cookie alternative —
-    // instead let's fetch it properly and create a blob URL.
-    const blob = await authFetch(docUrl)
-      .then(r => (r.ok ? r.blob() : null))
-      .catch(() => null)
-
-    const objectUrl = blob ? URL.createObjectURL(blob) : null
-
-    const results = await getSessionResults(chat.session_id)
-
-    setFile(objectUrl)
-    setFindings(results)
-    setCurrentSessionId(chat.session_id)
-    setCurrentFileName(chat.title)
+    // Show loading immediately — prevents flash of the empty upload screen
+    setIsProcessing(true)
+    // Clear old document so the previous PDF doesn't briefly re-render
+    setFile(null)
     setPage("chat")
+
+    try {
+      // Fetch the PDF blob and vulnerability results in parallel
+      const docUrl = `/api/v1/${chat.session_id}/document`
+      const [blob, results] = await Promise.all([
+        authFetch(docUrl).then(r => (r.ok ? r.blob() : null)).catch(() => null),
+        getSessionResults(chat.session_id),
+      ])
+
+      const objectUrl = blob ? URL.createObjectURL(blob) : null
+
+      // Batch all state updates together — React 18 handles this automatically
+      // inside async functions, so no intermediate renders between these lines
+      setFile(objectUrl)
+      setFindings(results)
+      setCurrentSessionId(chat.session_id)
+      setCurrentFileName(chat.title)
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const handleLogout = () => {
@@ -120,7 +125,7 @@ export default function App({ user, onLogout }: AppProps) {
           />
         ) : (
           <main className={`flex flex-col h-dvh overflow-hidden ${!file ? "items-center justify-center p-9 gap-12" : "p-0 gap-0"}`}>
-            
+
             {!file && (
               <div className="w-full flex flex-col items-center gap-6">
                 <h1 className="text-4xl font-bold tracking-tight text-center">
@@ -143,7 +148,6 @@ export default function App({ user, onLogout }: AppProps) {
                         </p>
                       </div>
                     </div>
-                  
 
                     <CardAction className="flex justify-center m-auto">
                       <Button asChild className="w-40">
@@ -193,7 +197,7 @@ export default function App({ user, onLogout }: AppProps) {
                   </CardContent>
                 ) : (
                   <ResizablePanelGroup orientation="horizontal" className="h-full">
-                    <ResizablePanel defaultSize={75} minSize={30}>
+                    <ResizablePanel defaultSize={65} minSize={30}>
                       <CardContent className="flex flex-col gap-3 size-full overflow-hidden">
                         <DocumentPreview
                           src={file}
@@ -205,7 +209,7 @@ export default function App({ user, onLogout }: AppProps) {
 
                     <ResizableHandle withHandle />
 
-                    <ResizablePanel defaultSize={25} minSize={15}>
+                    <ResizablePanel defaultSize={35} minSize={25}>
                       {currentSessionId && (
                         <Chatbot
                           key={currentSessionId}
@@ -218,26 +222,26 @@ export default function App({ user, onLogout }: AppProps) {
                   </ResizablePanelGroup>
                 )}
               </Card>
-            
+
             {!file && (
               <div className="flex flex-col md:flex-row items-center justify-center gap-16 max-w-7xl mx-auto py-5">
                 <div className="flex flex-col md:flex-row items-center gap-8 flex-[1.5]">
                   <div className="flex-shrink-0">
                     <img
                       src="/cheshire.png"
-                    alt="Cheshire Logo"
-                    className="w-48 h-48 md:w-56 md:h-56 object-contain"
-                  />
-                </div>
+                      alt="Cheshire Logo"
+                      className="w-48 h-48 md:w-56 md:h-56 object-contain"
+                    />
+                  </div>
 
-                <div className="flex flex-col justify-center text-left max-w-md">
+                  <div className="flex flex-col justify-center text-left max-w-md">
                     <h2 className="text-xl font-bold mb-2 text-slate-800">
                       About Cheshire
                     </h2>
                     <p className="text-base text-muted-foreground leading-relaxed text-justify">
-                      Cheshire is an assessment tool designed to identify vulnerabilities 
+                      Cheshire is an assessment tool designed to identify vulnerabilities
                       in your Technical Document Specification (TDS) using AI analysis.
-                      It streamlines the review process by highlighting potential security 
+                      It streamlines the review process by highlighting potential security
                       gaps and ensuring your documentation adheres to industry standards.
                     </p>
                   </div>
