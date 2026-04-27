@@ -318,6 +318,7 @@ export default function App({ user, onLogout }: AppProps) {
                       findings={findings}
                       sessionId={currentSessionId}
                       username={user.user_id}
+                      profileImage={profileImage}
                     />
                   )}
                 </ResizablePanel>
