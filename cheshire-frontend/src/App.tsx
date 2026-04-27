@@ -92,27 +92,12 @@ export default function App({ user, onLogout }: AppProps) {
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    // Fetch the stored PDF as an object URL so DocumentPreview can render it
-    const docUrl = `/api/v1/${chat.session_id}/document`
-    // Use a string URL with authFetch under the hood via DocumentPreview's fetch
-    // We pass the URL directly; the browser will use the cached JWT cookie alternative —
-    // instead let's fetch it properly and create a blob URL.
-    const blob = await authFetch(docUrl)
-      .then(r => (r.ok ? r.blob() : null))
-      .catch(() => null)
-
-    const objectUrl = blob ? URL.createObjectURL(blob) : null
-
-    const results = await getSessionResults(chat.session_id)
-    setFile(objectUrl)
-    setFindings(results)
-    setCurrentSessionId(chat.session_id)
-    setCurrentFileName(chat.title)
+    setIsProcessing(true)
     setPage("chat")
 
     try {
-      // Fetch the PDF blob and vulnerability results in parallel
       const docUrl = `/api/v1/${chat.session_id}/document`
+
       const [blob, results] = await Promise.all([
         authFetch(docUrl).then(r => (r.ok ? r.blob() : null)).catch(() => null),
         getSessionResults(chat.session_id),
@@ -120,8 +105,6 @@ export default function App({ user, onLogout }: AppProps) {
 
       const objectUrl = blob ? URL.createObjectURL(blob) : null
 
-      // Batch all state updates together — React 18 handles this automatically
-      // inside async functions, so no intermediate renders between these lines
       setFile(objectUrl)
       setFindings(results)
       setCurrentSessionId(chat.session_id)
@@ -129,28 +112,6 @@ export default function App({ user, onLogout }: AppProps) {
     } finally {
       setIsProcessing(false)
     }
-  }
-
-  const handleDeleteChat = async (sessionId: string) => {
-    const ok = await deleteSession(sessionId)
-    if (!ok) {
-      console.error(`Failed to delete session ${sessionId}`)
-      return
-    }
-    setChats(prev => prev.filter(c => c.session_id !== sessionId))
-    if (currentSessionId === sessionId) handleNewChat()
-  }
-
-  const handleRenameChat = async (sessionId: string, newTitle: string) => {
-    const ok = await renameSession(sessionId, newTitle)
-    if (!ok) {
-      console.error(`Failed to rename session ${sessionId}`)
-      return
-    }
-    setChats(prev => prev.map(c =>
-      c.session_id === sessionId ? { ...c, title: newTitle } : c
-    ))
-    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
   }
 
   const handleDeleteChat = async (sessionId: string) => {
