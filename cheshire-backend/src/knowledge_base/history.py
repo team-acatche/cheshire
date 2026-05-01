@@ -7,7 +7,8 @@ import re
 import sqlite3 as sqlite
 from uuid import UUID
 
-from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage
+from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage, Document
+from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
 class EventType(StrEnum):
     VULNERABILITY_FINDING = "vulnerability_finding"
@@ -53,6 +54,19 @@ class Event:
         if self.event_type == EventType.USER_MESSAGE:
             return ChatMessage.from_user(str(self.content))
         return ChatMessage.from_assistant(str(self.content))
+    
+    def to_document(self) -> Document:
+        assert self.event_id is not None, "The event being embedded should have an ID"
+        return Document(
+            id=str(self.event_id),
+            content=self.content,
+            meta={
+                "session_id": self.session_id,
+                "event_type": self.event_type,
+                "ref_event_id": self.ref_event_id,
+                "timestamp": self.timestamp,
+            }
+        )
 
 class EventRepository(Protocol):
     def save(self, event: Event) -> None:
@@ -137,10 +151,20 @@ class SqliteEventRepository(EventRepository):
         self.cursor.execute("DELETE FROM event WHERE session_id = ?", (session_id,))
         self.history.commit()
     
+@dataclass(frozen=True, kw_only=True)
+class HistoryRepositories:
+    repo: Annotated[EventRepository, "the event repository"]
+    vector_store: Annotated[Optional[LanceDBDocumentStore], "the event repository with embeddings"] = field(default=None)
+
+    def save(self, event: Event):
+        self.repo.save(event)
+        if self.vector_store is not None:
+            self.vector_store.write_documents([event.to_document()])
+    
 @dataclass(kw_only=True)
 class StreamCallbackFactory:
     session_id: Annotated[UUID | str, "the session id"]
-    history: Annotated[EventRepository, "the event repository"]
+    history: Annotated[HistoryRepositories, "the event repository (both DB and Vector Stores)"]
     current_event: Annotated[Optional[Event], "the current event"] = field(init=False, default=None)
 
     def flush(self) -> None:

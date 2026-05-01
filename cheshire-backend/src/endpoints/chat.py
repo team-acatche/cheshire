@@ -17,14 +17,16 @@ from pydantic import BaseModel, Field
 from haystack.components.agents import Agent
 from haystack.tools import Tool
 from haystack.dataclasses import ChatMessage
+from haystack.document_stores.types import DuplicatePolicy
 from haystack_integrations.components.embedders.fastembed import FastembedTextEmbedder
 
 from cheshire_configs.core import PipelineConfig
 from cheshire_configs.resolver import resolve_config
-from knowledge_base.history import Event, EventType, SqliteEventRepository, StreamCallbackFactory
+from knowledge_base.history import Event, EventType, SqliteEventRepository, StreamCallbackFactory, HistoryRepositories
 from knowledge_base.session_manager import SqliteSessionRepository, Session
 from endpoints.helpers import get_or_create_vector_stores
-from tools.knowledge import get_relevant_facts_tool
+from tools.chat_tools import read_vulnerabilities_from_event_store_tool
+from tools.knowledge import get_relevant_facts_tool, upsert_fact_tool, get_facts_tool
 from auth.models import User
 from auth.dependencies import get_current_user
 
@@ -97,28 +99,43 @@ async def chat(
 
     # Initialize Vector Store (LanceDB)
     vector_stores = await get_or_create_vector_stores(user_path, username=user_id)
-
     recent_events = history_repo.get_recent(session_id, 1000)
+    vector_stores.event_store.write_documents([event.to_document() for event in recent_events], DuplicatePolicy.SKIP)
+
     # Events are returned in DESC order, we need them in ASC order for context
     messages = [e.to_chat_message() for e in reversed(recent_events)]
 
     # Prepare tools
     # We add knowledge tools specifically for the chat agent
+    session_uuid = UUID(session_id)
+    embedder = config.embedder or (lambda: FastembedTextEmbedder("sentence-transformers/all-MiniLM-L6-v2"))
     knowledge_tools = [
+        read_vulnerabilities_from_event_store_tool(vector_stores.event_store),
+        upsert_fact_tool(
+            session_uuid,
+            knowledge_store=vector_stores.knowledge_store,
+            embedder=embedder,
+        ),
+        get_facts_tool(session_uuid, knowledge_store=vector_stores.knowledge_store),
         get_relevant_facts_tool(
             session_id=UUID(session_id),
             knowledge_store=vector_stores.knowledge_store,
-            embedder=config.embedder or (lambda: FastembedTextEmbedder("sentence-transformers/all-MiniLM-L6-v2"))
-        )
+            embedder=embedder
+        ),
     ]
     
     # Instantiate Agent
-    callback_factory = StreamCallbackFactory(session_id=session_id, history=history_repo)
+    callback_factory = StreamCallbackFactory(
+        session_id=session_id,
+        history=HistoryRepositories(
+            repo=history_repo,
+            vector_store=vector_stores.event_store
+        ))
     
     agent = Agent(
         chat_generator=config.model,
         system_prompt="You are now an expert security auditor in an interactive chat session. Use your tools to answer questions about the previously analyzed document and discovered vulnerabilities.",
-        tools=cast(list[Tool], config.tools) + knowledge_tools,
+        tools=knowledge_tools,
         streaming_callback=callback_factory(),
     )
 

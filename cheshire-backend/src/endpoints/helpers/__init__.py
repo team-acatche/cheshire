@@ -16,14 +16,15 @@ async def get_or_create_vector_stores(sessions_path: str | Path, *, username: st
     KNOWLEDGE_TABLE: str = "knowledge"
 
     event_metadata_schema = pa.struct([
-        pa.field("event_id", type=pa.string(), nullable=False),
         pa.field("session_id", type=pa.string(), nullable=False),
+        pa.field("event_type", type=pa.string(), nullable=False),
+        pa.field("ref_event_id", type=pa.int32()),
         pa.field("timestamp", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
     ])
     knowledge_metadata_schema = pa.struct([
-        pa.field("knowledge_id", type=pa.string(), nullable=False),
+        pa.field("session_id", type=pa.string()),
+        pa.field("reference_event", type=pa.string(), nullable=False),
         pa.field("is_global", type=pa.bool_(), nullable=False),
-        pa.field("session_id", type=pa.string(), nullable=True),
         pa.field("created_at", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
         pa.field("last_modified", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
     ])

@@ -63,7 +63,7 @@ def upsert_fact_tool(
                 # search the knowledge base for the specific fact 
                 incorrect_fact = knowledge_store.perform_query(
                     filters={
-                        "field": "meta.knowledge_id",
+                        "field": "id",
                         "operator": "==",
                         "value": incorrect_fact_knowledge_id,
                     },
@@ -91,9 +91,9 @@ def upsert_fact_tool(
                     continue
 
             fact_documents.append(Document(
+                id=str(uuid4()),
                 content=fact,
                 meta = {
-                    "knowledge_id": str(uuid4()),
                     "is_global": False,
                     "session_id": str(session_id),
                     "created_at": datetime.now().isoformat(),
@@ -147,7 +147,7 @@ def get_facts_tool(
         })
         facts: list[str] = []
         for document in results:
-            facts.append(f"{document.content} (id: {document.meta['knowledge_id']})")
+            facts.append(f"{document.content} (id: {document.id})")
         return "\n".join(facts)
 
     return cast(Tool, get_facts)
@@ -177,7 +177,7 @@ def get_relevant_facts_tool(
         :return: a string containing all facts relevant to the query.
         """
         results = HybridLanceDbRetriever(knowledge_store, embedder()).run(query=query) # type: ignore
-        facts: list[str] = [f"{document.content} (id: {document.meta['knowledge_id']})" for document in results["documents"]]
+        facts: list[str] = [f"{document.content} (id: {document.id})" for document in results["documents"]]
         return "\n".join(facts)
 
     return cast(Tool, get_relevant_facts)
