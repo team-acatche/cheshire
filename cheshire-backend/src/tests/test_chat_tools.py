@@ -34,12 +34,12 @@ class TestReadVulnerabilitiesTool:
         docs = [Document(content="XSS"), Document(content="SQLi")]
         mock_store.perform_query.return_value = docs
         t = read_vulnerabilities_from_event_store_tool(mock_store)
-        assert t.invoke() == docs
+        assert t.invoke()["documents"] == docs
 
     def test_returns_empty_when_no_findings(self, mock_store):
         mock_store.perform_query.return_value = []
         t = read_vulnerabilities_from_event_store_tool(mock_store)
-        assert t.invoke() == []
+        assert t.invoke()["documents"] == []
 
     def test_closure_captures_own_store(self):
         a, b = MagicMock(), MagicMock()

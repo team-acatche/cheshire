@@ -35,7 +35,6 @@ def get_avatar(
     
     session_dir = Path(SESSIONS_PATH)
 
-    # TODO: bugfix -- add the default avatar
     if avatar_filename == "default.png":
         return FileResponse(path=GLOBAL_ASSETS_DIR / "default.png", filename="default.png")
     

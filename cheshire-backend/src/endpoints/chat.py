@@ -110,17 +110,16 @@ async def chat(
     session_uuid = UUID(session_id)
     embedder = config.embedder or (lambda: FastembedTextEmbedder("sentence-transformers/all-MiniLM-L6-v2"))
     knowledge_tools = [
+        # TODO: convert each into tool components
         read_vulnerabilities_from_event_store_tool(vector_stores.event_store),
         upsert_fact_tool(
             session_uuid,
             knowledge_store=vector_stores.knowledge_store,
-            embedder=embedder,
         ),
         get_facts_tool(session_uuid, knowledge_store=vector_stores.knowledge_store),
         get_relevant_facts_tool(
             session_id=UUID(session_id),
             knowledge_store=vector_stores.knowledge_store,
-            embedder=embedder
         ),
     ]
     

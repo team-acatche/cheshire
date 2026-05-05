@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 from haystack import Document
 from haystack.tools import Tool
+from lancedb_haystack import LanceDBDocumentStore
 
 from tools.knowledge import upsert_fact_tool, get_facts_tool, get_relevant_facts_tool
 
@@ -30,14 +31,14 @@ class TestUpsertFactTool:
     @patch("tools.knowledge.Pipeline")
     def test_returns_tool(self, MockPipeline, MockRetriever, mock_store, mock_embedder):
         MockPipeline.return_value = MagicMock()
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store, embedder=mock_embedder)
+        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
         assert isinstance(t, Tool)
 
     @patch("tools.knowledge.HybridLanceDbRetriever")
     @patch("tools.knowledge.Pipeline")
     def test_tool_name_is_upsert_fact(self, MockPipeline, MockRetriever, mock_store, mock_embedder):
         MockPipeline.return_value = MagicMock()
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store, embedder=mock_embedder)
+        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
         assert t.name == "upsert_fact"
 
     @patch("tools.knowledge.HybridLanceDbRetriever")
@@ -54,7 +55,7 @@ class TestUpsertFactTool:
         MockRetriever.return_value = retriever_instance
 
         sid = uuid4()
-        t = upsert_fact_tool(sid, knowledge_store=mock_store, embedder=lambda: MagicMock())
+        t = upsert_fact_tool(sid, knowledge_store=mock_store)
         t.invoke(facts=["The sky is blue"])
 
         # Check that the pipeline was called with documents
@@ -82,7 +83,7 @@ class TestUpsertFactTool:
         retriever_instance.run.return_value = {"documents": []}
         MockRetriever.return_value = retriever_instance
 
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store, embedder=lambda: MagicMock())
+        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
         t.invoke(facts=["fact one"])
 
         docs = mock_pipeline.run.call_args[0][0]["embedder"]["documents"]
@@ -101,7 +102,7 @@ class TestUpsertFactTool:
         existing = Document(id="abc-123", content="old", meta={"last_modified": "x"})
         mock_store.perform_query.return_value = [existing]
 
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store, embedder=lambda: MagicMock())
+        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
         t.invoke(facts=["corrected fact"], incorrect_fact_knowledge_id="abc-123")
 
         call_kwargs = mock_store.perform_query.call_args
@@ -120,9 +121,9 @@ class TestUpsertFactTool:
 
         mock_store.perform_query.return_value = []
 
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store, embedder=lambda: MagicMock())
+        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
         result = t.invoke(facts=["corrected"], incorrect_fact_knowledge_id="nonexistent-id")
-        assert "not found" in result.lower()
+        assert "not found" in result["result"].lower()
 
     @patch("tools.knowledge.HybridLanceDbRetriever")
     @patch("tools.knowledge.Pipeline")
@@ -137,10 +138,10 @@ class TestUpsertFactTool:
         retriever_instance.run.return_value = {"documents": []}
         MockRetriever.return_value = retriever_instance
 
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store, embedder=lambda: MagicMock())
+        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
         result = t.invoke(facts=["fact1", "fact2"])
-        assert "2" in result
-        assert "added" in result.lower()
+        assert "2" in result["result"]
+        assert "added" in result["result"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +194,16 @@ class TestGetFactsTool:
 class TestGetRelevantFactsTool:
     """Tests for the get_relevant_facts_tool factory."""
 
-    def test_returns_tool(self):
-        t = get_relevant_facts_tool(uuid4(), knowledge_store=MagicMock(), embedder=lambda: MagicMock())
+    @patch("tools.knowledge.HybridLanceDbRetriever")
+    def test_returns_tool(self, MockRetriever):
+        MockRetriever.return_value = MagicMock()
+        store_mock = MagicMock(spec=LanceDBDocumentStore)
+        t = get_relevant_facts_tool(uuid4(), knowledge_store=store_mock)
         assert isinstance(t, Tool)
 
-    def test_tool_name(self):
-        t = get_relevant_facts_tool(uuid4(), knowledge_store=MagicMock(), embedder=lambda: MagicMock())
+    @patch("tools.knowledge.HybridLanceDbRetriever")
+    def test_tool_name(self, MockRetriever):
+        MockRetriever.return_value = MagicMock()
+        store_mock = MagicMock(spec=LanceDBDocumentStore)
+        t = get_relevant_facts_tool(uuid4(), knowledge_store=store_mock)
         assert t.name == "get_relevant_facts"
