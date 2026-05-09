@@ -7,6 +7,7 @@ logging.basicConfig(level=logging.INFO)
 import os
 import shutil
 import sqlite3
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Annotated, Optional, cast
 from uuid import UUID
@@ -16,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from haystack.components.agents import Agent
 from haystack.tools import Tool
-from haystack.dataclasses import ChatMessage
+from haystack.dataclasses import ChatMessage, StreamingChunk
 from haystack.document_stores.types import DuplicatePolicy
 from haystack_integrations.components.embedders.fastembed import FastembedTextEmbedder
 
@@ -26,13 +27,21 @@ from knowledge_base.history import Event, EventType, SqliteEventRepository, Stre
 from knowledge_base.session_manager import SqliteSessionRepository, Session
 from endpoints.helpers import get_or_create_vector_stores
 from tools.chat_tools import read_vulnerabilities_from_event_store_tool
-from tools.knowledge import get_relevant_facts_tool, upsert_fact_tool, get_facts_tool
+from tools.knowledge import get_relevant_facts_tool, upsert_fact_tool, get_facts_tool, KnowledgeState
+from tools.exa import web_search
 from auth.models import User
 from auth.dependencies import get_current_user
 
 from dependencies.sessions import get_user_path, get_user_db_path
 
 chat_router = APIRouter()
+
+current_callback_factory: ContextVar[Optional[StreamCallbackFactory]] = ContextVar("current_callback_factory", default=None)
+
+def agent_streaming_callback(chunk: StreamingChunk) -> None:
+    factory = current_callback_factory.get()
+    if factory is not None:
+        factory.__call__(chunk)
 
 class ChatBody(BaseModel):
     message: str
@@ -108,19 +117,13 @@ async def chat(
     # Prepare tools
     # We add knowledge tools specifically for the chat agent
     session_uuid = UUID(session_id)
-    embedder = config.embedder or (lambda: FastembedTextEmbedder("sentence-transformers/all-MiniLM-L6-v2"))
-    knowledge_tools = [
-        # TODO: convert each into tool components
-        read_vulnerabilities_from_event_store_tool(vector_stores.event_store),
-        upsert_fact_tool(
-            session_uuid,
-            knowledge_store=vector_stores.knowledge_store,
-        ),
-        get_facts_tool(session_uuid, knowledge_store=vector_stores.knowledge_store),
-        get_relevant_facts_tool(
-            session_id=UUID(session_id),
-            knowledge_store=vector_stores.knowledge_store,
-        ),
+    state = KnowledgeState(session_uuid, vector_stores.knowledge_store, vector_stores.event_store)
+    knowledge_tools: list[Tool] = [
+        read_vulnerabilities_from_event_store_tool,
+        upsert_fact_tool,
+        get_facts_tool,
+        get_relevant_facts_tool,
+        web_search,
     ]
     
     # Instantiate Agent
@@ -131,22 +134,31 @@ async def chat(
             vector_store=vector_stores.event_store
         ))
     
+    from tools.knowledge import current_knowledge_state
+    
     agent = Agent(
         chat_generator=config.model,
-        system_prompt="You are now an expert security auditor in an interactive chat session. Use your tools to answer questions about the previously analyzed document and discovered vulnerabilities.",
+        system_prompt="You are now an expert security auditor in an interactive chat session. Use your tools to answer questions about the previously analyzed document and discovered vulnerabilities, alongside any additional user queries about the system and the evaluation standards you are aware of.",
         tools=knowledge_tools,
-        streaming_callback=callback_factory(),
+        streaming_callback=agent_streaming_callback,
     )
 
     # Run agent
+    token = current_callback_factory.set(callback_factory)
+    knowledge_token = current_knowledge_state.set(state)
     try:
-        response = agent.run(messages=[*messages, ChatMessage.from_user(body.message)])
+        response = agent.run(
+            messages=[*messages, ChatMessage.from_user(body.message)]
+        )
         callback_factory.flush()
         return {"response": response.get("last_message", "")}
     except Exception as e:
-        logging.error(f"Agent error: {e}")
+        import traceback
+        logging.error(f"Agent error: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
+        current_callback_factory.reset(token)
+        current_knowledge_state.reset(knowledge_token)
         history_db.close()
 
 @chat_router.get("/{session_id}/latest-timestamp", status_code=status.HTTP_200_OK)

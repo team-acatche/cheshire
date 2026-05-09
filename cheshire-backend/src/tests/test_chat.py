@@ -206,10 +206,7 @@ class TestPostChat:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.upsert_fact_tool", return_value=MagicMock()),
-            patch("endpoints.chat.get_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.read_vulnerabilities_from_event_store_tool", return_value=MagicMock()),
+            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
@@ -250,10 +247,7 @@ class TestPostChat:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.upsert_fact_tool", return_value=MagicMock()),
-            patch("endpoints.chat.get_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.read_vulnerabilities_from_event_store_tool", return_value=MagicMock()),
+            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
@@ -306,10 +300,7 @@ class TestPostChat:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.upsert_fact_tool", return_value=MagicMock()),
-            patch("endpoints.chat.get_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.read_vulnerabilities_from_event_store_tool", return_value=MagicMock()),
+            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",
@@ -405,11 +396,8 @@ class TestCallbackFactoryFlush:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.get_relevant_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.upsert_fact_tool", return_value=MagicMock()),
-            patch("endpoints.chat.get_facts_tool", return_value=MagicMock()),
-            patch("endpoints.chat.read_vulnerabilities_from_event_store_tool", return_value=MagicMock()),
             patch("endpoints.chat.StreamCallbackFactory", return_value=mock_factory),
+            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
                 f"/api/v1/{SESSION_ID}",

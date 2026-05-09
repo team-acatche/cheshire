@@ -102,18 +102,17 @@ class TestHistoryRepositories:
         """The document passed to write_documents should match event.to_document()."""
         history = HistoryRepositories(repo=sqlite_repo, vector_store=mock_vector_store)
         event = Event(
-            event_id=7,
             session_id="s1",
             event_type=EventType.RESPONSE,
             content="some response",
             timestamp="2024-01-01 00:00:00",
         )
-        history.save(event)
+        saved_event = history.save(event)
 
         written_docs = mock_vector_store.write_documents.call_args[0][0]
         assert isinstance(written_docs, list)
         assert len(written_docs) == 1
-        expected_doc = event.to_document()
+        expected_doc = saved_event.to_document()
         assert written_docs[0].id == expected_doc.id
         assert written_docs[0].content == expected_doc.content
 
@@ -159,7 +158,7 @@ class TestStreamCallbackFactory:
     def test_callback_accumulates_content_chunks(self, sqlite_repo):
         """Normal content streaming should accumulate into current_event."""
         factory = self._make_factory(sqlite_repo)
-        callback = factory()
+        callback = factory
 
         callback(StreamingChunk(content="Hello "))
         assert factory.current_event is not None
@@ -171,7 +170,7 @@ class TestStreamCallbackFactory:
     def test_callback_saves_on_finish_reason(self, sqlite_repo):
         """When a chunk has finish_reason and there's a current_event, it should be saved."""
         factory = self._make_factory(sqlite_repo)
-        callback = factory()
+        callback = factory
 
         callback(StreamingChunk(content="response text"))
         assert factory.current_event is not None
@@ -185,7 +184,7 @@ class TestStreamCallbackFactory:
     def test_callback_saves_tool_call_result(self, sqlite_repo):
         """Tool call results should be saved as TOOL_CALL_RESULT events."""
         factory = self._make_factory(sqlite_repo)
-        callback = factory()
+        callback = factory
 
         mock_result = MagicMock()
         mock_result.result = "tool output data"
@@ -199,7 +198,7 @@ class TestStreamCallbackFactory:
     def test_callback_handles_tool_calls(self, sqlite_repo):
         """Tool call chunks should create and immediately save a TOOL_CALL event."""
         factory = self._make_factory(sqlite_repo)
-        callback = factory()
+        callback = factory
 
         mock_tool_call = MagicMock()
         mock_tool_call.tool_name = "get_facts"

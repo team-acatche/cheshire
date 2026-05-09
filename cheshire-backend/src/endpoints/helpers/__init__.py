@@ -18,7 +18,7 @@ async def get_or_create_vector_stores(sessions_path: str | Path, *, username: st
     event_metadata_schema = pa.struct([
         pa.field("session_id", type=pa.string(), nullable=False),
         pa.field("event_type", type=pa.string(), nullable=False),
-        pa.field("ref_event_id", type=pa.int32()),
+        pa.field("ref_event_id", type=pa.string()),
         pa.field("timestamp", type=pa.timestamp("s", tz="Asia/Manila"), nullable=False),
     ])
     knowledge_metadata_schema = pa.struct([

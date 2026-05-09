@@ -1,4 +1,4 @@
-"""Tests for tools.knowledge — upsert_fact_tool and get_facts_tool changes."""
+"""Tests for tools.knowledge — upsert_fact, get_facts, get_relevant_facts."""
 
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -7,59 +7,51 @@ from uuid import UUID, uuid4
 import pytest
 from haystack import Document
 from haystack.tools import Tool
-from lancedb_haystack import LanceDBDocumentStore
 
-from tools.knowledge import upsert_fact_tool, get_facts_tool, get_relevant_facts_tool
+from tools.knowledge import (
+    KnowledgeState,
+    upsert_fact,
+    get_facts,
+    get_relevant_facts,
+    upsert_fact_tool,
+    get_facts_tool,
+    get_relevant_facts_tool,
+    current_knowledge_state,
+)
 
 
 # ---------------------------------------------------------------------------
-# upsert_fact_tool
+# upsert_fact
 # ---------------------------------------------------------------------------
 
-class TestUpsertFactTool:
-    """Tests for the updated upsert_fact_tool factory."""
+class TestUpsertFact:
+    """Tests for upsert_fact."""
 
     @pytest.fixture
-    def mock_store(self):
-        return MagicMock()
+    def mock_state(self):
+        state = MagicMock(spec=KnowledgeState)
+        state.session_id = uuid4()
+        state.knowledge_base = MagicMock()
+        state.retriever = MagicMock()
+        state.upsert_pipeline = MagicMock()
+        state.similarity_threshold = 0.35
+        token = current_knowledge_state.set(state)
+        yield state
+        current_knowledge_state.reset(token)
 
-    @pytest.fixture
-    def mock_embedder(self):
-        return lambda: MagicMock()
+    def test_is_tool(self):
+        assert isinstance(upsert_fact_tool, Tool)
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_returns_tool(self, MockPipeline, MockRetriever, mock_store, mock_embedder):
-        MockPipeline.return_value = MagicMock()
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
-        assert isinstance(t, Tool)
+    def test_tool_name(self):
+        assert upsert_fact_tool.name == "upsert_fact"
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_tool_name_is_upsert_fact(self, MockPipeline, MockRetriever, mock_store, mock_embedder):
-        MockPipeline.return_value = MagicMock()
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
-        assert t.name == "upsert_fact"
-
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_new_fact_generates_uuid_id(self, MockPipeline, MockRetriever, mock_store):
+    def test_new_fact_generates_uuid_id(self, mock_state):
         """New facts should get a UUID as their Document.id (not in meta)."""
-        mock_pipeline = MagicMock()
-        MockPipeline.return_value = mock_pipeline
-        mock_pipeline.add_component = MagicMock()
-        mock_pipeline.connect = MagicMock()
+        mock_state.retriever.run.return_value = {"documents": []}
+        
+        upsert_fact(facts=["The sky is blue"])
 
-        retriever_instance = MagicMock()
-        retriever_instance.run.return_value = {"documents": []}
-        MockRetriever.return_value = retriever_instance
-
-        sid = uuid4()
-        t = upsert_fact_tool(sid, knowledge_store=mock_store)
-        t.invoke(facts=["The sky is blue"])
-
-        # Check that the pipeline was called with documents
-        run_call = mock_pipeline.run.call_args
+        run_call = mock_state.upsert_pipeline.run.call_args
         embedder_input = run_call.args[0] if run_call.args else run_call.kwargs
         docs = embedder_input.get("embedder", {}).get("documents", [])
         assert len(docs) == 1
@@ -67,143 +59,101 @@ class TestUpsertFactTool:
         # id should be a valid UUID string
         UUID(doc.id)  # raises if not valid
         assert "knowledge_id" not in doc.meta
-        assert doc.meta["session_id"] == str(sid)
+        assert doc.meta["session_id"] == str(mock_state.session_id)
         assert doc.meta["is_global"] is False
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_new_fact_meta_has_no_knowledge_id(self, MockPipeline, MockRetriever, mock_store):
-        """The change removed knowledge_id from meta — verify it's absent."""
-        mock_pipeline = MagicMock()
-        MockPipeline.return_value = mock_pipeline
-        mock_pipeline.add_component = MagicMock()
-        mock_pipeline.connect = MagicMock()
-
-        retriever_instance = MagicMock()
-        retriever_instance.run.return_value = {"documents": []}
-        MockRetriever.return_value = retriever_instance
-
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
-        t.invoke(facts=["fact one"])
-
-        docs = mock_pipeline.run.call_args[0][0]["embedder"]["documents"]
-        for doc in docs:
-            assert "knowledge_id" not in doc.meta
-
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_incorrect_fact_lookup_uses_id_field(self, MockPipeline, MockRetriever, mock_store):
-        """When incorrect_fact_knowledge_id is given, the filter should use 'id', not 'meta.knowledge_id'."""
-        mock_pipeline = MagicMock()
-        MockPipeline.return_value = mock_pipeline
-        mock_pipeline.add_component = MagicMock()
-        mock_pipeline.connect = MagicMock()
-
+    def test_incorrect_fact_lookup_uses_id_field(self, mock_state):
+        """When incorrect_fact_knowledge_id is given, the filter should use 'id'."""
         existing = Document(id="abc-123", content="old", meta={"last_modified": "x"})
-        mock_store.perform_query.return_value = [existing]
+        mock_state.knowledge_base.perform_query.return_value = [existing]
 
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
-        t.invoke(facts=["corrected fact"], incorrect_fact_knowledge_id="abc-123")
+        upsert_fact(facts=["corrected fact"], incorrect_fact_knowledge_id="abc-123")
 
-        call_kwargs = mock_store.perform_query.call_args
+        call_kwargs = mock_state.knowledge_base.perform_query.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1]["filters"]
         assert filters["field"] == "id"
         assert filters["value"] == "abc-123"
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_incorrect_fact_not_found_returns_message(self, MockPipeline, MockRetriever, mock_store):
+    def test_incorrect_fact_not_found_returns_message(self, mock_state):
         """If the incorrect fact is not found, return a descriptive message."""
-        mock_pipeline = MagicMock()
-        MockPipeline.return_value = mock_pipeline
-        mock_pipeline.add_component = MagicMock()
-        mock_pipeline.connect = MagicMock()
-
-        mock_store.perform_query.return_value = []
-
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
-        result = t.invoke(facts=["corrected"], incorrect_fact_knowledge_id="nonexistent-id")
+        mock_state.knowledge_base.perform_query.return_value = []
+        
+        result = upsert_fact(facts=["corrected"], incorrect_fact_knowledge_id="nonexistent-id")
         assert "not found" in result["result"].lower()
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    @patch("tools.knowledge.Pipeline")
-    def test_returns_count_summary(self, MockPipeline, MockRetriever, mock_store):
+    def test_returns_count_summary(self, mock_state):
         """Result should include counts of added and updated facts."""
-        mock_pipeline = MagicMock()
-        MockPipeline.return_value = mock_pipeline
-        mock_pipeline.add_component = MagicMock()
-        mock_pipeline.connect = MagicMock()
-
-        retriever_instance = MagicMock()
-        retriever_instance.run.return_value = {"documents": []}
-        MockRetriever.return_value = retriever_instance
-
-        t = upsert_fact_tool(uuid4(), knowledge_store=mock_store)
-        result = t.invoke(facts=["fact1", "fact2"])
+        mock_state.retriever.run.return_value = {"documents": []}
+        
+        result = upsert_fact(facts=["fact1", "fact2"])
         assert "2" in result["result"]
         assert "added" in result["result"].lower()
 
 
 # ---------------------------------------------------------------------------
-# get_facts_tool
+# get_facts
 # ---------------------------------------------------------------------------
 
-class TestGetFactsTool:
-    """Tests for the get_facts_tool factory."""
+class TestGetFacts:
+    """Tests for get_facts."""
 
     @pytest.fixture
-    def mock_store(self):
-        return MagicMock()
+    def mock_state(self):
+        state = MagicMock(spec=KnowledgeState)
+        state.session_id = uuid4()
+        state.knowledge_base = MagicMock()
+        token = current_knowledge_state.set(state)
+        yield state
+        current_knowledge_state.reset(token)
 
-    def test_returns_tool(self, mock_store):
-        t = get_facts_tool(uuid4(), knowledge_store=mock_store)
-        assert isinstance(t, Tool)
+    def test_is_tool(self):
+        assert isinstance(get_facts_tool, Tool)
 
-    def test_tool_name(self, mock_store):
-        t = get_facts_tool(uuid4(), knowledge_store=mock_store)
-        assert t.name == "get_facts"
+    def test_tool_name(self):
+        assert get_facts_tool.name == "get_facts"
 
-    def test_session_filter_without_global(self, mock_store):
+    def test_session_filter_without_global(self, mock_state):
         """Without global, operator should be AND."""
-        sid = uuid4()
-        mock_store.perform_query.return_value = []
-        t = get_facts_tool(sid, knowledge_store=mock_store)
-        t.invoke(with_global=False)
+        mock_state.knowledge_base.perform_query.return_value = []
+        get_facts(with_global=False)
 
-        filters = mock_store.perform_query.call_args.kwargs["filters"]
+        filters = mock_state.knowledge_base.perform_query.call_args.kwargs["filters"]
         assert filters["operator"] == "AND"
         conditions = filters["conditions"]
         session_cond = next(c for c in conditions if c["field"] == "meta.session_id")
-        assert session_cond["value"] == str(sid)
+        assert session_cond["value"] == str(mock_state.session_id)
 
-    def test_session_filter_with_global(self, mock_store):
+    def test_session_filter_with_global(self, mock_state):
         """With global=True, operator should be OR."""
-        sid = uuid4()
-        mock_store.perform_query.return_value = []
-        t = get_facts_tool(sid, knowledge_store=mock_store)
-        t.invoke(with_global=True)
+        mock_state.knowledge_base.perform_query.return_value = []
+        get_facts(with_global=True)
 
-        filters = mock_store.perform_query.call_args.kwargs["filters"]
+        filters = mock_state.knowledge_base.perform_query.call_args.kwargs["filters"]
         assert filters["operator"] == "OR"
 
 
 # ---------------------------------------------------------------------------
-# get_relevant_facts_tool
+# get_relevant_facts
 # ---------------------------------------------------------------------------
 
-class TestGetRelevantFactsTool:
-    """Tests for the get_relevant_facts_tool factory."""
+class TestGetRelevantFacts:
+    """Tests for get_relevant_facts."""
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    def test_returns_tool(self, MockRetriever):
-        MockRetriever.return_value = MagicMock()
-        store_mock = MagicMock(spec=LanceDBDocumentStore)
-        t = get_relevant_facts_tool(uuid4(), knowledge_store=store_mock)
-        assert isinstance(t, Tool)
+    @pytest.fixture
+    def mock_state(self):
+        state = MagicMock(spec=KnowledgeState)
+        state.retriever = MagicMock()
+        token = current_knowledge_state.set(state)
+        yield state
+        current_knowledge_state.reset(token)
 
-    @patch("tools.knowledge.HybridLanceDbRetriever")
-    def test_tool_name(self, MockRetriever):
-        MockRetriever.return_value = MagicMock()
-        store_mock = MagicMock(spec=LanceDBDocumentStore)
-        t = get_relevant_facts_tool(uuid4(), knowledge_store=store_mock)
-        assert t.name == "get_relevant_facts"
+    def test_is_tool(self):
+        assert isinstance(get_relevant_facts_tool, Tool)
+
+    def test_tool_name(self):
+        assert get_relevant_facts_tool.name == "get_relevant_facts"
+
+    def test_queries_retriever(self, mock_state):
+        mock_state.retriever.run.return_value = {"documents": []}
+        get_relevant_facts(query="test query")
+        mock_state.retriever.run.assert_called_with(query="test query")

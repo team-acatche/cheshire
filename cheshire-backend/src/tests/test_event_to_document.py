@@ -25,8 +25,8 @@ class TestEventToDocument:
         assert doc.id == "42"
         assert doc.content == "SQL injection found"
         assert doc.meta["session_id"] == "sess-abc"
-        assert doc.meta["event_type"] == EventType.VULNERABILITY_FINDING
-        assert doc.meta["ref_event_id"] == 10
+        assert doc.meta["event_type"] == EventType.VULNERABILITY_FINDING.value
+        assert doc.meta["ref_event_id"] == "10"
         assert doc.meta["timestamp"] == "2024-06-01 12:00:00"
 
     def test_meta_contains_all_expected_keys(self):
@@ -49,7 +49,7 @@ class TestEventToDocument:
             content="reply",
         )
         doc = event.to_document()
-        assert doc.meta["ref_event_id"] is None
+        assert doc.meta["ref_event_id"] == ""
 
     def test_timestamp_none_when_unset(self):
         """When timestamp is not set on the Event, meta should carry None."""
@@ -60,7 +60,8 @@ class TestEventToDocument:
             content="reply",
         )
         doc = event.to_document()
-        assert doc.meta["timestamp"] is None
+        assert isinstance(doc.meta["timestamp"], str)
+        assert len(doc.meta["timestamp"]) > 0
 
     def test_event_id_is_stringified(self):
         """Document.id must be a string representation of event_id."""
@@ -105,4 +106,4 @@ class TestEventToDocument:
                 content="test",
             )
             doc = event.to_document()
-            assert doc.meta["event_type"] == event_type
+            assert doc.meta["event_type"] == event_type.value

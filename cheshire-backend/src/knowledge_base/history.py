@@ -24,7 +24,7 @@ class Event:
 
     event_id: Annotated[Optional[int], "the event id"] = None # None on insert
     content: Annotated[str, "the event content"] = ""
-    timestamp: Annotated[Optional[str], "the event timestamp"] = None
+    timestamp: Annotated[str, "the event timestamp"] = field(default_factory=lambda: datetime.now().isoformat())
     ref_event_id: Annotated[Optional[int], "the reference event id"] = None
 
     def to_insert_tuple(self) -> tuple:
@@ -57,20 +57,22 @@ class Event:
     
     def to_document(self) -> Document:
         assert self.event_id is not None, "The event being embedded should have an ID"
+        meta = {
+            "session_id": self.session_id,
+            "event_type": self.event_type.value if isinstance(self.event_type, EventType) else self.event_type,
+            "ref_event_id": str(self.ref_event_id) if self.ref_event_id is not None else "",
+            "timestamp": self.timestamp if self.timestamp is not None else datetime.now().isoformat(),
+        }
+
         return Document(
             id=str(self.event_id),
             content=self.content,
-            meta={
-                "session_id": self.session_id,
-                "event_type": self.event_type,
-                "ref_event_id": self.ref_event_id,
-                "timestamp": self.timestamp,
-            }
+            meta=meta
         )
 
 class EventRepository(Protocol):
-    def save(self, event: Event) -> None:
-        """Saves an event to the repository."""
+    def save(self, event: Event) -> Event:
+        """Saves an event to the repository and returns the saved event with its ID."""
         ...
     
     def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
@@ -108,8 +110,8 @@ class SqliteEventRepository(EventRepository):
 
         self.history.commit()
 
-    def save(self, event: Event) -> None:
-        """Saves an event to the repository."""
+    def save(self, event: Event) -> Event:
+        """Saves an event to the repository and returns the saved event with its ID."""
         values: list[str] = ["session_id", "event_type", "content"]
         if event.timestamp is not None:
             values.append("timestamp")
@@ -119,8 +121,12 @@ class SqliteEventRepository(EventRepository):
         values_str = f"({', '.join(values)})"
         placeholders = f"({', '.join(['?' for _ in values])})"
 
-        self.cursor.execute(f"INSERT INTO event {values_str} VALUES {placeholders}", event.to_insert_tuple())
+        self.cursor.execute(f"INSERT INTO event {values_str} VALUES {placeholders} RETURNING event_id, timestamp", event.to_insert_tuple())
+        row = self.cursor.fetchone()
+        event_id = row[0]
+        timestamp = row[1]
         self.history.commit()
+        return replace(event, event_id=event_id, timestamp=timestamp)
     
     def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
         """Returns the last k events."""
@@ -156,10 +162,11 @@ class HistoryRepositories:
     repo: Annotated[EventRepository, "the event repository"]
     vector_store: Annotated[Optional[LanceDBDocumentStore], "the event repository with embeddings"] = field(default=None)
 
-    def save(self, event: Event):
-        self.repo.save(event)
+    def save(self, event: Event) -> Event:
+        saved_event = self.repo.save(event)
         if self.vector_store is not None:
-            self.vector_store.write_documents([event.to_document()])
+            self.vector_store.write_documents([saved_event.to_document()])
+        return saved_event
     
 @dataclass(kw_only=True)
 class StreamCallbackFactory:
@@ -172,47 +179,44 @@ class StreamCallbackFactory:
             self.history.save(self.current_event)
             self.current_event = None
 
-    def __call__(self) -> StreamingCallbackT:
-        def _callback(chunk: StreamingChunk) -> None:
-            # save to db if this current chunk is a new content block and event is previously set
-            if chunk.finish_reason and self.current_event is not None:
-                self.history.save(self.current_event)
-                self.current_event = None
+    def __call__(factory, chunk: StreamingChunk) -> None:
+        # save to db if this current chunk is a new content block and event is previously set
+        if chunk.finish_reason and factory.current_event is not None:
+            factory.history.save(factory.current_event)
+            factory.current_event = None
 
-            ## Tool Call streaming
-            if chunk.tool_calls:
-                # Typically, if there are multiple tool calls in the chunk this means that the tool calls are fully formed and
-                # not just a delta.
-                self.current_event = Event(
-                    session_id=str(self.session_id),
-                    event_type=EventType.TOOL_CALL,
-                )
-                content_string = ""
+        ## Tool Call streaming
+        if chunk.tool_calls:
+            # Typically, if there are multiple tool calls in the chunk this means that the tool calls are fully formed and
+            # not just a delta.
+            factory.current_event = Event(
+                session_id=str(factory.session_id),
+                event_type=EventType.TOOL_CALL,
+            )
+            content_string = ""
 
-                for tool_call in chunk.tool_calls:
-                    content_string = f"Tool: {tool_call.tool_name}\nArguments: "
+            for tool_call in chunk.tool_calls:
+                content_string = f"Tool: {tool_call.tool_name}\nArguments: "
                 if tool_call.arguments:
                     content_string += tool_call.arguments
 
-                assert len(content_string) > 0
-                self.history.save(replace(self.current_event, content=content_string))
-                self.current_event = None
+            assert len(content_string) > 0
+            factory.history.save(replace(factory.current_event, content=content_string))
+            factory.current_event = None
 
-            ## Tool Call Result streaming
-            if chunk.tool_call_result:
-                self.history.save(Event(
-                    session_id=str(self.session_id),
-                    event_type=EventType.TOOL_CALL_RESULT,
-                    content=str(chunk.tool_call_result.result),
-                ))
+        ## Tool Call Result streaming
+        if chunk.tool_call_result:
+            factory.history.save(Event(
+                session_id=str(factory.session_id),
+                event_type=EventType.TOOL_CALL_RESULT,
+                content=str(chunk.tool_call_result.result),
+            ))
 
-            ## Normal content streaming
-            if chunk.content:
-                if self.current_event is None:
-                    self.current_event = Event(
-                        session_id=str(self.session_id),
-                        event_type=EventType.RESPONSE
-                    )
-                self.current_event = replace(self.current_event, content=self.current_event.content+chunk.content)
-
-        return _callback
+        ## Normal content streaming
+        if chunk.content:
+            if factory.current_event is None:
+                factory.current_event = Event(
+                    session_id=str(factory.session_id),
+                    event_type=EventType.RESPONSE
+                )
+            factory.current_event = replace(factory.current_event, content=factory.current_event.content+chunk.content)

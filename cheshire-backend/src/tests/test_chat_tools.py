@@ -5,49 +5,43 @@ import pytest
 from haystack.dataclasses import Document
 from haystack.tools import Tool
 from knowledge_base.history import EventType
-from tools.chat_tools import read_vulnerabilities_from_event_store_tool
-
+from tools.chat_tools import read_vulnerabilities_from_event_store, read_vulnerabilities_from_event_store_tool
+from tools.knowledge import KnowledgeState, current_knowledge_state
 
 class TestReadVulnerabilitiesTool:
 
     @pytest.fixture
-    def mock_store(self):
-        return MagicMock()
+    def mock_state(self):
+        state = MagicMock(spec=KnowledgeState)
+        state.event_store = MagicMock()
+        token = current_knowledge_state.set(state)
+        yield state
+        current_knowledge_state.reset(token)
 
-    def test_returns_tool(self, mock_store):
-        assert isinstance(read_vulnerabilities_from_event_store_tool(mock_store), Tool)
+    def test_is_tool(self):
+        assert isinstance(read_vulnerabilities_from_event_store_tool, Tool)
 
-    def test_tool_name(self, mock_store):
-        t = read_vulnerabilities_from_event_store_tool(mock_store)
-        assert t.name == "read_vulnerabilities"
+    def test_tool_name(self):
+        assert read_vulnerabilities_from_event_store_tool.name == "read_vulnerabilities_from_event_store"
 
-    def test_queries_with_vulnerability_filter(self, mock_store):
-        mock_store.perform_query.return_value = []
-        t = read_vulnerabilities_from_event_store_tool(mock_store)
-        t.invoke()
-        filters = mock_store.perform_query.call_args.kwargs.get("filters") or mock_store.perform_query.call_args[1]["filters"]
+    def test_queries_with_vulnerability_filter(self, mock_state):
+        mock_state.event_store.perform_query.return_value = []
+        read_vulnerabilities_from_event_store(confirm=True)
+        
+        call_kwargs = mock_state.event_store.perform_query.call_args
+        filters = call_kwargs.kwargs.get("filters") or call_kwargs[1]["filters"]
         assert filters["field"] == "meta.event_type"
         assert filters["operator"] == "=="
         assert filters["value"] == EventType.VULNERABILITY_FINDING
 
-    def test_returns_documents(self, mock_store):
-        docs = [Document(content="XSS"), Document(content="SQLi")]
-        mock_store.perform_query.return_value = docs
-        t = read_vulnerabilities_from_event_store_tool(mock_store)
-        assert t.invoke()["documents"] == docs
+    def test_returns_documents(self, mock_state):
+        docs = [Document(content="XSS")]
+        mock_state.event_store.perform_query.return_value = docs
+        res = read_vulnerabilities_from_event_store(confirm=True)
+        assert res["findings"] == docs
 
-    def test_returns_empty_when_no_findings(self, mock_store):
-        mock_store.perform_query.return_value = []
-        t = read_vulnerabilities_from_event_store_tool(mock_store)
-        assert t.invoke()["documents"] == []
-
-    def test_closure_captures_own_store(self):
-        a, b = MagicMock(), MagicMock()
-        a.perform_query.return_value = []
-        b.perform_query.return_value = []
-        ta = read_vulnerabilities_from_event_store_tool(a)
-        tb = read_vulnerabilities_from_event_store_tool(b)
-        ta.invoke()
-        tb.invoke()
-        a.perform_query.assert_called_once()
-        b.perform_query.assert_called_once()
+    def test_returns_empty_when_no_findings(self, mock_state):
+        mock_state.event_store.perform_query.return_value = []
+        res = read_vulnerabilities_from_event_store(confirm=True)
+        assert isinstance(res, dict)
+        assert res["findings"] == []
