@@ -30,9 +30,10 @@ from model import evaluate_file
 from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.core import PipelineConfig
 from cheshire_configs.resolver import resolve_config
+from globals import DATA_PATH
 from knowledge_base.session_manager import Session, SqliteSessionRepository
 from knowledge_base.history import Event, EventType, SqliteEventRepository, EventRepository
-from endpoints.helpers import get_or_create_vector_stores
+from knowledge_base.repository import RepositoryType, KnowledgeRepositoryFactory
 from auth.db_access import get_history
 from auth.models import User
 from auth.dependencies import get_current_user
@@ -92,7 +93,11 @@ async def evaluate_document(
 
         # Initialize vector stores
         logger.debug(f"save({filename}): Initializing vector stores for {filename}...")
-        await get_or_create_vector_stores(user_path, username=user_id)
+        KnowledgeRepositoryFactory.create_repositories(
+            RepositoryType.QDRANT, 
+            storage_path=DATA_PATH, 
+            username=user_id
+        )
         logger.info(f"save({filename}): Vector stores for {filename} initialized.")
 
     # Save results as first event in {user_id}.sqlite

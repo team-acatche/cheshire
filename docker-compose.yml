@@ -1,4 +1,13 @@
 services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cheshire-qdrant
+    restart: unless-stopped
+    volumes:
+      - ~/.cheshire/qdrant:/qdrant/storage
+    networks:
+      - cheshire
+
   cheshire-backend:
     build:
       context: ./cheshire-backend
@@ -7,7 +16,9 @@ services:
     container_name: cheshire-backend
     restart: unless-stopped
     environment:
-      - SESSIONS_PATH=~/.config/cheshire
+      - CHESHIRE_DATA_PATH=/data
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     env_file:
       - path: ./cheshire-backend/.env
         required: true
@@ -15,6 +26,10 @@ services:
         required: false
     ports:
       - "8000:8000"
+    volumes:
+      - ~/.cheshire:/data
+    depends_on:
+      - qdrant
     networks:
       - cheshire
 

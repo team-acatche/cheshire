@@ -4,10 +4,14 @@ from enum import StrEnum
 from typing import Callable, Optional, Annotated, Protocol
 import os
 import re
+import json
 import sqlite3 as sqlite
 from uuid import UUID
 
-from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage
+from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage, Document, ToolCall
+from lancedb_haystack import LanceDBDocumentStore # type: ignore
+
+from knowledge_base.repository import KnowledgeRepository
 
 class EventType(StrEnum):
     VULNERABILITY_FINDING = "vulnerability_finding"
@@ -23,7 +27,7 @@ class Event:
 
     event_id: Annotated[Optional[int], "the event id"] = None # None on insert
     content: Annotated[str, "the event content"] = ""
-    timestamp: Annotated[Optional[str], "the event timestamp"] = None
+    timestamp: Annotated[str, "the event timestamp"] = field(default_factory=lambda: datetime.now().isoformat())
     ref_event_id: Annotated[Optional[int], "the reference event id"] = None
 
     def to_insert_tuple(self) -> tuple:
@@ -49,14 +53,48 @@ class Event:
             ref_event_id=row[5] if len(row) > 5 else None
         )
     
-    def to_chat_message(self) -> ChatMessage:
+    def to_chat_message(self, last_tool_call: Optional[ToolCall] = None) -> ChatMessage:
         if self.event_type == EventType.USER_MESSAGE:
             return ChatMessage.from_user(str(self.content))
+        elif self.event_type == EventType.TOOL_CALL:
+            match = re.search(r'Tool:\s*([^\n]+)\nArguments:\s*(.*)', str(self.content), re.DOTALL)
+            if match:
+                tool_name = match.group(1).strip()
+                assert self.event_id is not None, "event should have an ID before being converted to a chat message"
+                try:
+                    arguments = json.loads(match.group(2).strip())
+                    return ChatMessage.from_assistant(
+                        tool_calls=[ToolCall(tool_name=tool_name, arguments=arguments, id=f"call_{self.event_id}")]
+                    )
+                except json.JSONDecodeError:
+                    pass
+            return ChatMessage.from_assistant(str(self.content))
+        elif self.event_type == EventType.TOOL_CALL_RESULT:
+            origin = last_tool_call if last_tool_call is not None else ToolCall(tool_name="unknown", arguments={}, id="call_unknown")
+            return ChatMessage.from_tool(
+                tool_result=str(self.content),
+                origin=origin,
+            )
         return ChatMessage.from_assistant(str(self.content))
+    
+    def to_document(self) -> Document:
+        assert self.event_id is not None, "The event being embedded should have an ID"
+        meta = {
+            "session_id": self.session_id,
+            "event_type": self.event_type.value if isinstance(self.event_type, EventType) else self.event_type,
+            "ref_event_id": str(self.ref_event_id) if self.ref_event_id is not None else "",
+            "timestamp": self.timestamp if self.timestamp is not None else datetime.now().isoformat(),
+        }
+
+        return Document(
+            id=str(self.event_id),
+            content=self.content,
+            meta=meta
+        )
 
 class EventRepository(Protocol):
-    def save(self, event: Event) -> None:
-        """Saves an event to the repository."""
+    def save(self, event: Event) -> Event:
+        """Saves an event to the repository and returns the saved event with its ID."""
         ...
     
     def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
@@ -94,8 +132,8 @@ class SqliteEventRepository(EventRepository):
 
         self.history.commit()
 
-    def save(self, event: Event) -> None:
-        """Saves an event to the repository."""
+    def save(self, event: Event) -> Event:
+        """Saves an event to the repository and returns the saved event with its ID."""
         values: list[str] = ["session_id", "event_type", "content"]
         if event.timestamp is not None:
             values.append("timestamp")
@@ -105,8 +143,12 @@ class SqliteEventRepository(EventRepository):
         values_str = f"({', '.join(values)})"
         placeholders = f"({', '.join(['?' for _ in values])})"
 
-        self.cursor.execute(f"INSERT INTO event {values_str} VALUES {placeholders}", event.to_insert_tuple())
+        self.cursor.execute(f"INSERT INTO event {values_str} VALUES {placeholders} RETURNING event_id, timestamp", event.to_insert_tuple())
+        row = self.cursor.fetchone()
+        event_id = row[0]
+        timestamp = row[1]
         self.history.commit()
+        return replace(event, event_id=event_id, timestamp=timestamp)
     
     def get_recent(self, session_id: str, k: int = 1000, *, event_types: Optional[list[EventType]] = None) -> list[Event]:
         """Returns the last k events."""
@@ -137,10 +179,21 @@ class SqliteEventRepository(EventRepository):
         self.cursor.execute("DELETE FROM event WHERE session_id = ?", (session_id,))
         self.history.commit()
     
+@dataclass(frozen=True, kw_only=True)
+class HistoryRepositories:
+    repo: Annotated[EventRepository, "the event repository"]
+    vector_store: Annotated[Optional[KnowledgeRepository], "the event repository with embeddings"] = field(default=None)
+
+    def save(self, event: Event) -> Event:
+        saved_event = self.repo.save(event)
+        if self.vector_store is not None:
+            self.vector_store.save([saved_event.to_document()])
+        return saved_event
+    
 @dataclass(kw_only=True)
 class StreamCallbackFactory:
     session_id: Annotated[UUID | str, "the session id"]
-    history: Annotated[EventRepository, "the event repository"]
+    history: Annotated[HistoryRepositories, "the event repository (both DB and Vector Stores)"]
     current_event: Annotated[Optional[Event], "the current event"] = field(init=False, default=None)
 
     def flush(self) -> None:
@@ -148,47 +201,44 @@ class StreamCallbackFactory:
             self.history.save(self.current_event)
             self.current_event = None
 
-    def __call__(self) -> StreamingCallbackT:
-        def _callback(chunk: StreamingChunk) -> None:
-            # save to db if this current chunk is a new content block and event is previously set
-            if chunk.finish_reason and self.current_event is not None:
-                self.history.save(self.current_event)
-                self.current_event = None
+    def __call__(factory, chunk: StreamingChunk) -> None:
+        # save to db if this current chunk is a new content block and event is previously set
+        if chunk.finish_reason and factory.current_event is not None:
+            factory.history.save(factory.current_event)
+            factory.current_event = None
 
-            ## Tool Call streaming
-            if chunk.tool_calls:
-                # Typically, if there are multiple tool calls in the chunk this means that the tool calls are fully formed and
-                # not just a delta.
-                self.current_event = Event(
-                    session_id=str(self.session_id),
-                    event_type=EventType.TOOL_CALL,
-                )
-                content_string = ""
+        ## Tool Call streaming
+        if chunk.tool_calls:
+            # Typically, if there are multiple tool calls in the chunk this means that the tool calls are fully formed and
+            # not just a delta.
+            factory.current_event = Event(
+                session_id=str(factory.session_id),
+                event_type=EventType.TOOL_CALL,
+            )
+            content_string = ""
 
-                for tool_call in chunk.tool_calls:
-                    content_string = f"Tool: {tool_call.tool_name}\nArguments: "
+            for tool_call in chunk.tool_calls:
+                content_string = f"Tool: {tool_call.tool_name}\nArguments: "
                 if tool_call.arguments:
                     content_string += tool_call.arguments
 
-                assert len(content_string) > 0
-                self.history.save(replace(self.current_event, content=content_string))
-                self.current_event = None
+            assert len(content_string) > 0
+            factory.history.save(replace(factory.current_event, content=content_string))
+            factory.current_event = None
 
-            ## Tool Call Result streaming
-            if chunk.tool_call_result:
-                self.history.save(Event(
-                    session_id=str(self.session_id),
-                    event_type=EventType.TOOL_CALL_RESULT,
-                    content=str(chunk.tool_call_result.result),
-                ))
+        ## Tool Call Result streaming
+        if chunk.tool_call_result:
+            factory.history.save(Event(
+                session_id=str(factory.session_id),
+                event_type=EventType.TOOL_CALL_RESULT,
+                content=str(chunk.tool_call_result.result),
+            ))
 
-            ## Normal content streaming
-            if chunk.content:
-                if self.current_event is None:
-                    self.current_event = Event(
-                        session_id=str(self.session_id),
-                        event_type=EventType.RESPONSE
-                    )
-                self.current_event = replace(self.current_event, content=self.current_event.content+chunk.content)
-
-        return _callback
+        ## Normal content streaming
+        if chunk.content:
+            if factory.current_event is None:
+                factory.current_event = Event(
+                    session_id=str(factory.session_id),
+                    event_type=EventType.RESPONSE
+                )
+            factory.current_event = replace(factory.current_event, content=factory.current_event.content+chunk.content)

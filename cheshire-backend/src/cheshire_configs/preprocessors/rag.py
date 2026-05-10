@@ -1,7 +1,7 @@
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionVlmOptions
-from docling.datamodel.base_models import InputFormat
-from docling.chunking import DocChunk
+from docling.document_converter import DocumentConverter, PdfFormatOption # type: ignore
+from docling.datamodel.pipeline_options import PdfPipelineOptions, smolvlm_picture_description # type: ignore
+from docling.datamodel.base_models import InputFormat # type: ignore
+from docling_core.transforms.chunker import DocChunk # type: ignore
 from docling_core.types.doc import DocItem, DocItemLabel, FloatingItem, SectionHeaderItem, TitleItem, TextItem
 
 from haystack import component, Document
@@ -13,10 +13,7 @@ _pipeline_options = PdfPipelineOptions()
 _pipeline_options.do_code_enrichment = True
 # _pipeline_options.do_picture_classification = True
 _pipeline_options.do_picture_description = True
-_pipeline_options.picture_description_options = PictureDescriptionVlmOptions(
-    repo_id="HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
-    prompt="Provide a detailed technical description of the image."
-)
+_pipeline_options.picture_description_options = smolvlm_picture_description
 
 DOCUMENT_CONVERTER = DocumentConverter(format_options={
     InputFormat.PDF: PdfFormatOption(pipeline_options=_pipeline_options)
