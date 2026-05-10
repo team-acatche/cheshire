@@ -1,13 +1,13 @@
 from typing import cast, Any
 
 from haystack.dataclasses import Document
-from haystack.tools import create_tool_from_function, Tool, ComponentTool
+from haystack.tools import tool
 from haystack import component
-from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
 from tools.knowledge import KnowledgeState, current_knowledge_state
 from knowledge_base.history import EventType
 
+@tool
 def read_vulnerabilities_from_event_store(confirm: bool) -> dict[str, Any]:
     """
     Read all of the findings from the audit.
@@ -21,7 +21,3 @@ def read_vulnerabilities_from_event_store(confirm: bool) -> dict[str, Any]:
         }
     )
     return {"findings": docs}
-
-read_vulnerabilities_from_event_store_tool = create_tool_from_function(
-    read_vulnerabilities_from_event_store
-)

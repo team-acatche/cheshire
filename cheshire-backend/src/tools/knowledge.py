@@ -5,10 +5,14 @@ from uuid import UUID, uuid4
 from contextvars import ContextVar
 
 from haystack import Document
-from haystack.tools import create_tool_from_function
+from haystack.tools import tool
 from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
 from knowledge_base.repository import KnowledgeRepository
+    
+import logging
+logger = logging.getLogger("uvicorn.error")
+
 
 @dataclass
 class KnowledgeState:
@@ -16,10 +20,11 @@ class KnowledgeState:
     knowledge_base: Annotated[KnowledgeRepository, "the repository for the knowledge base"]
     event_store: Annotated[KnowledgeRepository, "the repository for all of the events in the session"]
 
-    similarity_threshold: Annotated[float, "the similarity threshold used for upserting facts"] = 0.35
+    similarity_threshold: Annotated[float, "the similarity threshold used for upserting facts"] = 0.85
 
 current_knowledge_state: ContextVar[KnowledgeState] = ContextVar("current_knowledge_state")
 
+@tool
 def upsert_fact(
     facts: Annotated[list[str], "The facts to assert."],
     incorrect_fact_knowledge_id: Annotated[Optional[str], "(Optional) the knowledge UUID of the incorrect fact, if known."] = None,
@@ -37,39 +42,24 @@ def upsert_fact(
     updated = 0
     fact_documents: list[Document] = []
     for fact in facts:
-        if incorrect_fact_knowledge_id is not None:
-            incorrect_facts = state.knowledge_base.query(
-                filters={
-                    "field": "id",
-                    "operator": "==",
-                    "value": incorrect_fact_knowledge_id,
-                },
-                top_k=1
-            )
-            if len(incorrect_facts) == 0:
-                return {"result": f"Fact with knowledge id {incorrect_fact_knowledge_id} not found."}
-            
-            incorrect_fact = incorrect_facts[0]
-            from dataclasses import replace
-            fact_documents.append(replace(
-                incorrect_fact,
-                content=fact,
-                meta={**incorrect_fact.meta, "last_modified": datetime.now().isoformat()},
-            ))
-            updated += 1
-            continue
-            
+        # Check for similar facts to avoid duplicates
         if similar_facts := state.knowledge_base.search(query=fact, top_k=1):
             most_similar_fact: Document = similar_facts[0]
-            if (most_similar_fact.score or 0) <= state.similarity_threshold:
+            # If the most similar fact is close enough, we update it
+            if (most_similar_fact.score or 0) >= state.similarity_threshold:
+                from dataclasses import replace
                 fact_documents.append(replace(
                     most_similar_fact,
                     content=fact,
                     meta={**most_similar_fact.meta, "last_modified": datetime.now().isoformat()},
                 ))
                 updated += 1
+                logger.info(f"Updating existing fact (score: {most_similar_fact.score}): {fact[:50]}...")
                 continue
+            else:
+                logger.info(f"Top match score {most_similar_fact.score} below threshold {state.similarity_threshold}. Adding as new.")
 
+        # If not similar enough, or no facts exist, add as new
         fact_documents.append(Document(
             id=str(uuid4()),
             content=fact,
@@ -81,14 +71,14 @@ def upsert_fact(
             }
         ))
         added += 1
+        logger.info(f"Adding new fact: {fact[:50]}...")
+
     assert len(facts) == len(fact_documents)
     state.knowledge_base.save(fact_documents)
     return {"result": f"Added {added} new facts and updated {updated} facts to the knowledge base."}
 
 
-upsert_fact_tool = create_tool_from_function(upsert_fact)
-
-
+@tool
 def get_facts(
     with_global: Annotated[bool, "Whether to include global facts."] = False
 ) -> dict[str, Any]:
@@ -120,9 +110,7 @@ def get_facts(
     return {"facts": facts}
 
 
-get_facts_tool = create_tool_from_function(get_facts)
-
-
+@tool
 def get_relevant_facts(
     query: Annotated[str, "The query to get relevant facts for."]
 ) -> dict[str, Any]:
@@ -137,5 +125,3 @@ def get_relevant_facts(
     results = state.knowledge_base.search(query=query)
     facts: list[str] = [f"{document.content} (id: {document.id})" for document in results]
     return {"facts": facts}
-
-get_relevant_facts_tool = create_tool_from_function(get_relevant_facts)

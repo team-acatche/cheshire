@@ -4,10 +4,11 @@ from enum import StrEnum
 from typing import Callable, Optional, Annotated, Protocol
 import os
 import re
+import json
 import sqlite3 as sqlite
 from uuid import UUID
 
-from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage, Document
+from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage, Document, ToolCall
 from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
 from knowledge_base.repository import KnowledgeRepository
@@ -52,9 +53,28 @@ class Event:
             ref_event_id=row[5] if len(row) > 5 else None
         )
     
-    def to_chat_message(self) -> ChatMessage:
+    def to_chat_message(self, last_tool_call: Optional[ToolCall] = None) -> ChatMessage:
         if self.event_type == EventType.USER_MESSAGE:
             return ChatMessage.from_user(str(self.content))
+        elif self.event_type == EventType.TOOL_CALL:
+            match = re.search(r'Tool:\s*([^\n]+)\nArguments:\s*(.*)', str(self.content), re.DOTALL)
+            if match:
+                tool_name = match.group(1).strip()
+                assert self.event_id is not None, "event should have an ID before being converted to a chat message"
+                try:
+                    arguments = json.loads(match.group(2).strip())
+                    return ChatMessage.from_assistant(
+                        tool_calls=[ToolCall(tool_name=tool_name, arguments=arguments, id=f"call_{self.event_id}")]
+                    )
+                except json.JSONDecodeError:
+                    pass
+            return ChatMessage.from_assistant(str(self.content))
+        elif self.event_type == EventType.TOOL_CALL_RESULT:
+            origin = last_tool_call if last_tool_call is not None else ToolCall(tool_name="unknown", arguments={}, id="call_unknown")
+            return ChatMessage.from_tool(
+                tool_result=str(self.content),
+                origin=origin,
+            )
         return ChatMessage.from_assistant(str(self.content))
     
     def to_document(self) -> Document:
