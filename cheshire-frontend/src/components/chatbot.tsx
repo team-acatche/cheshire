@@ -30,9 +30,10 @@ interface ChatbotProps {
   findings: VulnerabilityFinding[]
   sessionId: string
   username: string   // kept for avatar display; auth is now JWT-based
+  profileImage?: string
 }
 
-export function Chatbot({ findings, sessionId }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
@@ -256,7 +257,11 @@ export function Chatbot({ findings, sessionId }: ChatbotProps) {
 
               {msg.role === "user" && (
                 <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
-                  <img src="/User.png" className="w-full h-full object-cover" alt="user" />
+                  <img 
+                  src={profileImage || "/User.png"} 
+                  onError={(e) => { e.currentTarget.src = "/User.png" }}
+                  className="w-full h-full object-cover"
+                  alt="user" />
                 </div>
               )}
             </div>
