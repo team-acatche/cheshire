@@ -1,7 +1,7 @@
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionVlmOptions
-from docling.datamodel.base_models import InputFormat
-from docling.chunking import DocChunk
+from docling.document_converter import DocumentConverter, PdfFormatOption # type: ignore
+from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionVlmOptions # type: ignore
+from docling.datamodel.base_models import InputFormat # type: ignore
+from docling_core.transforms.chunker import DocChunk # type: ignore
 from docling_core.types.doc import DocItem, DocItemLabel, FloatingItem, SectionHeaderItem, TitleItem, TextItem
 
 from haystack import component, Document

@@ -3,7 +3,7 @@ from haystack import Document
 from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 from docling_core.types.doc.document import PictureMeta, DescriptionMetaField
-from docling.chunking import DocChunk
+from docling_core.transforms.chunker import DocChunk # type: ignore
 
 from cheshire_configs.preprocessors.rag import DoclingOrientationExtractor
 

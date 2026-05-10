@@ -1,7 +1,7 @@
 import json
 
 from haystack.dataclasses import Document
-from docling.chunking import DocChunk
+from docling_core.transforms.chunker import DocChunk # type: ignore
 from docling_core.types.doc import BoundingBox
 from pydantic import BaseModel, Field
 from typing import Annotated
