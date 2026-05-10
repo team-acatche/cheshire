@@ -33,6 +33,7 @@ from auth.models import User
 from auth.dependencies import get_current_user
 
 from dependencies.sessions import get_user_path, get_user_db_path
+from knowledge_base.repository import LanceDbKnowledgeRepository, LanceDbEventRepository
 
 chat_router = APIRouter()
 
@@ -108,8 +109,9 @@ async def chat(
 
     # Initialize Vector Store (LanceDB)
     vector_stores = await get_or_create_vector_stores(user_path, username=user_id)
+    event_repo = LanceDbEventRepository(vector_stores.event_store)
     recent_events = history_repo.get_recent(session_id, 1000)
-    vector_stores.event_store.write_documents([event.to_document() for event in recent_events], DuplicatePolicy.SKIP)
+    event_repo.save([event.to_document() for event in recent_events])
 
     # Events are returned in DESC order, we need them in ASC order for context
     messages = [e.to_chat_message() for e in reversed(recent_events)]
@@ -117,7 +119,11 @@ async def chat(
     # Prepare tools
     # We add knowledge tools specifically for the chat agent
     session_uuid = UUID(session_id)
-    state = KnowledgeState(session_uuid, vector_stores.knowledge_store, vector_stores.event_store)
+    state = KnowledgeState(
+        session_uuid, 
+        LanceDbKnowledgeRepository.create(vector_stores.knowledge_store), 
+        event_repo
+    )
     knowledge_tools: list[Tool] = [
         read_vulnerabilities_from_event_store_tool,
         upsert_fact_tool,

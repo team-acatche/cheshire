@@ -71,7 +71,7 @@ class TestHistoryRepositories:
             content="hello",
         )
         history.save(event)
-        mock_vector_store.write_documents.assert_called_once()
+        mock_vector_store.save.assert_called_once()
 
     def test_save_skips_vector_store_when_none(self, sqlite_repo):
         """When vector_store is None, save() should only persist to the repo."""
@@ -108,8 +108,8 @@ class TestHistoryRepositories:
             timestamp="2024-01-01 00:00:00",
         )
         saved_event = history.save(event)
-
-        written_docs = mock_vector_store.write_documents.call_args[0][0]
+        
+        written_docs = mock_vector_store.save.call_args[0][0]
         assert isinstance(written_docs, list)
         assert len(written_docs) == 1
         expected_doc = saved_event.to_document()
@@ -221,4 +221,4 @@ class TestStreamCallbackFactory:
             content="buffered",
         )
         factory.flush()
-        mock_vector_store.write_documents.assert_called_once()
+        mock_vector_store.save.assert_called_once()

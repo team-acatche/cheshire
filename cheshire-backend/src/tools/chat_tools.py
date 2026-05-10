@@ -13,7 +13,7 @@ def read_vulnerabilities_from_event_store(confirm: bool) -> dict[str, Any]:
     Read all of the findings from the audit.
     """
     state = current_knowledge_state.get()
-    docs = state.event_store.perform_query(
+    docs = state.event_store.query(
         filters={
             "field": "meta.event_type",
             "operator": "==",

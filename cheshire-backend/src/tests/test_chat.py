@@ -206,6 +206,8 @@ class TestPostChat:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
+            patch("endpoints.chat.LanceDbKnowledgeRepository.create", return_value=MagicMock()),
+            patch("endpoints.chat.LanceDbEventRepository", return_value=MagicMock()),
             patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
@@ -247,6 +249,8 @@ class TestPostChat:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
+            patch("endpoints.chat.LanceDbKnowledgeRepository.create", return_value=MagicMock()),
+            patch("endpoints.chat.LanceDbEventRepository", return_value=MagicMock()),
             patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
@@ -300,6 +304,8 @@ class TestPostChat:
             patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
+            patch("endpoints.chat.LanceDbKnowledgeRepository.create", return_value=MagicMock()),
+            patch("endpoints.chat.LanceDbEventRepository", return_value=MagicMock()),
             patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(
@@ -397,6 +403,8 @@ class TestCallbackFactoryFlush:
             patch("endpoints.chat.get_or_create_vector_stores", new_callable=AsyncMock, return_value=mock_vector_stores),
             patch("endpoints.chat.Agent", return_value=mock_agent),
             patch("endpoints.chat.StreamCallbackFactory", return_value=mock_factory),
+            patch("endpoints.chat.LanceDbKnowledgeRepository.create", return_value=MagicMock()),
+            patch("endpoints.chat.LanceDbEventRepository", return_value=MagicMock()),
             patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
         ):
             response = client.post(

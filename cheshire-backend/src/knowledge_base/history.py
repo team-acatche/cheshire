@@ -10,6 +10,8 @@ from uuid import UUID
 from haystack.dataclasses import StreamingCallbackT, StreamingChunk, ChatMessage, Document
 from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
+from knowledge_base.repository import KnowledgeRepository
+
 class EventType(StrEnum):
     VULNERABILITY_FINDING = "vulnerability_finding"
     USER_MESSAGE = "user_message"
@@ -160,12 +162,12 @@ class SqliteEventRepository(EventRepository):
 @dataclass(frozen=True, kw_only=True)
 class HistoryRepositories:
     repo: Annotated[EventRepository, "the event repository"]
-    vector_store: Annotated[Optional[LanceDBDocumentStore], "the event repository with embeddings"] = field(default=None)
+    vector_store: Annotated[Optional[KnowledgeRepository], "the event repository with embeddings"] = field(default=None)
 
     def save(self, event: Event) -> Event:
         saved_event = self.repo.save(event)
         if self.vector_store is not None:
-            self.vector_store.write_documents([saved_event.to_document()])
+            self.vector_store.save([saved_event.to_document()])
         return saved_event
     
 @dataclass(kw_only=True)
