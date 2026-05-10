@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
-from knowledge_base.repository import LanceDbKnowledgeRepository # type: ignore
+from knowledge_base.lancedb import LanceDbKnowledgeRepository # type: ignore
 
 def test_search():
     db_path = "/tmp/test_knowledge_repo"
