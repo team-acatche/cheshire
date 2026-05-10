@@ -20,7 +20,7 @@ class KnowledgeState:
     knowledge_base: Annotated[KnowledgeRepository, "the repository for the knowledge base"]
     event_store: Annotated[KnowledgeRepository, "the repository for all of the events in the session"]
 
-    similarity_threshold: Annotated[float, "the similarity threshold used for upserting facts"] = 0.85
+    similarity_threshold: Annotated[float, "the similarity threshold used for upserting facts"] = 0.72
 
 current_knowledge_state: ContextVar[KnowledgeState] = ContextVar("current_knowledge_state")
 
@@ -30,7 +30,9 @@ def upsert_fact(
     incorrect_fact_knowledge_id: Annotated[Optional[str], "(Optional) the knowledge UUID of the incorrect fact, if known."] = None,
 ) -> dict[str, str]:
     """
-    Upserts a fact to the knowledge base.
+    REQUIRED: Call this tool IMMEDIATELY whenever the user provides new information, organizational details, 
+    preferences, or policy constraints that should be remembered across sessions. 
+    Do not wait for the user to ask you to save it. If the information is worth knowing, it is worth saving.
 
     :param facts: the facts to upsert.
     :param incorrect_fact_knowledge_id: (Optional) the knowledge UUID of the incorrect fact, if known.
@@ -41,8 +43,32 @@ def upsert_fact(
     added = 0
     updated = 0
     fact_documents: list[Document] = []
+    
+    # If an explicit ID is provided for correction, try to fetch it first
+    known_incorrect_doc = None
+    if incorrect_fact_knowledge_id:
+        if docs := state.knowledge_base.query(filters={
+            "field": "id",
+            "operator": "==",
+            "value": incorrect_fact_knowledge_id
+        }):
+            known_incorrect_doc = docs[0]
+
     for fact in facts:
-        # Check for similar facts to avoid duplicates
+        # 1. Check if we have an explicit doc to replace
+        if known_incorrect_doc:
+            from dataclasses import replace
+            fact_documents.append(replace(
+                known_incorrect_doc,
+                content=fact,
+                meta={**known_incorrect_doc.meta, "last_modified": datetime.now().isoformat()},
+            ))
+            updated += 1
+            logger.info(f"Correcting fact via explicit ID {incorrect_fact_knowledge_id}: {fact[:50]}...")
+            known_incorrect_doc = None # Only use once
+            continue
+
+        # 2. Otherwise check for similar facts to avoid duplicates
         if similar_facts := state.knowledge_base.search(query=fact, top_k=1):
             most_similar_fact: Document = similar_facts[0]
             # If the most similar fact is close enough, we update it
