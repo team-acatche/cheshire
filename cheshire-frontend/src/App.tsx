@@ -157,7 +157,7 @@ export default function App({ user, onLogout }: AppProps) {
 
       <SidebarTrigger />
 
-      <SidebarInset>
+      <SidebarInset className="min-w-0 overflow-hidden">
         {page === "account" ? (
           <Account
             setProfileImage={setProfileImage}
@@ -166,7 +166,7 @@ export default function App({ user, onLogout }: AppProps) {
             onLogout={handleLogout}
           />
         ) : (
-          <main className={`h-dvh overflow-hidden ${!file ? "p-8" : "p-0"}`}>
+          <main className={`h-dvh w-full min-w-0 overflow-hidden ${!file ? "p-8" : "p-0"}`}>
           {isProcessing ? (
             <div className="flex h-full items-center justify-center">
               <Card className="w-full max-w-sm rounded-2xl border border-slate-200 shadow-sm">
@@ -297,10 +297,13 @@ export default function App({ user, onLogout }: AppProps) {
               </motion.section>
             </div>
           ) : (
-            <Card className="size-full shadow-none">
-              <ResizablePanelGroup orientation="horizontal" className="h-full">
-                <ResizablePanel defaultSize={60} minSize={30}>
-                  <CardContent className="flex size-full flex-col gap-3 overflow-hidden">
+            <Card className="size-full min-w-0 overflow-hidden shadow-none">
+              <ResizablePanelGroup
+                orientation="horizontal"
+                className="h-full w-full min-w-0 overflow-hidden"
+              >
+                <ResizablePanel defaultSize={60} minSize={30} className="min-w-0 overflow-hidden">
+                  <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden">
                     <DocumentPreview
                       src={file}
                       findings={findings}
@@ -311,7 +314,7 @@ export default function App({ user, onLogout }: AppProps) {
 
                 <ResizableHandle withHandle />
 
-                <ResizablePanel defaultSize={40} minSize={25}>
+                <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
                   {currentSessionId && (
                     <Chatbot
                       key={currentSessionId}
