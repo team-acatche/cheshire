@@ -166,7 +166,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                 className={
                   msg.role === "user"
                     ? "max-w-[80%] px-3 py-2 bg-blue-800 text-white rounded-2xl rounded-br-sm"
-                    : "w-full min-w-0 overflow-hidden px-4 text-gray-800 break-words"
+                    : "w-full min-w-0 overflow-hidden px-4 text-gray-800 wrap-break-word"
                 }
               >
                 {(() => {
@@ -219,7 +219,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                               {children}
                             </ol>
                           ),
-                          li: ({ children }: { children?: ReactNode }) => <li className="mb-1 break-words">{children}</li>,
+                          li: ({ children }: { children?: ReactNode }) => <li className="mb-1 wrap-break-word">{children}</li>,
                           blockquote: ({ children }: { children?: ReactNode }) => (
                             <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600">
                               {children}
@@ -247,7 +247,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                     )
 
                     return msg.role === "user" ? content : (
-                      <div className="w-full max-w-[750px] min-w-0 space-y-4 overflow-hidden break-words">
+                      <div className="w-full max-w-187.5 min-w-0 space-y-4 overflow-hidden wrap-break-word">
                         {content}
                       </div>
                     )
