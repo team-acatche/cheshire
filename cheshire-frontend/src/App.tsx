@@ -153,6 +153,7 @@ export default function App({ user, onLogout }: AppProps) {
         userName={user.full_name ?? user.username ?? user.email}
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
+        onLogout={handleLogout}
       />
 
       <SidebarTrigger />
