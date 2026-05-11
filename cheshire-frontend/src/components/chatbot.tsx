@@ -145,10 +145,10 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
   }, [messages, typing])
 
   return (
-    <Card className="w-full h-full flex flex-col shadow-sm overflow-hidden pt-6 pb-0 rounded-none">
+    <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-6 pb-0 shadow-sm">
 
       {/* Chat area */}
-      <div className="flex-1 overflow-y-auto p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
         <div className="flex flex-col gap-6">
           {messages.map((msg, i) => (
             <div
@@ -166,7 +166,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                 className={
                   msg.role === "user"
                     ? "max-w-[80%] px-3 py-2 bg-blue-800 text-white rounded-2xl rounded-br-sm"
-                    : "w-full min-w-0 px-4 text-gray-800 wrap-break-word"
+                    : "w-full min-w-0 overflow-hidden px-4 text-gray-800 break-words"
                 }
               >
                 {(() => {
@@ -219,7 +219,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                               {children}
                             </ol>
                           ),
-                          li: ({ children }: { children?: ReactNode }) => <li className="mb-1 wrap-break-word">{children}</li>,
+                          li: ({ children }: { children?: ReactNode }) => <li className="mb-1 break-words">{children}</li>,
                           blockquote: ({ children }: { children?: ReactNode }) => (
                             <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600">
                               {children}
@@ -247,7 +247,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                     )
 
                     return msg.role === "user" ? content : (
-                      <div className="w-full max-w-750px space-y-4">
+                      <div className="w-full max-w-[750px] min-w-0 space-y-4 overflow-hidden break-words">
                         {content}
                       </div>
                     )
