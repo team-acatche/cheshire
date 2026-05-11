@@ -48,6 +48,7 @@ interface ChatPageProps {
   onDeleteChat?: (sessionId: string) => void
   onRenameChat?: (sessionId: string, newTitle: string) => void
   onLogout: () => void
+  onOpenSettings: () => void
 }
 
 export default function ChatPage({
@@ -60,6 +61,7 @@ export default function ChatPage({
   onDeleteChat,
   onRenameChat,
   onLogout,
+  onOpenSettings,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
@@ -138,7 +140,7 @@ export default function ChatPage({
 
         {/* CHAT HISTORY */}
         <div className="text-xs text-gray-400 mt-4">
-          YOUR CHATS
+          YOUR DOCUMENTS
         </div>
 
         <div className="flex flex-col gap-1">
@@ -252,11 +254,8 @@ export default function ChatPage({
 
       <SidebarFooter className="border-t p-4">
         <div className="flex flex-col gap-2 text-sm text-gray-600">
-          <button
-            type="button"
-            onClick={onGoAccount}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 hover:text-black"
-          >
+          <button onClick={onOpenSettings}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 hover:text-black">
             <Settings className="h-4 w-4 shrink-0" />
             <span>Settings</span>
           </button>

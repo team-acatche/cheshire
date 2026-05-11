@@ -31,6 +31,7 @@ interface ChatbotProps {
   sessionId: string
   username: string   // kept for avatar display; auth is now JWT-based
   profileImage?: string
+  onOpenSettings: () => void
 }
 
 export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {

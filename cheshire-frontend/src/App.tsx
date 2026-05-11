@@ -25,6 +25,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import Account from "./components/account"
+import SettingsModal from "./components/settings-modal"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   // Derive profile image URL from user data, with a fallback to default avatar
   const [profileImage, setProfileImage] = useState(
@@ -154,6 +156,12 @@ export default function App({ user, onLogout }: AppProps) {
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
         onLogout={handleLogout}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
 
       <SidebarTrigger />
@@ -312,7 +320,7 @@ export default function App({ user, onLogout }: AppProps) {
                   </CardContent>
                 </ResizablePanel>
 
-                <ResizableHandle withHandle />
+                {!settingsOpen && <ResizableHandle withHandle />}
 
                 <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
                   {currentSessionId && (
@@ -322,6 +330,7 @@ export default function App({ user, onLogout }: AppProps) {
                       sessionId={currentSessionId}
                       username={user.user_id}
                       profileImage={profileImage}
+                      onOpenSettings={() => setSettingsOpen(true)}
                     />
                   )}
                 </ResizablePanel>
