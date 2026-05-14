@@ -21,8 +21,8 @@ import {
   Trash2,
   PenLine,
   Share2,
+  LogOut,
 } from "lucide-react"
-
 
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
@@ -44,6 +44,7 @@ interface ChatPageProps {
   userName: string
   onDeleteChat?: (sessionId: string) => void
   onRenameChat?: (sessionId: string, newTitle: string) => void
+  onLogout: () => void
 }
 
 export default function ChatPage({
@@ -55,6 +56,7 @@ export default function ChatPage({
   userName,
   onDeleteChat,
   onRenameChat,
+  onLogout,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
@@ -109,7 +111,7 @@ export default function ChatPage({
         {/* ACCOUNT */}
         <div
           onClick={onGoAccount}
-          className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-md"
+          className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-md transition-colors"
         >
           <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-black">
             <img src={profileImage} className="h-full w-full object-cover" />
@@ -124,10 +126,10 @@ export default function ChatPage({
         {/* NEW CHAT */}
         <div
           onClick={onNewChat}
-          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100"
+          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 transition-colors"
         >
-          <Pencil className="h-4 w-4" />
-          <span>New Chat</span>
+          <Pencil className="h-4 w-4 shrink-0 text-gray-500" />
+          <span className="leading-none">New Chat</span>
         </div>
 
         {/* CHAT HISTORY */}
@@ -145,7 +147,7 @@ export default function ChatPage({
           {safeChats.map((chat) => (
             <div
               key={chat.session_id}
-              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-gray-100"
+              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-gray-100 transition-colors cursor-pointer"
               onClick={() => {
                 if (renamingId !== chat.session_id) {
                   onSelectChat(chat)
@@ -244,10 +246,25 @@ export default function ChatPage({
 
       </SidebarContent>
 
-      <SidebarFooter className="p-4 border-t">
-        <div className="cursor-pointer flex items-center gap-2 text-sm hover:text-gray-600">
-          <Settings className="h-4 w-4" />
-          <span>Settings</span>
+      <SidebarFooter className="border-t p-4">
+        <div className="flex flex-col gap-2 text-sm text-gray-600">
+          <button
+            type="button"
+            onClick={onGoAccount}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 hover:text-black"
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            <span>Settings</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onLogout}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-red-50 hover:text-red-600"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span>Sign out</span>
+          </button>
         </div>
       </SidebarFooter>
       <DeleteChatDialog
