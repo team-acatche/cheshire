@@ -1,9 +1,9 @@
 // src/components/account.tsx
 import { useEffect, useState } from "react"
-import { Pencil, Check, LogOut } from "lucide-react"
+import { Pencil, Check } from "lucide-react"
 import type { Chat } from "@/ChatPage"
 import type { AuthUser } from "@/lib/auth"
-import { logout, updateStoredUser, authFetch } from "@/lib/auth"
+import { updateStoredUser, authFetch } from "@/lib/auth"
 import AvatarCropperModal from "@/components/avatar-cropper-modal"
 import { formatTimestamp } from "@/lib/helpers/format_timestamps"
 
@@ -22,10 +22,9 @@ interface AccountProps {
   setProfileImage: (image: string) => void
   user: AuthUser
   chats: Chat[]
-  onLogout: () => void
 }
 
-export default function Account({ setProfileImage, user, chats, onLogout }: AccountProps) {
+export default function Account({ setProfileImage, user, chats}: AccountProps) {
   const [editing, setEditing] = useState(false)
   const [displayName, setDisplayName] = useState(user.full_name ?? user.username ?? "")
   const [tempName, setTempName] = useState(user.full_name ?? user.username ?? "")
@@ -121,12 +120,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
     // TODO: create an endpoint that saves the changes made
   }
 
-  const handleLogout = () => {
-    logout()
-    onLogout()
-  }
-
-
   return (
     <div className="flex h-full">
       {/* LEFT panel */}
@@ -211,15 +204,6 @@ export default function Account({ setProfileImage, user, chats, onLogout }: Acco
           title={editing ? "Save" : "Edit profile"}
         >
           {editing ? <Check size={18} /> : <Pencil size={18} />}
-        </button>
-
-        <button
-          onClick={handleLogout}
-          className="absolute bottom-4 flex items-center gap-1.5 text-sm text-gray-600 hover:text-red-600"
-          title="Sign out"
-        >
-          <LogOut size={15} />
-          Sign out
         </button>
       </div>
 
