@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Settings, Server, Shield, CircleUserRound, X, ChevronDown, ScanSearch, Check } from "lucide-react";
+import { Server, CircleUserRound, X, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -111,13 +111,11 @@ function SavedBadge({ visible }: { visible: boolean }) {
 // Sidebar nav
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = "general" | "provider" | "security" | "account"
+type Tab = "provider" | "account"
 
 const NAV_ITEMS: { id: Tab, label: string, icon: React.ReactNode }[] = [
-    { id: "general",  label: "General",  icon: <Settings className="size-[15px]" /> },
-    { id: "provider", label: "Provider", icon: <Server className="size-[15px]" /> },
-    { id: "security", label: "Security", icon: <Shield className="size-[15px]" /> },
-    { id: "account",  label: "Account",  icon: <CircleUserRound className="size-[15px]" /> },
+  { id: "provider", label: "Provider", icon: <Server className="size-[15px]" /> },
+  { id: "account",  label: "Account",  icon: <CircleUserRound className="size-[15px]" /> },
 ]
 
 
@@ -141,20 +139,6 @@ function  NavItem({
             {icon}
             {label}
         </button>
-    )
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tab — General
-// ─────────────────────────────────────────────────────────────────────────────
-
-function GeneralPanel({ onSaved }: { onSaved: () => void }) {
-
-    return (
-      <div className="space-y-6">
-        <h2 className="text-xl font-semibold">General</h2>
-      </div>
     )
 }
 
@@ -373,24 +357,12 @@ function ProviderPanel({ onSaved }: { onSaved: () => void }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tab — Security
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SecurityPanel({ onSaved }: { onSaved: () => void }) {
-
-    return (
-        <p> hello </p>
-    )
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab — Account
 // ─────────────────────────────────────────────────────────────────────────────
 
-function AccountPanel({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
-  const [notif, setNotif]   = useState(true)
-  const [emails, setEmails] = useState(false)
+function AccountPanel({ onSaved }: { onSaved: () => void; onClose: () => void }) {
   const [confirm, setConfirm] = useState<null | "sessions" | "account">(null)
 
     return (
@@ -442,7 +414,7 @@ export interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const [activeTab,   setActiveTab]   = useState<Tab>("general")
+  const [activeTab,   setActiveTab]   = useState<Tab>("provider")
   const [savedBadge,  setSavedBadge]  = useState(false)
   const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const modalRef  = useRef<HTMLDivElement>(null)
@@ -506,9 +478,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
  
         {/* ── Right content ─────────────────────────────────────────────── */}
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          {activeTab === "general"  && <GeneralPanel  onSaved={handleSaved} />}
           {activeTab === "provider" && <ProviderPanel onSaved={handleSaved} />}
-          {activeTab === "security" && <SecurityPanel onSaved={handleSaved} />}
           {activeTab === "account"  && <AccountPanel  onSaved={handleSaved} onClose={onClose} />}
         </div>
       </div>
