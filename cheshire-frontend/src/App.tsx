@@ -64,6 +64,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [processingStatus, setProcessingStatus] = useState<string>("Processing...")
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -94,6 +95,7 @@ export default function App({ user, onLogout }: AppProps) {
 
   const handleSelectChat = async (chat: Chat) => {
     setIsProcessing(true)
+    setProcessingStatus("Loading session...")
     setPage("chat")
 
     try {
@@ -208,8 +210,11 @@ export default function App({ user, onLogout }: AppProps) {
           {isProcessing ? (
             <div className="flex h-full items-center justify-center">
               <Card className="w-full max-w-sm rounded-2xl border border-slate-200 shadow-sm">
-                <CardContent className="flex items-center justify-center p-6">
+                <CardContent className="flex flex-col items-center justify-center gap-3 p-6">
                   <LoadingPage />
+                  <p className="text-sm text-muted-foreground text-center animate-pulse">
+                    {processingStatus}
+                  </p>
                 </CardContent>
               </Card>
             </div>
@@ -253,6 +258,8 @@ export default function App({ user, onLogout }: AppProps) {
                               }
 
                               setIsProcessing(true)
+                              setProcessingStatus("Uploading document...")
+
                               try {
                                 const response = await evaluateDocument(fileInput)
                                 if (response === null) {
