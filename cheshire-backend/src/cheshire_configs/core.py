@@ -14,10 +14,12 @@ from tools.exa import web_search
 class EvaluationType(StrEnum):
     RAG = auto()
     FULL_DOCUMENT = auto()
+    MULTISTEP = auto()
 
 class Provider(StrEnum):
     OLLAMA = auto()
     TOGETHER_AI = auto()
+    OPENROUTER = auto()
 
 @runtime_checkable
 class DocumentPreprocessor(Protocol):

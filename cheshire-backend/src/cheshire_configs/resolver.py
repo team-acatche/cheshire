@@ -29,6 +29,10 @@ async def resolve_config(
             preprocessor=DefaultRagPreprocessor(factory),
             tools=[*factory.tools, query_document_tool(document_store, factory.embedder())],
         )
+    
+    if evaluation_mode == EvaluationType.MULTISTEP:
+        # TODO: implement the multistep pipeline here
+        pass
 
     return factory.with_overrides(
         mode=evaluation_mode,
