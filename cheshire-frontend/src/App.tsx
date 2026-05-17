@@ -15,6 +15,7 @@ import {
   getSessionResults,
 } from "./lib/helpers/evaluate_document"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
+import { sortChatsByLatest } from "@/lib/sortChatsByLatest"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
@@ -101,21 +102,7 @@ export default function App({ user, onLogout }: AppProps) {
         })
       )
 
-      chatsWithTimestamps.sort((a, b) => {
-        const timeA = a.latestTimestamp
-          ? new Date(a.latestTimestamp).getTime()
-          : 0
-
-        const timeB = b.latestTimestamp
-          ? new Date(b.latestTimestamp).getTime()
-          : 0
-
-        return timeB - timeA
-      })
-
-      setChats(
-        chatsWithTimestamps.map(({ latestTimestamp, ...chat }) => chat)
-      )
+      setChats(sortChatsByLatest(chatsWithTimestamps))
     }
 
     loadSessions()
@@ -152,6 +139,20 @@ export default function App({ user, onLogout }: AppProps) {
     } finally {
       setFindingsLoading(false)
     }
+  }
+
+  const touchChat = (sessionId: string) => {
+    const now = new Date().toISOString()
+
+    setChats(prev =>
+      sortChatsByLatest(
+        prev.map(chat =>
+          chat.session_id === sessionId
+            ? { ...chat, latestTimestamp: now }
+            : chat
+        )
+      )
+    )
   }
 
   const handleDeleteChat = async (sessionId: string) => {
@@ -437,6 +438,7 @@ export default function App({ user, onLogout }: AppProps) {
                       username={user.user_id}
                       profileImage={profileImage}
                       onOpenSettings={() => setSettingsOpen(true)}
+                      onActivity={() => touchChat(currentSessionId)}
                     />
                   )}
                 </ResizablePanel>

@@ -32,9 +32,10 @@ interface ChatbotProps {
   username: string
   profileImage?: string
   onOpenSettings: () => void
+  onActivity?: () => void
 }
 
-export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, profileImage, onActivity, }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
@@ -96,6 +97,9 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
     setInput("")
     setTyping(true)
 
+    // This moves chat to top immediately on user activity
+    onActivity?.()
+
     try {
       const response = await authFetch(
         `/api/v1/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`,
@@ -120,6 +124,8 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
             .join("\n\n"),
         },
       ])
+
+      onActivity?.()
     } catch {
       setMessages(prev => [
         ...prev,

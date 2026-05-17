@@ -41,6 +41,7 @@ export type Chat = {
   title: string
   findings: VulnerabilityFinding[]
   status?: ChatStatus   // undefined = legacy/done
+  latestTimestamp?: string | null
 }
 
 interface ChatPageProps {
