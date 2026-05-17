@@ -1,5 +1,5 @@
 import type { VulnerabilityFinding } from "../../types/VulnerabilityFinding"
-import { authFetch } from "@/lib/auth"
+import { authFetch, clearAuth } from "@/lib/auth"
 import { PROVIDER } from "@/globals"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ export async function evaluateDocument(
 
 export async function getSessionResults(sessionId: string): Promise<VulnerabilityFinding[]> {
   return authFetch(`/api/v1/${sessionId}/result`)
-    .then(r => r.ok ? r.json() as Promise<VulnerabilityFinding[]> : [])
+    .then(r => (r.ok ? r.json() as Promise<VulnerabilityFinding[]> : []))
     .catch(() => [])
 }
 

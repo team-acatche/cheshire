@@ -1,7 +1,9 @@
+import asyncio
+import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, AsyncGenerator, Optional
 import aiofiles
 import logging
 import uuid
@@ -148,6 +150,17 @@ async def evaluate_document(
     user_id = current_user.user_id
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
 
+    """
+    Stream the evaluation progress as Server-Sent Events.
+
+    Event types emitted:
+        * status   - {"message": str}       progress updates
+        * result   - {"session_id: str, "vulnerabilities: [...]} final payload
+        * error    - {"message": str}       fatal error
+    """
+    user_id = current_user.user_id
+    filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf"
+    )
     _session_id: str = session_id or str(uuid.uuid4())
 
 
@@ -218,7 +231,6 @@ def get_evaluation_status(
 
 def _get_latest(session_path: Path) -> str:
     latest_filename: Optional[str] = None
-
     latest: Optional[datetime] = None
     for root, _, filenames in os.walk(session_path / "documents"):
         for filename in filenames:
