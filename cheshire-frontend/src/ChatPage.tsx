@@ -30,6 +30,7 @@ import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
+import { formatChatTimestamp, formatTimestamp } from "./lib/helpers/format_timestamps"
 
 export type Chat = {
   session_id: string
@@ -194,6 +195,11 @@ export default function ChatPage({
                         <p className="truncate text-sm font-medium text-foreground">
                           {chat.title}
                         </p>
+                          {chat.latestTimestamp && (
+                            <span className="mt-1 truncate text-[10px] text-gray-400">
+                              {formatTimestamp(chat.latestTimestamp)}
+                            </span>
+                          )}
                       </div>
 
                       <DropdownMenuSeparator />
