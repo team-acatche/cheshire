@@ -197,7 +197,7 @@ export default function ChatPage({
                         </p>
                           {chat.latestTimestamp && (
                             <span className="mt-1 truncate text-[10px] text-gray-400">
-                              {formatTimestamp(chat.latestTimestamp)}
+                              Last Activity: {formatTimestamp(chat.latestTimestamp)}
                             </span>
                           )}
                       </div>
