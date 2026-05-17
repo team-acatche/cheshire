@@ -33,6 +33,7 @@ import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
+import { formatChatTimestamp, formatTimestamp } from "./lib/helpers/format_timestamps"
 
 export type ChatStatus = "processing" | "done" | "failed"
 
