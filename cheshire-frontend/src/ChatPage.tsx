@@ -35,6 +35,7 @@ export type Chat = {
   session_id: string
   title: string
   findings: VulnerabilityFinding[]
+  latestTimestamp?: string | null
 }
 
 interface ChatPageProps {

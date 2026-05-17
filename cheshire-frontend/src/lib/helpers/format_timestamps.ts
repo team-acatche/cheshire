@@ -3,7 +3,7 @@ export function formatTimestamp(timestamp: string | undefined | null): string {
 
     try {
         // SQLite CURRENT_TIMESTAMP has no timezone suffix - will treat it as UTC
-        const normalized = timestamp.endsWith("Z") || timestamp.includes("+")
+        const normalized = timestamp.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(timestamp)
             ? timestamp
             : timestamp.replace(" ", "T") + "Z"
 
@@ -29,3 +29,28 @@ export function formatTimestamp(timestamp: string | undefined | null): string {
         return "Unknown";
     }
  }
+
+
+ export function formatChatTimestamp(timestamp: string | undefined | null): string {
+  if (!timestamp) return "Unknown time"
+
+  try {
+    const normalized =
+      timestamp.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(timestamp)
+        ? timestamp
+        : timestamp.replace(" ", "T") + "Z"
+
+    const date = new Date(normalized)
+
+    return date.toLocaleString("en-PH", {
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+  } catch {
+    return "Unknown time"
+  }
+}
