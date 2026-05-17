@@ -33,7 +33,7 @@ import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
-import { formatChatTimestamp, formatTimestamp } from "./lib/helpers/format_timestamps"
+import { formatChatTimestamp } from "./lib/helpers/format_timestamps"
 
 export type ChatStatus = "processing" | "done" | "failed"
 
@@ -185,6 +185,11 @@ export default function ChatPage({
                     <span className={`block truncate leading-none ${isFailed ? "text-destructive" : "text-foreground"}`}>
                       {chat.title}
                     </span>
+                    {chat.latestTimestamp && !isProcessing && !isFailed && (
+                      <span className="block text-[10px] text-muted-foreground mt-0.5">
+                        Last activity: {formatChatTimestamp(chat.latestTimestamp)}
+                      </span>
+                    )}
                     {isProcessing && (
                       <span className="block text-[10px] text-muted-foreground mt-0.5">
                         Analyzing…
