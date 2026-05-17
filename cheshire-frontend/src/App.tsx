@@ -51,6 +51,16 @@ async function renameSession(sessionId: string, newTitle: string): Promise<boole
     .catch(() => false)
 }
 
+async function fetchSessionTimestamp(sessionId: string): Promise<string | null> {
+  return authFetch(`/api/v1/${sessionId}/latest-timestamp`)
+    .then(r => {
+      if (r.status === 204) return null
+      if (!r.ok) return null
+      return r.json().then((d: { latest_timestamp: string }) => d.latest_timestamp)
+    })
+    .catch(() => null)
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 interface AppProps {
@@ -75,15 +85,40 @@ export default function App({ user, onLogout }: AppProps) {
 
   // Load sessions on mount
   useEffect(() => {
-    fetchSessions().then(sessions =>
-      setChats(
-        sessions.map((s: any) => ({
-          session_id: s.session_id,
-          title: s.title,
-          findings: [],
-        }))
+    const loadSessions = async () => {
+      const sessions = await fetchSessions()
+
+      const chatsWithTimestamps = await Promise.all(
+        sessions.map(async (s: any) => {
+          const latestTimestamp = await fetchSessionTimestamp(s.session_id)
+
+          return {
+            session_id: s.session_id,
+            title: s.title,
+            findings: [],
+            latestTimestamp,
+          }
+        })
       )
-    )
+
+      chatsWithTimestamps.sort((a, b) => {
+        const timeA = a.latestTimestamp
+          ? new Date(a.latestTimestamp).getTime()
+          : 0
+
+        const timeB = b.latestTimestamp
+          ? new Date(b.latestTimestamp).getTime()
+          : 0
+
+        return timeB - timeA
+      })
+
+      setChats(
+        chatsWithTimestamps.map(({ latestTimestamp, ...chat }) => chat)
+      )
+    }
+
+    loadSessions()
   }, [])
 
   const handleNewChat = () => {
@@ -260,12 +295,16 @@ export default function App({ user, onLogout }: AppProps) {
                               setIsProcessing(true)
                               setProcessingStatus("Uploading document...")
 
+
                               try {
-                                const response = await evaluateDocument(fileInput)
-                                if (response === null) {
-                                  alert("Failed to evaluate document.")
-                                  return
-                                }
+                                const response = await evaluateDocument(
+                                  fileInput, 
+                                  (event) => {
+                                    if (event.type === "status" && event.message) {
+                                      setProcessingStatus(event.message)
+                                    }
+                                  }
+                                )
 
                                 const newChat: Chat = {
                                   session_id: response.session_id,
@@ -278,8 +317,11 @@ export default function App({ user, onLogout }: AppProps) {
                                 setFindings(response.vulnerabilities)
                                 setCurrentSessionId(response.session_id)
                                 setCurrentFileName(fileInput.name)
+                              } catch (err) {
+                                alert(`Evaluation failed: ${err instanceof Error ? err.message: "Unknown error"}`)
                               } finally {
                                 setIsProcessing(false)
+                                setProcessingStatus("Processing...")
                               }
                             }}
                           />
