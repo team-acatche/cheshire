@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Server, CircleUserRound, X, ChevronDown, Check } from "lucide-react";
+import { Wrench, Server, CircleUserRound, X, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -111,9 +111,10 @@ function SavedBadge({ visible }: { visible: boolean }) {
 // Sidebar nav
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = "provider" | "account"
+type Tab = "general" | "provider" | "account"
 
 const NAV_ITEMS: { id: Tab, label: string, icon: React.ReactNode }[] = [
+  { id: "general", label: "General",   icon: <Wrench className="size-[15px]" /> },
   { id: "provider", label: "Provider", icon: <Server className="size-[15px]" /> },
   { id: "account",  label: "Account",  icon: <CircleUserRound className="size-[15px]" /> },
 ]
@@ -141,7 +142,23 @@ function  NavItem({
         </button>
     )
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// General nav
+// ─────────────────────────────────────────────────────────────────────────────
 
+function GeneralPanel({ onSaved }: { onSaved: () => void; onClose: () => void }) {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold">General</h2>
+
+      <div className="flex justify-end">
+        <Button size="sm" onClick={onSaved}>
+          Save changes
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab — Provider
@@ -414,7 +431,7 @@ export interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const [activeTab,   setActiveTab]   = useState<Tab>("provider")
+  const [activeTab,   setActiveTab]   = useState<Tab>("general")
   const [savedBadge,  setSavedBadge]  = useState(false)
   const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const modalRef  = useRef<HTMLDivElement>(null)
@@ -478,6 +495,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
  
         {/* ── Right content ─────────────────────────────────────────────── */}
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          {activeTab === "general"  && <GeneralPanel  onSaved={handleSaved} onClose={onClose} />}
           {activeTab === "provider" && <ProviderPanel onSaved={handleSaved} />}
           {activeTab === "account"  && <AccountPanel  onSaved={handleSaved} onClose={onClose} />}
         </div>
