@@ -1,4 +1,3 @@
-// src/components/chatbot.tsx
 import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
 import { Textarea } from "./ui/textarea"
@@ -35,13 +34,14 @@ interface ChatbotProps {
   onActivity?: () => void
 }
 
-export function Chatbot({ findings, sessionId, profileImage, onActivity, }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, profileImage, onActivity }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const lastEventIdRef = useRef<string | null>(null)
 
-  // Load history when session changes
+  // ── Load history on session change ────────────────────────────────────────
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -62,14 +62,8 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, }: Chat
                   text.startsWith("Arguments:") ||
                   text === "" ||
                   msg._role === "system"
-                ) {
-                  return null
-                }
-
-                return {
-                  role: msg._role as "user" | "bot1" | "bot2" | "bot3",
-                  text,
-                }
+                ) return null
+                return { role: msg._role as "user" | "bot1" | "bot2" | "bot3", text }
               })
               .filter((m): m is Message => m !== null)
           )
@@ -85,55 +79,166 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, }: Chat
         setMessages([{ role: "bot1", text: "Hello! I'm ready to help you with the document." }])
       }
     }
-
     fetchHistory()
   }, [sessionId, findings])
 
+  // ── Message update helpers ────────────────────────────────────────────────
+  const appendToLastBotMessage = (text: string) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const last = updated[updated.length - 1]
+      if (!last || last.role !== "bot1") {
+        updated.push({ role: "bot1", text })
+      } else {
+        updated[updated.length - 1] = { ...last, text: last.text + text }
+      }
+      return updated
+    })
+  }
+
+  const replaceLastBotMessage = (text: string) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const last = updated[updated.length - 1]
+      if (!last || last.role !== "bot1") {
+        updated.push({ role: "bot1", text })
+      } else {
+        updated[updated.length - 1] = { ...last, text }
+      }
+      return updated
+    })
+  }
+
+  // ── SSE frame parser ──────────────────────────────────────────────────────
+  const processFrame = (frame: string) => {
+    if (!frame.trim()) return
+
+    const lines = frame.split("\n")
+    let eventType = ""
+    const dataLines: string[] = []
+    let eventId = ""
+
+    for (const line of lines) {
+      if (line.startsWith(":")) {
+        // SSE comment — keepalive ping, ignore silently
+        return
+      } else if (line.startsWith("event:")) {
+        eventType = line.slice("event:".length).trim()
+      } else if (line.startsWith("data:")) {
+        // Collect data lines separately — do NOT concat with +=
+        // to avoid merging multi-line data without a separator
+        dataLines.push(line.slice("data:".length).trim())
+      } else if (line.startsWith("id:")) {
+        eventId = line.slice("id:".length).trim()
+      }
+    }
+
+    if (eventId) lastEventIdRef.current = eventId
+    if (!eventType || dataLines.length === 0) return
+
+    const dataStr = dataLines.join("\n")
+
+    try {
+      const parsed = JSON.parse(dataStr)
+
+      if (eventType === "token" && parsed.content) {
+        appendToLastBotMessage(parsed.content)
+      } else if (eventType === "done") {
+        if (parsed.content) replaceLastBotMessage(parsed.content)
+        lastEventIdRef.current = null
+        onActivity?.()
+      } else if (eventType === "error") {
+        replaceLastBotMessage(`Error: ${parsed.message ?? "Unknown error"}`)
+      }
+    } catch (err) {
+      console.error("Failed to parse SSE frame:", frame, err)
+    }
+  }
+
+  // ── SSE consumer ──────────────────────────────────────────────────────────
+  const consumeSSE = async (userText: string, lastEventId: string | null): Promise<void> => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream",
+    }
+    if (lastEventId !== null) headers["Last-Event-ID"] = lastEventId
+
+    const response = await authFetch(
+      `/api/v1/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`,
+      { method: "POST", headers, body: JSON.stringify({ message: userText }) }
+    )
+
+    if (!response.ok) throw new Error("Failed to send message")
+    if (!response.body) throw new Error("No response body")
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (value) {
+        buffer += decoder.decode(value, { stream: true })
+        // Normalise line endings
+        buffer = buffer.replace(/\r\n/g, "\n")
+
+        const frames = buffer.split("\n\n")
+        // Keep the last (possibly partial) frame in the buffer
+        buffer = frames.pop() ?? ""
+
+        for (const frame of frames) {
+          processFrame(frame)
+        }
+      }
+
+      if (done) {
+        // Flush any remaining bytes in the buffer
+        const remaining = buffer.trim()
+        if (remaining) processFrame(remaining)
+        break
+      }
+    }
+  }
+
+  // ── Send message with retry ───────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || typing) return
 
     const userText = input
     setMessages(prev => [...prev, { role: "user", text: userText }])
     setInput("")
     setTyping(true)
-
-    // This moves chat to top immediately on user activity
+    // Append placeholder bot message that tokens stream into
+    setMessages(prev => [...prev, { role: "bot1", text: "" }])
     onActivity?.()
 
-    try {
-      const response = await authFetch(
-        `/api/v1/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userText }),
+    const MAX_RETRIES = 2
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await consumeSSE(userText, lastEventIdRef.current)
+        break // success
+      } catch {
+        if (attempt === MAX_RETRIES) {
+          setMessages(prev => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last?.role === "bot1" && last.text === "") {
+              updated[updated.length - 1] = { ...last, text: "Sorry, I encountered an error. Please try again." }
+            } else {
+              updated.push({ role: "bot1", text: "Sorry, I encountered an error. Please try again." })
+            }
+            return updated
+          })
+        } else {
+          // Exponential backoff before retry
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         }
-      )
-
-      if (!response.ok) throw new Error("Failed to send message")
-
-      const data = await response.json()
-      const message = data.response as ResponseMessage
-      setMessages(prev => [
-        ...prev,
-        {
-          role: "bot1",
-          text: message._content
-            .filter(c => c.text)
-            .map(c => c.text)
-            .join("\n\n"),
-        },
-      ])
-
-      onActivity?.()
-    } catch {
-      setMessages(prev => [
-        ...prev,
-        { role: "bot1", text: "Sorry, I encountered an error. Please try again." },
-      ])
-    } finally {
-      setTyping(false)
+      }
     }
+
+    lastEventIdRef.current = null
+    setTyping(false)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -147,6 +252,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, }: Chat
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, typing])
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-6 pb-0 shadow-sm">
 
@@ -247,7 +353,6 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, }: Chat
                         {msg.text}
                       </ReactMarkdown>
                     )
-
                     return msg.role === "user" ? content : (
                       <div className="w-full max-w-187.5 min-w-0 space-y-4 overflow-hidden wrap-break-word">
                         {content}
@@ -292,6 +397,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, }: Chat
           onKeyDown={handleKeyDown}
           placeholder="What would you like to know?"
           className="resize-none border-none focus-visible:ring-0 p-0 text-base min-h-10 bg-transparent text-foreground placeholder:text-muted-foreground"
+          disabled={typing}
         />
 
         <div className="flex items-center justify-between">
@@ -311,6 +417,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, }: Chat
 
           <button
             onClick={sendMessage}
+            disabled={typing || !input.trim()}
             className="bg-muted hover:bg-muted/70 text-muted-foreground p-2 rounded-full transition-colors"
           >
             <SentIcon size={22} color="currentColor" />
