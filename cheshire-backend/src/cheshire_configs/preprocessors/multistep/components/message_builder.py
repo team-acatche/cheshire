@@ -16,16 +16,23 @@ class ChunkMessageBuilder:
     def run(
         self,
         chunk: EvaluationChunk,
-        document_index: dict
+        document_index: dict,
+        previous_findings: list | None = None
     ) -> dict:
 
+        prompt_text = f"Document index:\n{json.dumps(document_index, indent=2)}"
+        
+        if previous_findings:
+            prompt_text += f"\n\nFindings identified in previous sections:\n{json.dumps(previous_findings, indent=2)}"
+            
+        prompt_text += (
+            f"\n\n--- Section: {chunk.heading} "
+            f"(pages {chunk.page_range[0]}-{chunk.page_range[1]}) ---"
+            f"\n\n{chunk.structured_text}"
+        )
+
         content: list[TextContent | ImageContent] = [
-            TextContent(
-                f"Document index:\n{json.dumps(document_index, indent=2)}"
-                f"\n\n--- Section: {chunk.heading} "
-                f"(pages {chunk.page_range[0]}-{chunk.page_range[1]}) ---"
-                f"\n\n{chunk.structured_text}"
-            )
+            TextContent(prompt_text)
         ]
 
         for fig in chunk.figures:
