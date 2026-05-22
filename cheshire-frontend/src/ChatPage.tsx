@@ -24,9 +24,12 @@ import {
   LogOut,
 } from "lucide-react"
 
+import { BadgeQuestionMark } from 'lucide-react';
+
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
+import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
 
 // ✅ Chat type
 export type Chat = {
@@ -65,6 +68,7 @@ export default function ChatPage({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
+  const [showHowToUse, setShowHowToUse] = useState(false)
 
   const startRename = (chat:Chat) => {
     setRenamingId(chat.session_id)
@@ -259,6 +263,15 @@ export default function ChatPage({
 
           <button
             type="button"
+            onClick={() => setShowHowToUse(true)}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 hover:text-black"
+          >
+            <BadgeQuestionMark className="h-4 w-4 shrink-0" />
+            <span>How to use?</span>
+          </button>
+
+          <button
+            type="button"
             onClick={onLogout}
             className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-red-50 hover:text-red-600"
           >
@@ -273,6 +286,10 @@ export default function ChatPage({
         onConfirm={(sessionId) => {
           onDeleteChat?.(sessionId)
         }}
+      />
+      <HowToUseDialog
+        isOpen={showHowToUse}
+        onClose={() => setShowHowToUse(false)}
       />
     </Sidebar>
   )
