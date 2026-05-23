@@ -11,38 +11,42 @@ INPUT
 A JSON array of findings and a document index.
 Each finding has these fields: title, description, page_no, bbox, web_references, recommendations.
 
-TASKS
-  1. Deduplicate findings that describe the same issue across different sections. Keep the most detailed version of each.
-  2. Identify cross-section contradictions.
+TOOLS
+- accept_finding(finding): Accept a finding as valid and non-duplicate. \
+The `finding` dictionary must match the schema: \
+{ "title": "str", "description": "str", "page_no": int, \
+"bbox": { "l": float, "t": float, "r": float, "b": float }, \
+"web_references": ["str"], "recommendations": ["str"] }
+- flag_contradiction(finding_a_title, finding_b_title, description): \
+Flag two findings that contradict each other across sections.
 
-OUTPUT  Return ONLY a valid JSON object:
-{
-  "findings": [
-    {"title": "str", "description": "str", "page_no": int, "bbox": {"l": float, "t": float, "r": float, "b": float}, "web_references": ["str"], "recommendations": ["str"]}
-  ],
-  "contradictions": [
-    {"section_a": "str", "section_b": "str", "description": "str"}
-  ]
-}
+TASKS
+  1. Review every finding in the input.
+  2. Deduplicate: if multiple findings describe the same issue across \
+different sections, call accept_finding only for the most detailed version.
+  3. For each unique, valid finding, call accept_finding with the original \
+fields exactly as provided.
+  4. If two findings contradict each other, call flag_contradiction.
 
 CONSTRAINTS
-- Preserve ALL original fields for each finding exactly as given: title, description, page_no, bbox, web_references, recommendations.
-- Do NOT rename, remove, or add fields to findings.
-- Only remove true duplicates (same underlying issue found in multiple sections). When uncertain, keep both.
-- Output MUST be valid JSON. No markdown fences, no commentary outside the JSON object.\
+- You MUST call accept_finding for every valid, non-duplicate finding. \
+This is the only way findings are recorded.
+- Preserve ALL original fields exactly as given when calling accept_finding. \
+Do NOT rename, rewrite, or omit any field.
+- Do NOT accept duplicate findings. Only accept the most detailed version \
+of each unique issue.
+- After processing all findings, output a brief text summary of what you did.\
 """
 
 
 @component
 class SynthesisMessageBuilder:
     """
-    Builds the two-message conversation for Pass 2:
-    a system message carrying the task definition, and a user message
-    carrying the findings payload and document index.
+    Builds the user message for the Pass 2 synthesis Agent.
 
-    Keeping the system prompt here rather than in the generator constructor
-    mirrors the pattern used in Pass 1 and means all prompt logic lives
-    in message builder components, not scattered across pipeline config.
+    The system prompt lives at module level (PASS2_SYSTEM_PROMPT) and is
+    set on the Agent constructor — this builder only emits the user message
+    containing the findings payload and document index.
     """
 
     @component.output_types(messages=list[ChatMessage])
@@ -56,11 +60,9 @@ class SynthesisMessageBuilder:
             f.model_dump() if hasattr(f, "model_dump") else f
             for f in all_findings
         ]
-        messages = [
-            ChatMessage.from_system(PASS2_SYSTEM_PROMPT),
+        return {"messages": [
             ChatMessage.from_user(
                 f"Document index:\n{json.dumps(document_index, indent=2)}"
-                f"\n\nAll findings:\n{json.dumps(findings_data, indent=2)}"
+                f"\n\nAll findings ({len(findings_data)} total):\n{json.dumps(findings_data, indent=2)}"
             )
-        ]
-        return {"messages": messages}
+        ]}

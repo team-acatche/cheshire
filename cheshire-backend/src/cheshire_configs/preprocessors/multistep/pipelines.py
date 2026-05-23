@@ -10,8 +10,7 @@ from haystack_integrations.components.generators.openrouter import OpenRouterCha
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
-from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder
-from cheshire_configs.preprocessors.multistep.components.synthesis_parser import SynthesisParser
+from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder, PASS2_SYSTEM_PROMPT
 
 from typing import cast
 from tools.exa import web_search
@@ -96,12 +95,28 @@ def build_synthesis_pipeline() -> Pipeline:
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
+    from tools.base import accept_finding_tool, flag_contradiction_tool
+    from tools.helpers.output_schema import Contradiction
+
+    agent = Agent(
+        chat_generator=generator,
+        tools=[
+            accept_finding_tool("accepted_findings"),
+            flag_contradiction_tool("contradictions"),
+        ],
+        system_prompt=PASS2_SYSTEM_PROMPT,
+        max_agent_steps=200,
+        exit_conditions=["text"],
+        state_schema={
+            "accepted_findings": {"type": list[VulnerabilityDetails]},
+            "contradictions": {"type": list[Contradiction]},
+        }
+    )
+
     pipeline = Pipeline()
     pipeline.add_component("synthesis_message_builder", SynthesisMessageBuilder())
-    pipeline.add_component("generator", generator)
-    pipeline.add_component("synthesis_parser", SynthesisParser())
+    pipeline.add_component("agent", agent)
 
-    pipeline.connect("synthesis_message_builder.messages", "generator.messages")
-    pipeline.connect("generator.replies", "synthesis_parser.replies")
+    pipeline.connect("synthesis_message_builder.messages", "agent.messages")
 
     return pipeline

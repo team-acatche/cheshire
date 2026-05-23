@@ -95,11 +95,20 @@ def run_pass2(all_findings: list, document_index: dict) -> list[VulnerabilityDet
         }
     })
 
-    final: list[VulnerabilityDetails] = result["synthesis_parser"]["vulnerabilities"]
-    logger.info(f"  {len(all_findings)} → {len(final)} after deduplication.")
+    # Read accepted findings from Agent state
+    accepted: list[VulnerabilityDetails] = (
+        result.get("agent", {}).get("accepted_findings") or []
+    )
+    contradictions = result.get("agent", {}).get("contradictions") or []
 
-    # if synthesis dropped all findings, fall back to programmatic dedup
-    if len(final) == 0 and len(all_findings) > 0:
+    logger.info(f"  {len(all_findings)} → {len(accepted)} after deduplication.")
+    if contradictions:
+        logger.info(f"  {len(contradictions)} contradiction(s) flagged:")
+        for c in contradictions:
+            logger.info(f"    • \"{c.finding_a_title}\" vs \"{c.finding_b_title}\": {c.description}")
+
+    # Safeguard: if synthesis dropped all findings, fall back to programmatic dedup
+    if len(accepted) == 0 and len(all_findings) > 0:
         logger.warning(
             f"Synthesis returned 0 findings from {len(all_findings)} inputs. "
             f"Falling back to programmatic deduplication."
@@ -113,4 +122,4 @@ def run_pass2(all_findings: list, document_index: dict) -> list[VulnerabilityDet
         logger.info(f"  Programmatic dedup: {len(all_findings)} → {len(deduped)}.")
         return deduped
 
-    return final
+    return accepted
