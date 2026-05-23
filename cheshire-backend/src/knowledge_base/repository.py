@@ -15,6 +15,10 @@ class KnowledgeRepository(Protocol):
     def save(self, documents: list[Document]) -> None:
         """Write or update documents."""
         ...
+    
+    def delete_with_session(self, session_id: str) -> None:
+        """Delete all documents with the given session ID."""
+        ...
 
 class RepositoryType(Enum):
     LANCEDB = "lancedb"

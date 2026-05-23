@@ -43,6 +43,26 @@ class LanceDbKnowledgeRepository(KnowledgeRepository):
     def save(self, documents: List[Document]) -> None:
         self._upsert_pipeline.run({"embedder": {"documents": documents}})
 
+    def delete_with_session(self, session_id: str) -> None:
+        docs = self.query(filters={
+            "operator": "AND",
+            "conditions": [
+                {
+                    "field": "meta.session_id",
+                    "operator": "==",
+                    "value": session_id,
+                },
+                {
+                    "field": "meta.is_global",
+                    "operator": "==",
+                    "value": False,
+                },
+            ]
+        })
+        if docs:
+            doc_ids = [doc.id for doc in docs]
+            self._document_store.delete_documents(doc_ids)
+
 class LanceDbEventRepository(KnowledgeRepository):
     def __init__(self, document_store: LanceDBDocumentStore):
         self._document_store = document_store
@@ -57,6 +77,16 @@ class LanceDbEventRepository(KnowledgeRepository):
     def save(self, documents: List[Document]) -> None:
         # We use SKIP policy for events by default to avoid issues with already existing events
         self._document_store.write_documents(documents, policy=DuplicatePolicy.SKIP)
+
+    def delete_with_session(self, session_id: str) -> None:
+        docs = self.query(filters={
+            "field": "meta.session_id",
+            "operator": "==",
+            "value": session_id,
+        })
+        if docs:
+            doc_ids = [doc.id for doc in docs]
+            self._document_store.delete_documents(doc_ids)
 
 class LanceDbRepositoryManager:
     @staticmethod
