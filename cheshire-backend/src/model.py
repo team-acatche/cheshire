@@ -84,6 +84,12 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		return None
 
 	logger.info(f"agent({document_path.name}): Starting audit...")
+
+	if config.mode == EvaluationType.MULTISTEP:
+		from cheshire_configs.preprocessors.multistep.steps import run_pass1, run_pass2
+		all_findings, document_index = run_pass1(str(document_path))
+		return run_pass2(all_findings, document_index)
+	
 	analyst = Agent(
 		chat_generator=config.model,
 		system_prompt=config.system_prompt,
@@ -95,10 +101,6 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		}
 	)
 
-	if config.mode == EvaluationType.MULTISTEP:
-		from cheshire_configs.preprocessors.multistep.steps import run_pass1, run_pass2
-		all_findings, document_index = run_pass1(str(document_path))
-		return run_pass2(all_findings, document_index)
 	if config.mode == EvaluationType.RAG:
 		return await evaluate_rag(document_path, config, agent=analyst)
 	if config.mode == EvaluationType.FULL_DOCUMENT:

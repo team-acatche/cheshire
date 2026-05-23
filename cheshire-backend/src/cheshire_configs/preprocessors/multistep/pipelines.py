@@ -34,25 +34,13 @@ TOOLS
 - query_other_section(section_title): Retrieve content of another section by its title.
 - add_vulnerability(vulnerability): Record a vulnerability/compliance gap finding. The `vulnerability` dictionary must match the schema: { "title": "str", "description": "str", "page_no": int, "bbox": { "l": float, "t": float, "r": float, "b": float }, "web_references": ["str"], "recommendations": ["str"] }
 
-OUTPUT
-JSON array of findings (or []).
-Finding format:
-{
-  "element_id": "str",
-  "figure_id": "str|null",
-  "sub_bbox": "[x1,y1,x2,y2]|null", # within figure crop
-  "element_type": "section_heading|paragraph|diagram_node|diagram_edge|table_cell|table_header|caption|code_block|list_item",
-  "finding": "str",
-  "standard_ref": "str", # must fetch first
-  "severity": "critical|high|medium|low|observation",
-  "confidence": "float" # 0.0-1.0
-}
-
 CONSTRAINTS
 - sub_bbox is in figure crop coordinates.
 - Call get_standard to retrieve relevant requirements before citing any standard.
 - Use web_search specifically to investigate technical vulnerabilities not covered by company standards.
-- Call add_vulnerability for each finding to ensure compliance gaps are recorded.
+- You MUST call add_vulnerability for every finding. This is the primary output channel.
+- After recording all findings via add_vulnerability, also output a JSON array summary as your final text response. Each item must include: element_id, figure_id (or null), sub_bbox (or null), title, description, page_no, web_references, recommendations.
+- If no findings, output [].
 """
 
 

@@ -58,9 +58,28 @@ def run_pass1(pdf_path: str) -> tuple[list[dict], dict]:
             }
         })
 
-        vulns: list[VulnerabilityDetails] = result["findings_parser"]["vulnerabilities"]
-        all_vulnerabilities.extend(vulns)
-        logger.info(f"      → {len(vulns)} vulnerability(ies).")
+        # vulnerabilities recorded via add_vulnerability tool
+        state_vulns: list[VulnerabilityDetails] = (
+            result.get("agent", {}).get("vulnerabilities_list") or []
+        )
+        # vulnerabilities parsed from the Agent's reply
+        parsed_vulns: list[VulnerabilityDetails] = (
+            result.get("findings_parser", {}).get("vulnerabilities") or []
+        )
+
+        # Merge: keep all state_vulns, and add parsed_vulns that aren't duplicates
+        seen: set[VulnerabilityDetails] = set(state_vulns)
+        merged: list[VulnerabilityDetails] = list(state_vulns)
+        for v in parsed_vulns:
+            if v not in seen:
+                merged.append(v)
+                seen.add(v)
+
+        all_vulnerabilities.extend(merged)
+        logger.info(
+            f"      → {len(merged)} vulnerability(ies) "
+            f"({len(state_vulns)} from tools, {len(parsed_vulns)} from text)."
+        )
 
     return all_vulnerabilities, document_index
 
@@ -78,5 +97,20 @@ def run_pass2(all_findings: list, document_index: dict) -> list[VulnerabilityDet
 
     final: list[VulnerabilityDetails] = result["synthesis_parser"]["vulnerabilities"]
     logger.info(f"  {len(all_findings)} → {len(final)} after deduplication.")
+
+    # if synthesis dropped all findings, fall back to programmatic dedup
+    if len(final) == 0 and len(all_findings) > 0:
+        logger.warning(
+            f"Synthesis returned 0 findings from {len(all_findings)} inputs. "
+            f"Falling back to programmatic deduplication."
+        )
+        seen: set[VulnerabilityDetails] = set()
+        deduped: list[VulnerabilityDetails] = []
+        for f in all_findings:
+            if f not in seen:
+                deduped.append(f)
+                seen.add(f)
+        logger.info(f"  Programmatic dedup: {len(all_findings)} → {len(deduped)}.")
+        return deduped
 
     return final

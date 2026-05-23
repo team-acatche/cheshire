@@ -1,9 +1,12 @@
 import json
+import logging
 from haystack import component
 from haystack.dataclasses import ChatMessage
 from docling_core.types.doc import BoundingBox
 
 from tools.helpers.output_schema import VulnerabilityDetails
+
+logger = logging.getLogger("uvicorn.error")
 
 
 @component
@@ -11,6 +14,9 @@ class SynthesisParser:
     @component.output_types(vulnerabilities=list)  # List[VulnerabilityDetails]
     def run(self, replies: list) -> dict:  # replies: List[ChatMessage]
         raw = (replies[0].text or "[]").strip()
+
+        logger.debug(f"Synthesis raw response (first 500 chars): {raw[:500]}")
+
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -26,17 +32,21 @@ class SynthesisParser:
             else:
                 items = []
         except json.JSONDecodeError:
+            logger.warning(
+                "Synthesis response is not valid JSON — "
+                "findings will be passed through without LLM synthesis."
+            )
             return {"vulnerabilities": []}
 
         vulnerabilities: list[VulnerabilityDetails] = []
         for item in items:
             try:
-                bbox_data = item.get("bbox", {})
+                bbox_data = item.get("bbox") or {}
                 vulnerabilities.append(
                     VulnerabilityDetails(
-                        title=item["title"],
-                        description=item["description"],
-                        page_no=item["page_no"],
+                        title=item.get("title", item.get("finding", "")),
+                        description=item.get("description", item.get("finding", "")),
+                        page_no=item.get("page_no", 0),
                         bbox=BoundingBox(
                             l=bbox_data.get("l", bbox_data.get("x1", 0)),
                             t=bbox_data.get("t", bbox_data.get("y1", 0)),
@@ -47,7 +57,8 @@ class SynthesisParser:
                         recommendations=item.get("recommendations", [])
                     )
                 )
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Skipping unparseable synthesis finding: {e}")
                 continue
 
         return {"vulnerabilities": vulnerabilities}
