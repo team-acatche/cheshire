@@ -1,6 +1,9 @@
 import base64
 from dataclasses import dataclass, field
 from io import BytesIO
+from typing import Optional, List
+from pydantic import BaseModel, Field
+
 
 from docling_core.types.doc import BoundingBox
 from docling.chunking import HierarchicalChunker
@@ -19,6 +22,7 @@ class ElementRef:
     label: str                  
     page_number: int            
     bbox_image_px: list[float]  
+    bbox_pdf: BoundingBox       
     text_excerpt: str           
 
 
@@ -32,7 +36,23 @@ class FigureRef:
     figure_id: str              
     page_number: int
     bbox_image_px: list[float]  
+    bbox_pdf: BoundingBox       
     base64_png: str             
+
+
+class LocalFinding(BaseModel):
+    element_id: Optional[str] = Field(None, description="The unique identifier of the vulnerable element (from the structured text ID tags).")
+    figure_id: Optional[str] = Field(None, description="The unique identifier of the figure (if the vulnerability is in a figure).")
+    sub_bbox: Optional[List[float]] = Field(None, description="A bounding box within the figure crop space [x1, y1, x2, y2] (0-1000 scale).")
+    element_type: str = Field(..., description="The type of the element, e.g. section_heading, paragraph, diagram_node, diagram_edge, table_cell, table_header, caption, code_block, list_item.")
+    finding: str = Field(..., description="Description of the vulnerability finding.")
+    standard_ref: str = Field(..., description="Security standard reference cited for this vulnerability finding.")
+    severity: str = Field(..., description="Severity classification (critical, high, medium, low, observation).")
+    confidence: float = Field(..., description="Confidence score between 0.0 and 1.0.")
+    title: Optional[str] = Field(None, description="An optional short, descriptive title for the finding.")
+    web_references: Optional[List[str]] = Field(default_factory=list, description="Optional list of web reference URLs.")
+    recommendations: Optional[List[str]] = Field(default_factory=list, description="Optional list of recommendation strings.")
+
 
 
 @dataclass
@@ -120,6 +140,7 @@ def _build_element_lookup(
             label=label,
             page_number=prov.page_no,
             bbox_image_px=bbox_px,
+            bbox_pdf=prov.bbox,
             text_excerpt=text
         )
 
@@ -162,6 +183,7 @@ def _build_figure_lookup(
             figure_id=picture.self_ref,
             page_number=prov.page_no,
             bbox_image_px=bbox_px,
+            bbox_pdf=prov.bbox,
             base64_png=b64
         )
 

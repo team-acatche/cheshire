@@ -31,15 +31,14 @@ TOOLS
 - get_standard(query): Search for details, requirements, or guidelines of security standards relevant to the query.
 - web_search(query): Used to research external technical vulnerabilities and attack patterns not covered by the company standards.
 - query_other_section(section_title): Retrieve content of another section by its title.
-- add_vulnerability(vulnerability): Record a vulnerability/compliance gap finding. The `vulnerability` dictionary must match the schema: { "title": "str", "description": "str", "page_no": int, "bbox": { "l": float, "t": float, "r": float, "b": float }, "web_references": ["str"], "recommendations": ["str"] }
+- add_local_finding(finding): Record a local vulnerability/finding gap. The `finding` dictionary must match the schema: { "element_id": "str", "figure_id": "str|null", "sub_bbox": [x1,y1,x2,y2]|null, "element_type": "section_heading|paragraph|diagram_node|diagram_edge|table_cell|table_header|caption|code_block|list_item", "finding": "str", "standard_ref": "str", "severity": "critical|high|medium|low|observation", "confidence": float }
 
 CONSTRAINTS
 - sub_bbox is in figure crop coordinates.
 - Call get_standard to retrieve relevant requirements before citing any standard.
 - Use web_search specifically to investigate technical vulnerabilities not covered by company standards.
-- You MUST call add_vulnerability for every finding. This is the primary output channel.
-- After recording all findings via add_vulnerability, also output a JSON array summary as your final text response. Each item must include: element_id, figure_id (or null), sub_bbox (or null), title, description, page_no, web_references, recommendations.
-- If no findings, output [].
+- You MUST call add_local_finding for every finding. This is the primary output channel.
+- If no findings, no action is needed.
 """
 
 
@@ -59,14 +58,38 @@ def build_preprocessing_pipeline() -> Pipeline:
     return pipeline
 
 
+from haystack.tools import create_tool_from_function
+from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
+from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
+
+def add_local_finding_tool(state_key: str) -> Tool:
+    _tool = create_tool_from_function(
+        function=add_local_finding,
+        description="Record a local vulnerability/finding gap.",
+        outputs_to_state={state_key: {"source": "finding"}}
+    )
+    _tool.warm_up()
+    return _tool
+
+def accept_local_finding_tool(state_key: str) -> Tool:
+    _tool = create_tool_from_function(
+        function=accept_local_finding,
+        description="Accept a local finding as valid and non-duplicate. Call this for each unique local finding you want to keep.",
+        outputs_to_state={state_key: {"source": "finding"}}
+    )
+    _tool.warm_up()
+    return _tool
+
+
+
 def build_evaluation_pipeline() -> Pipeline:
     generator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
-    from tools.base import add_vulnerability_tool
-    agent_tools = _make_tools() + [add_vulnerability_tool("vulnerabilities_list")]
+    from cheshire_configs.preprocessors.multistep.pipelines import add_local_finding_tool
+    agent_tools = _make_tools() + [add_local_finding_tool("findings_list")]
 
     agent = Agent(
         chat_generator=generator,
@@ -74,18 +97,16 @@ def build_evaluation_pipeline() -> Pipeline:
         system_prompt=PASS1_SYSTEM_PROMPT,
         max_agent_steps=10,
         exit_conditions=["text"],
-		state_schema={
-			"vulnerabilities_list": {"type": list[VulnerabilityDetails]},
-		}
+        state_schema={
+            "findings_list": {"type": list},
+        }
     )
 
     pipeline = Pipeline()
     pipeline.add_component("chunk_message_builder", ChunkMessageBuilder())
     pipeline.add_component("agent", agent)
-    pipeline.add_component("findings_parser", FindingsParser())
 
     pipeline.connect("chunk_message_builder.messages", "agent.messages")
-    pipeline.connect("agent.last_message", "findings_parser.last_message")
 
     return pipeline
 
@@ -95,20 +116,20 @@ def build_synthesis_pipeline() -> Pipeline:
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
-    from tools.base import accept_finding_tool, flag_contradiction_tool
+    from tools.base import flag_contradiction_tool
     from tools.helpers.output_schema import Contradiction
 
     agent = Agent(
         chat_generator=generator,
         tools=[
-            accept_finding_tool("accepted_findings"),
+            accept_local_finding_tool("accepted_findings"),
             flag_contradiction_tool("contradictions"),
         ],
         system_prompt=PASS2_SYSTEM_PROMPT,
         max_agent_steps=200,
         exit_conditions=["text"],
         state_schema={
-            "accepted_findings": {"type": list[VulnerabilityDetails]},
+            "accepted_findings": {"type": list[LocalFinding]},
             "contradictions": {"type": list[Contradiction]},
         }
     )

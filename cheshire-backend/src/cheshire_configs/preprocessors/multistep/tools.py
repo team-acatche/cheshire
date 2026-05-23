@@ -1,5 +1,7 @@
 from typing import Annotated, Any
 from haystack.tools import tool
+from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
+
 
 from globals import DATA_PATH
 from knowledge_base.qdrant import QdrantRepositoryManager
@@ -54,3 +56,116 @@ def query_other_section(
         return "\n\n".join(matches)
         
     return f"Warning: No sections found matching title '{section_title}'."
+
+def add_local_finding(
+    finding: LocalFinding | dict | str,
+    element_type: str | None = None,
+    standard_ref: str | None = None,
+    severity: str | None = None,
+    confidence: float | None = None,
+    element_id: str | None = None,
+    figure_id: str | None = None,
+    sub_bbox: list[float] | None = None,
+    title: str | None = None,
+    web_references: list[str] | None = None,
+    recommendations: list[str] | None = None,
+) -> dict:
+    """
+    Record a local finding gap/vulnerability.
+
+    :param finding: The finding details matching the LocalFinding schema.
+    """
+    if isinstance(finding, str) and (element_type is not None or standard_ref is not None or severity is not None):
+        finding_dict = {
+            "finding": finding,
+            "element_type": element_type or "paragraph",
+            "standard_ref": standard_ref or "",
+            "severity": severity or "observation",
+            "confidence": confidence if confidence is not None else 1.0,
+            "element_id": element_id,
+            "figure_id": figure_id,
+            "sub_bbox": sub_bbox,
+            "title": title,
+            "web_references": web_references or [],
+            "recommendations": recommendations or []
+        }
+        _finding = LocalFinding.model_validate(finding_dict)
+    elif isinstance(finding, str):
+        try:
+            _finding = LocalFinding.model_validate_json(finding)
+        except Exception:
+            _finding = LocalFinding(
+                finding=finding,
+                element_type=element_type or "paragraph",
+                standard_ref=standard_ref or "",
+                severity=severity or "observation",
+                confidence=confidence if confidence is not None else 1.0,
+                element_id=element_id,
+                figure_id=figure_id,
+                sub_bbox=sub_bbox,
+                title=title,
+                web_references=web_references or [],
+                recommendations=recommendations or []
+            )
+    elif isinstance(finding, dict):
+        _finding = LocalFinding.model_validate(finding)
+    else:
+        _finding = finding
+    return {"finding": _finding}
+
+def accept_local_finding(
+    finding: LocalFinding | dict | str,
+    element_type: str | None = None,
+    standard_ref: str | None = None,
+    severity: str | None = None,
+    confidence: float | None = None,
+    element_id: str | None = None,
+    figure_id: str | None = None,
+    sub_bbox: list[float] | None = None,
+    title: str | None = None,
+    web_references: list[str] | None = None,
+    recommendations: list[str] | None = None,
+) -> dict:
+    """
+    Accept a local finding as valid and non-duplicate. Call this for each unique local finding you want to keep.
+
+    :param finding: The local finding to accept. Must match the LocalFinding schema.
+    """
+    if isinstance(finding, str) and (element_type is not None or standard_ref is not None or severity is not None):
+        finding_dict = {
+            "finding": finding,
+            "element_type": element_type or "paragraph",
+            "standard_ref": standard_ref or "",
+            "severity": severity or "observation",
+            "confidence": confidence if confidence is not None else 1.0,
+            "element_id": element_id,
+            "figure_id": figure_id,
+            "sub_bbox": sub_bbox,
+            "title": title,
+            "web_references": web_references or [],
+            "recommendations": recommendations or []
+        }
+        _finding = LocalFinding.model_validate(finding_dict)
+    elif isinstance(finding, str):
+        try:
+            _finding = LocalFinding.model_validate_json(finding)
+        except Exception:
+            _finding = LocalFinding(
+                finding=finding,
+                element_type=element_type or "paragraph",
+                standard_ref=standard_ref or "",
+                severity=severity or "observation",
+                confidence=confidence if confidence is not None else 1.0,
+                element_id=element_id,
+                figure_id=figure_id,
+                sub_bbox=sub_bbox,
+                title=title,
+                web_references=web_references or [],
+                recommendations=recommendations or []
+            )
+    elif isinstance(finding, dict):
+        _finding = LocalFinding.model_validate(finding)
+    else:
+        _finding = finding
+    return {"finding": _finding}
+

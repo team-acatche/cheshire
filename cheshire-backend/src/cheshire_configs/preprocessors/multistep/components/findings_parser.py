@@ -64,23 +64,32 @@ class FindingsParser:
             if figure_id and figure_id in figure_by_id:
                 fig = figure_by_id[figure_id]
                 page_no = fig.page_number
-                fx1, fy1, fx2, fy2 = fig.bbox_image_px
 
                 if sub_bbox and len(sub_bbox) == 4:
                     sx1, sy1, sx2, sy2 = sub_bbox
+                    max_coord = max(sx1, sy1, sx2, sy2)
+                    scale_factor = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+                    
+                    frac_x1 = max(0.0, min(1.0, sx1 / scale_factor))
+                    frac_y1 = max(0.0, min(1.0, sy1 / scale_factor))
+                    frac_x2 = max(0.0, min(1.0, sx2 / scale_factor))
+                    frac_y2 = max(0.0, min(1.0, sy2 / scale_factor))
+                    
+                    fig_w = fig.bbox_pdf.r - fig.bbox_pdf.l
+                    fig_h = fig.bbox_pdf.t - fig.bbox_pdf.b
+                    
                     bbox = BoundingBox(
-                        l=fx1 + sx1,
-                        t=fy1 + sy1,
-                        r=fx1 + sx2,
-                        b=fy1 + sy2
+                        l=fig.bbox_pdf.l + frac_x1 * fig_w,
+                        t=fig.bbox_pdf.t - frac_y1 * fig_h,
+                        r=fig.bbox_pdf.l + frac_x2 * fig_w,
+                        b=fig.bbox_pdf.t - frac_y2 * fig_h
                     )
                 else:
-                    bbox = BoundingBox(l=fx1, t=fy1, r=fx2, b=fy2)
+                    bbox = fig.bbox_pdf
 
             elif element_id and element_id in element_by_id:
                 elem = element_by_id[element_id]
-                x1, y1, x2, y2 = elem.bbox_image_px
-                bbox = BoundingBox(l=x1, t=y1, r=x2, b=y2)
+                bbox = elem.bbox_pdf
 
             try:
                 vulnerabilities.append(
