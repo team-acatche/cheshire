@@ -34,8 +34,9 @@ def mock_get_current_user():
 def setup_overrides():
     api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
     api.dependency_overrides[get_current_user] = mock_get_current_user
-    yield
-    api.dependency_overrides.clear()
+    with patch("endpoints.evaluate.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())):
+        yield
+        api.dependency_overrides.clear()
 
 client = TestClient(api)
 
