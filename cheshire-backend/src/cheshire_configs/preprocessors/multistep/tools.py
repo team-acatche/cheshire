@@ -12,17 +12,17 @@ def set_chunks_cache(chunks: list) -> None:
 
 @tool
 def get_standard(
-    standard_id: Annotated[str, "The standard ID to retrieve."]
+    query: Annotated[str, "The query to search for standards or relevant requirements (e.g. 'ASVS', 'password hashing')."]
 ) -> dict[str, Any]:
     """
     Gets facts relevant to the standard.
 
-    :param standard_id: the standard ID to get relevant facts for.
+    :param query: the query to search for standards or relevant requirements.
 
-    :return: a dict containing result string with all facts relevant to the standard.
+    :return: a dict containing result string with all facts relevant to the query.
     """
     _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH, username="system")
-    results = knowledge_repo.search(query=standard_id)
+    results = knowledge_repo.search(query=query)
     facts: list[str] = [f"{document.content} (id: {document.id})" for document in results]
     return {"facts": facts}
 

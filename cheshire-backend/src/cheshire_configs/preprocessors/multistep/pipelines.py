@@ -19,7 +19,7 @@ from cheshire_configs.preprocessors.multistep.tools import get_standard, query_o
 from dotenv import load_dotenv
 load_dotenv("../../../.env.user")
 
-PASS1_SYSTEM_PROMPT_TEMPLATE = """\
+PASS1_SYSTEM_PROMPT = """\
 Role: Technical design document auditor.
 
 INPUT
@@ -27,8 +27,8 @@ Text: [ID:<ref>|<label>|p<n>]
 Figures: [Figure ID:<ref>|p<n>]
 
 TOOLS
-- get_standard(standard_id): Required before citing. Available: {standard_ids}
-- web_search(query): For external claims only.
+- get_standard(query): Search for details, requirements, or guidelines of security standards relevant to the query.
+- web_search(query): Used to research external technical vulnerabilities and attack patterns not covered by the company standards.
 - query_other_section(section_title): Retrieve content of another section by its title.
 
 OUTPUT
@@ -47,14 +47,9 @@ Finding format:
 
 CONSTRAINTS
 - sub_bbox is in figure crop coordinates.
-- Call get_standard before citing any standard.\
+- Call get_standard to retrieve relevant requirements before citing any standard.
+- Use web_search specifically to investigate technical vulnerabilities not covered by company standards.\
 """
-
-
-def _make_system_prompt(standards_path: str = "standards.json") -> str:
-    with open(standards_path) as f:
-        standard_ids = ", ".join(json.load(f).keys())
-    return PASS1_SYSTEM_PROMPT_TEMPLATE.format(standard_ids=standard_ids)
 
 
 def _make_tools() -> list[Tool]:
@@ -73,7 +68,7 @@ def build_preprocessing_pipeline() -> Pipeline:
     return pipeline
 
 
-def build_evaluation_pipeline(standards_path: str = "standards.json") -> Pipeline:
+def build_evaluation_pipeline() -> Pipeline:
     generator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
@@ -82,7 +77,7 @@ def build_evaluation_pipeline(standards_path: str = "standards.json") -> Pipelin
     agent = Agent(
         chat_generator=generator,
         tools=_make_tools(),
-        system_prompt=_make_system_prompt(standards_path),
+        system_prompt=PASS1_SYSTEM_PROMPT,
         max_agent_steps=10,
         exit_conditions=["text"]
     )
