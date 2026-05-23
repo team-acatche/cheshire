@@ -1,21 +1,18 @@
-// src/components/account.tsx
 import { useEffect, useState } from "react"
-import { Pencil, Check } from "lucide-react"
 import type { Chat } from "@/ChatPage"
 import type { AuthUser } from "@/lib/auth"
 import { updateStoredUser, authFetch } from "@/lib/auth"
 import AvatarCropperModal from "@/components/avatar-cropper-modal"
 import { formatTimestamp } from "@/lib/helpers/format_timestamps"
 
-// fetch session timestamp
-async function fetchSessionTimestamp(sessionId: string) : Promise<string | null> {
+async function fetchSessionTimestamp(sessionId: string): Promise<string | null> {
   return authFetch(`/api/v1/${sessionId}/latest-timestamp`)
-  .then(r => {
-    if (r.status === 204) return null
-    if (!r.ok) return null
-    return r.json().then((d: { latest_timestamp: string}) => d.latest_timestamp)
-  })
-  .catch (() => null)
+    .then((r) => {
+      if (r.status === 204) return null
+      if (!r.ok) return null
+      return r.json().then((d: { latest_timestamp: string }) => d.latest_timestamp)
+    })
+    .catch(() => null)
 }
 
 interface AccountProps {
@@ -24,22 +21,22 @@ interface AccountProps {
   chats: Chat[]
 }
 
-export default function Account({ setProfileImage, user, chats}: AccountProps) {
-  const [editing, setEditing] = useState(false)
-  const [displayName, setDisplayName] = useState(user.full_name ?? user.username ?? "")
-  const [tempName, setTempName] = useState(user.full_name ?? user.username ?? "")
+export default function Account({ setProfileImage, user, chats }: AccountProps) {
   const [avatarSrc, setAvatarSrc] = useState(
     user.avatar_uri && user.avatar_uri !== "avatars/default.png"
       ? `/api/v1/${user.avatar_uri}`
       : "/api/v1/avatars/default.png"
   )
-  // avatar cropping state
+
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [showCropper, setShowCropper] = useState(false)
-  // uploading state to disable inputs while upload is in progress
+
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
-  const [chatTimestamps, setChatTimestamps] = useState<Record<string , string | null>>({})
+
+  const [chatTimestamps, setChatTimestamps] = useState<
+    Record<string, string | null>
+  >({})
 
   useEffect(() => {
     if (chats.length === 0) return
@@ -51,20 +48,17 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
           return [chat.session_id, ts] as const
         })
       )
+
       setChatTimestamps(Object.fromEntries(entries))
     }
 
     loadTimestamps()
   }, [chats])
 
-  useEffect(() => {
-    setDisplayName(user.full_name ?? user.username ?? "")
-    setTempName(user.full_name ?? user.username ?? "")
-  }, [user])
-
   const uploadAvatar = async (file: File, previewUrl: string) => {
     setAvatarSrc(previewUrl)
     setProfileImage(previewUrl)
+
     setUploading(true)
     setUploadProgress(0)
 
@@ -75,7 +69,6 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
 
     xhr.open("POST", "/api/v1/avatars", true)
 
-    // If your auth is cookie-based, this is enough:
     xhr.withCredentials = true
 
     xhr.upload.onprogress = (event) => {
@@ -114,50 +107,44 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
     xhr.send(formData)
   }
 
-  const handleSave = () => {
-    setDisplayName(tempName)
-    setEditing(false)
-    // TODO: create an endpoint that saves the changes made
-  }
-
   return (
     <div className="flex h-full">
-      {/* LEFT panel */}
       <div className="w-[320px] bg-gray-200 flex flex-col items-center justify-center relative gap-3">
         <input
           type="file"
           accept="image/*"
           className="hidden"
           id="profile-upload"
-          
           onChange={(e) => {
             const file = e.target.files?.[0]
+
             if (!file) return
 
-            if (file.size > 5 * 1024 * 1024) { // 5MB limit
+            if (file.size > 5 * 1024 * 1024) {
               alert("File size exceeds 5MB limit.")
-              e.target.value = "" // reset input
+              e.target.value = ""
               return
             }
 
-            if (file) {
-              const reader = new FileReader()
+            const reader = new FileReader()
 
-              reader.onload = () => {
-                setSelectedImage(reader.result as string)
-                setShowCropper(true)
-              }
-              
-              reader.readAsDataURL(file)
-
-              e.target.value = "" // reset input so same file can be selected again if needed
+            reader.onload = () => {
+              setSelectedImage(reader.result as string)
+              setShowCropper(true)
             }
+
+            reader.readAsDataURL(file)
+
+            e.target.value = ""
           }}
         />
 
-        <label htmlFor="profile-upload" className={`cursor-pointer text-center ${
-          uploading ? "pointer-events-none opacity-50" : ""
-          }`}>
+        <label
+          htmlFor="profile-upload"
+          className={`cursor-pointer text-center ${
+            uploading ? "pointer-events-none opacity-50" : ""
+          }`}
+        >
           <img
             src={avatarSrc}
             onError={(e) => {
@@ -166,6 +153,7 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
             alt="Profile"
             className="w-32 h-32 rounded-full object-cover mb-2"
           />
+
           <p className="text-xs text-gray-500">
             {uploading ? "Uploading..." : "Change photo"}
           </p>
@@ -186,28 +174,11 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
           )}
         </label>
 
-        {/* Display name */}
-        {editing ? (
-          <input
-            value={tempName}
-            onChange={(e) => setTempName(e.target.value)}
-            className="text-lg font-semibold text-center bg-transparent border-b border-gray-400 outline-none"
-          />
-        ) : (
-          <h2 className="text-lg font-semibold">{displayName || "—"}</h2>
-        )}
-
-        {/* Edit / Save toggle */}
-        <button
-          onClick={() => (editing ? handleSave() : setEditing(true))}
-          className="absolute bottom-16 w-10 h-10 flex items-center justify-center border rounded-lg hover:bg-gray-300"
-          title={editing ? "Save" : "Edit profile"}
-        >
-          {editing ? <Check size={18} /> : <Pencil size={18} />}
-        </button>
+        <h2 className="text-lg font-semibold">
+          {user.full_name ?? user.username ?? "—"}
+        </h2>
       </div>
 
-      {/* RIGHT panel */}
       <div className="flex-1 p-10 overflow-y-auto">
         <h1 className="text-xl font-semibold mb-2">Information</h1>
         <hr className="mb-6" />
@@ -217,6 +188,7 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
             <p className="text-sm font-medium text-gray-500">Email</p>
             <p className="text-gray-700">{user.email}</p>
           </div>
+
           <div>
             <p className="text-sm font-medium text-gray-500">Username</p>
             <p className="text-gray-700">{user.username ?? "—"}</p>
@@ -231,13 +203,18 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
             <p className="text-gray-400 text-sm">No reviews yet</p>
           ) : (
             chats.slice(0, 5).map((chat) => (
-              <div key={chat.session_id} className="p-2 border rounded-md text-sm flex items-center justify-between">
+              <div
+                key={chat.session_id}
+                className="p-2 border rounded-md text-sm flex items-center justify-between"
+              >
                 <span>{chat.title}</span>
-                <span 
+
+                <span
                   className="text-xs text-gray-400 tabular-nums hover:text-gray-600 transition-colors"
                   title={chatTimestamps[chat.session_id] ?? ""}
-                  >
-                  Last Activity: {chatTimestamps[chat.session_id] !== undefined
+                >
+                  Last Activity:{" "}
+                  {chatTimestamps[chat.session_id] !== undefined
                     ? chatTimestamps[chat.session_id]
                       ? formatTimestamp(chatTimestamps[chat.session_id])
                       : "No activity yet"
@@ -248,6 +225,7 @@ export default function Account({ setProfileImage, user, chats}: AccountProps) {
           )}
         </div>
       </div>
+
       {showCropper && selectedImage && (
         <AvatarCropperModal
           imageSrc={selectedImage}
