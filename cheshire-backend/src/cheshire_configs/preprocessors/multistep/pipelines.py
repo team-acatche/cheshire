@@ -1,4 +1,5 @@
 import json
+import os
 from haystack import Pipeline
 from haystack.components.agents import Agent
 from haystack.utils import Secret
@@ -15,6 +16,7 @@ from cheshire_configs.preprocessors.multistep.components.synthesis_parser import
 from typing import cast
 from tools.exa import web_search
 from cheshire_configs.preprocessors.multistep.tools import get_standard, query_other_section
+from tools.helpers.output_schema import VulnerabilityDetails
 
 from dotenv import load_dotenv
 load_dotenv("../../../.env.user")
@@ -30,6 +32,7 @@ TOOLS
 - get_standard(query): Search for details, requirements, or guidelines of security standards relevant to the query.
 - web_search(query): Used to research external technical vulnerabilities and attack patterns not covered by the company standards.
 - query_other_section(section_title): Retrieve content of another section by its title.
+- add_vulnerability(vulnerability): Record a vulnerability/compliance gap finding. The `vulnerability` dictionary must match the schema: { "title": "str", "description": "str", "page_no": int, "bbox": { "l": float, "t": float, "r": float, "b": float }, "web_references": ["str"], "recommendations": ["str"] }
 
 OUTPUT
 JSON array of findings (or []).
@@ -48,7 +51,8 @@ Finding format:
 CONSTRAINTS
 - sub_bbox is in figure crop coordinates.
 - Call get_standard to retrieve relevant requirements before citing any standard.
-- Use web_search specifically to investigate technical vulnerabilities not covered by company standards.\
+- Use web_search specifically to investigate technical vulnerabilities not covered by company standards.
+- Call add_vulnerability for each finding to ensure compliance gaps are recorded.
 """
 
 
@@ -74,12 +78,18 @@ def build_evaluation_pipeline() -> Pipeline:
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
+    from tools.base import add_vulnerability_tool
+    agent_tools = _make_tools() + [add_vulnerability_tool("vulnerabilities_list")]
+
     agent = Agent(
         chat_generator=generator,
-        tools=_make_tools(),
+        tools=agent_tools,
         system_prompt=PASS1_SYSTEM_PROMPT,
         max_agent_steps=10,
-        exit_conditions=["text"]
+        exit_conditions=["text"],
+		state_schema={
+			"vulnerabilities_list": {"type": list[VulnerabilityDetails]},
+		}
     )
 
     pipeline = Pipeline()

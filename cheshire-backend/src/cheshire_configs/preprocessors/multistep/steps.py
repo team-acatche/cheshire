@@ -4,7 +4,7 @@ from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessi
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_synthesis_pipeline
-from cheshire.tools.helpers.output_schema import VulnerabilityDetails
+from tools.helpers.output_schema import VulnerabilityDetails
 
 import logging
 logger = logging.getLogger("uvicorn.error")

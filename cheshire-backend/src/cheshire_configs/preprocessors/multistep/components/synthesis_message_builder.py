@@ -34,7 +34,7 @@ class SynthesisMessageBuilder:
     in message builder components, not scattered across pipeline config.
     """
 
-    @component.output_types(messages=list)  # List[ChatMessage]
+    @component.output_types(messages=list[ChatMessage])
     def run(
         self,
         all_findings: list,

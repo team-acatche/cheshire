@@ -3,7 +3,7 @@ from haystack import component
 from haystack.dataclasses import ChatMessage
 import json
 
-from cheshire.tools.helpers.output_schema import VulnerabilityDetails
+from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk
 
 
@@ -41,13 +41,20 @@ class FindingsParser:
         raw = raw.strip()
 
         try:
-            items: list[dict] = json.loads(raw)
+            items = json.loads(raw)
         except json.JSONDecodeError:
+            return {"vulnerabilities": []}
+
+        if isinstance(items, dict):
+            items = [items]
+        elif not isinstance(items, list):
             return {"vulnerabilities": []}
 
         vulnerabilities: list[VulnerabilityDetails] = []
 
         for item in items:
+            if not isinstance(item, dict):
+                continue
             element_id: str | None = item.get("element_id")
             figure_id: str | None = item.get("figure_id")
             sub_bbox: list[int] | None = item.get("sub_bbox")

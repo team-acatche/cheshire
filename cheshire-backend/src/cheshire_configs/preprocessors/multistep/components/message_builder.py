@@ -12,7 +12,7 @@ class ChunkMessageBuilder:
     Figure crops are embedded as base64 image_url parts.
     """
 
-    @component.output_types(messages=list) # List[ChatMessage]
+    @component.output_types(messages=list[ChatMessage])
     def run(
         self,
         chunk: EvaluationChunk,
