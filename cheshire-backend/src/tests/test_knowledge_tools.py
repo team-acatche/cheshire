@@ -13,13 +13,13 @@ from tools.knowledge import (
     upsert_fact,
     get_facts,
     get_relevant_facts,
-    upsert_fact_tool,
-    get_facts_tool,
-    get_relevant_facts_tool,
     current_knowledge_state,
 )
 from knowledge_base.repository import KnowledgeRepository
 
+upsert_fact_tool = upsert_fact
+get_facts_tool = get_facts
+get_relevant_facts_tool = get_relevant_facts
 
 # ---------------------------------------------------------------------------
 # upsert_fact
@@ -48,7 +48,7 @@ class TestUpsertFact:
         """New facts should get a UUID as their Document.id (not in meta)."""
         mock_state.knowledge_base.search.return_value = []
         
-        upsert_fact(facts=["The sky is blue"])
+        upsert_fact.invoke(facts=["The sky is blue"])
 
         save_call = mock_state.knowledge_base.save.call_args
         docs = save_call.args[0] if save_call.args else save_call.kwargs.get("documents", [])
@@ -65,7 +65,7 @@ class TestUpsertFact:
         existing = Document(id="abc-123", content="old", meta={"last_modified": "x"})
         mock_state.knowledge_base.query.return_value = [existing]
 
-        upsert_fact(facts=["corrected fact"], incorrect_fact_knowledge_id="abc-123")
+        upsert_fact.invoke(facts=["corrected fact"], incorrect_fact_knowledge_id="abc-123")
 
         call_kwargs = mock_state.knowledge_base.query.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1]["filters"]
@@ -75,15 +75,16 @@ class TestUpsertFact:
     def test_incorrect_fact_not_found_returns_message(self, mock_state):
         """If the incorrect fact is not found, return a descriptive message."""
         mock_state.knowledge_base.query.return_value = []
+        mock_state.knowledge_base.search.return_value = []
         
-        result = upsert_fact(facts=["corrected"], incorrect_fact_knowledge_id="nonexistent-id")
+        result = upsert_fact.invoke(facts=["corrected"], incorrect_fact_knowledge_id="nonexistent-id")
         assert "not found" in result["result"].lower()
 
     def test_returns_count_summary(self, mock_state):
         """Result should include counts of added and updated facts."""
         mock_state.knowledge_base.search.return_value = []
         
-        result = upsert_fact(facts=["fact1", "fact2"])
+        result = upsert_fact.invoke(facts=["fact1", "fact2"])
         assert "2" in result["result"]
         assert "added" in result["result"].lower()
 
@@ -113,7 +114,7 @@ class TestGetFacts:
     def test_session_filter_without_global(self, mock_state):
         """Without global, operator should be AND."""
         mock_state.knowledge_base.query.return_value = []
-        get_facts(with_global=False)
+        get_facts.invoke(with_global=False)
 
         filters = mock_state.knowledge_base.query.call_args.kwargs["filters"]
         assert filters["operator"] == "AND"
@@ -124,7 +125,7 @@ class TestGetFacts:
     def test_session_filter_with_global(self, mock_state):
         """With global=True, operator should be OR."""
         mock_state.knowledge_base.query.return_value = []
-        get_facts(with_global=True)
+        get_facts.invoke(with_global=True)
 
         filters = mock_state.knowledge_base.query.call_args.kwargs["filters"]
         assert filters["operator"] == "OR"
@@ -153,5 +154,5 @@ class TestGetRelevantFacts:
 
     def test_queries_retriever(self, mock_state):
         mock_state.knowledge_base.search.return_value = []
-        get_relevant_facts(query="test query")
+        get_relevant_facts.invoke(query="test query")
         mock_state.knowledge_base.search.assert_called_with(query="test query")
