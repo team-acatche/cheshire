@@ -32,16 +32,26 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement
-
     root.classList.remove("light", "dark")
 
+    let resolvedTheme: "light" | "dark"
+
     if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+      resolvedTheme = window.matchMedia("(prefers-color-scheme: dark)")
         .matches
         ? "dark"
         : "light"
 
-      root.classList.add(systemTheme)
+      root.classList.add(resolvedTheme)
+
+      const favicon = document.getElementById("favicon") as HTMLLinkElement
+
+      if (favicon) {
+        favicon.href = 
+          theme === "system" && resolvedTheme === "dark"
+            ? "cheshire-white.png"
+            : "cheshire-black.png"  
+      }
       return
     }
 
