@@ -14,18 +14,20 @@ def set_chunks_cache(chunks: list) -> None:
 
 @tool
 def get_standard(
-    query: Annotated[str, "The query to search for standards or relevant requirements (e.g. 'ASVS', 'password hashing')."]
+    query: Annotated[str, "The query to search for company security requirements (e.g. 'password hashing', 'session management')."]
 ) -> dict[str, Any]:
     """
-    Gets facts relevant to the standard.
+    Search the company's internal security standards for relevant requirements.
+    Results are company-specific guidelines — reference them as "company standard"
+    in findings, not by external framework names.
 
-    :param query: the query to search for standards or relevant requirements.
+    :param query: the query to search for relevant company requirements.
 
-    :return: a dict containing result string with all facts relevant to the query.
+    :return: a dict containing company standard requirements relevant to the query.
     """
     _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH, username="system")
     results = knowledge_repo.search(query=query)
-    facts: list[str] = [f"{document.content} (id: {document.id})" for document in results]
+    facts: list[str] = [f"[Company standard requirement] {document.content}" for document in results]
     return {"facts": facts}
 
 @tool

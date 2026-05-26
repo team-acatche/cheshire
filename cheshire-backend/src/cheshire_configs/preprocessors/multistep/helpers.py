@@ -1,4 +1,6 @@
 import base64
+import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Optional, List
@@ -107,6 +109,7 @@ def _build_element_lookup(
     sees structured table content rather than a raw string.
     """
     lookup: dict[str, ElementRef] = {}
+    _last_table_header: str | None = None
 
     for item, _level in doc.iterate_items():
         if not hasattr(item, "prov") or not item.prov:
@@ -118,8 +121,9 @@ def _build_element_lookup(
             else str(item.label)
         )
 
-        if label == "picture":
-            continue  # handled in _build_figure_lookup
+        # Skip decorative page elements (headers, footers)
+        if label in ("picture", "page_header", "page_footer"):
+            continue
 
         prov = item.prov[0]
         page = doc.pages.get(prov.page_no)
@@ -128,10 +132,28 @@ def _build_element_lookup(
 
         bbox_px = _to_image_px(prov.bbox, page.size.height, scale)
 
-        if hasattr(item, "text") and item.text:
-            text = item.text[:120]
+        if label == "table" and hasattr(item, "export_to_markdown"):
+            text = item.export_to_markdown()
+            lines = text.strip().split('\n')
+
+            # Detect if this table has a header separator (e.g. |---|---|)
+            sep_idx: int | None = None
+            for i, line in enumerate(lines[:4]):
+                if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+                    sep_idx = i
+                    break
+
+            if sep_idx is not None and sep_idx >= 1:
+                # Store header rows + separator for continuation tables
+                _last_table_header = '\n'.join(lines[:sep_idx + 1])
+            elif sep_idx is None and _last_table_header:
+                # Continuation table without headers: prepend last seen header
+                text = _last_table_header + '\n' + text
+
+        elif hasattr(item, "text") and item.text:
+            text = item.text
         elif hasattr(item, "export_to_markdown"):
-            text = item.export_to_markdown()[:120]
+            text = item.export_to_markdown()
         else:
             text = ""
 
@@ -269,6 +291,48 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     return gaps
 
 
+def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> list[EvaluationChunk]:
+    merged_chunks: list[EvaluationChunk] = []
+    if not raw_chunks:
+        return merged_chunks
+
+    import copy
+    current_chunk = copy.copy(raw_chunks[0])
+    current_chunk.element_refs = list(current_chunk.element_refs)
+    current_chunk.figures = list(current_chunk.figures)
+
+    for next_chunk in raw_chunks[1:]:
+        same_section = current_chunk.heading == next_chunk.heading
+        len_combined = len(current_chunk.structured_text) + len(next_chunk.structured_text)
+        
+        if same_section and len_combined <= max_chars:
+            current_chunk.structured_text = (
+                current_chunk.structured_text + "\n\n" + next_chunk.structured_text
+            ).strip()
+            current_chunk.element_refs.extend(next_chunk.element_refs)
+            
+            seen_figs = {f.figure_id for f in current_chunk.figures}
+            for fig in next_chunk.figures:
+                if fig.figure_id not in seen_figs:
+                    current_chunk.figures.append(fig)
+            
+            min_page = min(current_chunk.page_range[0], next_chunk.page_range[0])
+            max_page = max(current_chunk.page_range[1], next_chunk.page_range[1])
+            current_chunk.page_range = (min_page, max_page)
+        else:
+            merged_chunks.append(current_chunk)
+            current_chunk = copy.copy(next_chunk)
+            current_chunk.element_refs = list(current_chunk.element_refs)
+            current_chunk.figures = list(current_chunk.figures)
+
+    merged_chunks.append(current_chunk)
+    
+    for idx, c in enumerate(merged_chunks):
+        c.chunk_id = f"chunk_{idx}"
+        
+    return merged_chunks
+
+
 def build_chunks(
     doc: DoclingDocument,
     result: ConversionResult,
@@ -324,7 +388,80 @@ def build_chunks(
             figures=chunk_figures
         ))
 
-    return chunks
+    merged = merge_chunks(chunks)
+    _attach_figures_by_page(merged, figure_lookup)
+    _propagate_section_figures(merged)
+    return merged
+
+
+def _attach_figures_by_page(
+    chunks: list[EvaluationChunk],
+    figure_lookup: dict[str, FigureRef]
+) -> None:
+    """
+    Assigns figures to chunks by page proximity.
+
+    HierarchicalChunker is text-based and typically doesn't include
+    picture items in chunk.meta.doc_items, so the ref_id match in
+    build_chunks never fires. This function assigns each unattached
+    figure to the chunk whose page range contains the figure's page,
+    falling back to the nearest chunk by page distance.
+    """
+    attached_ids: set[str] = set()
+    for chunk in chunks:
+        attached_ids.update(f.figure_id for f in chunk.figures)
+
+    for fig in figure_lookup.values():
+        if not fig.base64_png or fig.figure_id in attached_ids:
+            continue
+
+        # Prefer a chunk whose page range includes the figure's page
+        best_chunk: EvaluationChunk | None = None
+        best_dist = float('inf')
+
+        for chunk in chunks:
+            if chunk.page_range[0] <= fig.page_number <= chunk.page_range[1]:
+                best_chunk = chunk
+                break
+            dist = min(
+                abs(fig.page_number - chunk.page_range[0]),
+                abs(fig.page_number - chunk.page_range[1])
+            )
+            if dist < best_dist:
+                best_dist = dist
+                best_chunk = chunk
+
+        if best_chunk is not None:
+            best_chunk.figures.append(fig)
+
+
+def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
+    """
+    Ensures every chunk of a multi-chunk section can see ALL figures
+    from that section. Without this, a table on page 7 that references
+    diagrams on pages 8-9 (same section, different chunk due to size
+    limits) would cause false 'missing diagram' findings.
+    """
+    heading_groups: dict[str, list[int]] = defaultdict(list)
+    for i, chunk in enumerate(chunks):
+        heading_groups[chunk.heading].append(i)
+
+    for _heading, indices in heading_groups.items():
+        if len(indices) <= 1:
+            continue
+
+        # Collect all unique figures from every chunk in this section
+        all_figures: list[FigureRef] = []
+        seen_ids: set[str] = set()
+        for idx in indices:
+            for fig in chunks[idx].figures:
+                if fig.figure_id not in seen_ids:
+                    all_figures.append(fig)
+                    seen_ids.add(fig.figure_id)
+
+        # Distribute to every chunk so the agent always sees them
+        for idx in indices:
+            chunks[idx].figures = list(all_figures)
 
 
 def build_document_index(doc: DoclingDocument) -> dict:
