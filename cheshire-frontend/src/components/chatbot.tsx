@@ -161,7 +161,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
               <div
                 className={
                   msg.role === "user"
-                    ? "max-w-[80%] px-3 py-2 bg-primary text-primary-foreground rounded-2xl rounded-br-sm"
+                    ? "btn-gradient max-w-[80%] px-3 py-2 rounded-2xl rounded-br-sm text-white text-sm [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90"
                     : "w-full min-w-0 overflow-hidden px-4 text-foreground wrap-break-word"
                 }
               >

@@ -90,11 +90,11 @@ export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
             </FieldGroup>
           </form>
 
-          <div className="relative hidden bg-white md:flex md:items-center md:justify-center border-l">
+          <div className="relative hidden bg-muted md:flex md:items-center md:justify-center border-l">
             <img
-              src="/cheshire.png"
+              src="/cheshire-black.png"
               alt="Cheshire Logo"
-              className="w-60 h-60 object-contain"
+              className="w-60 h-60 object-contain dark:invert"
             />
           </div>
         </CardContent>
