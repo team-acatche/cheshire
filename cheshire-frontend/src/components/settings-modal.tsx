@@ -129,8 +129,8 @@ function GeneralPanel({ onSaved }: { onSaved: () => void; onClose: () => void })
       <section className="space-y-4">
         <SectionHeading>Appearance</SectionHeading>
 
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
             <FieldLabel>Theme</FieldLabel>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Choose between light, dark, or follow your system preference.
@@ -293,7 +293,7 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
     >
       <div
         ref={modalRef}
-        className="relative flex h-162.5 max-h-[90vh] w-175 max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/[0.08]"
+        className="relative flex h-162.5 max-h-[90vh] w-[860px] max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/[0.08]"
       >
         {/* ── Left sidebar ─────────────────────────────────────────────── */}
         <div className="flex w-50 shrink-0 flex-col border-r border-border bg-muted/20 px-2 py-4">
