@@ -290,9 +290,9 @@ export default function App({ user, onLogout }: AppProps) {
               >
                 <div className="flex flex-col items-center gap-8 md:flex-row">
                   <img
-                    src="/cheshire.png"
+                    src="/cheshire-black.png"
                     alt="Cheshire Logo"
-                    className="h-44 w-44 object-contain md:h-52 md:w-52"
+                    className="h-44 w-44 object-contain md:h-52 md:w-52 dark:invert"
                   />
 
                   <div className="max-w-md text-center md:text-left">
