@@ -285,7 +285,7 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="What would you like to know?"
-          className="resize-none border-none focus-visible:ring-0 p-0 text-base min-h-[40px] bg-transparent text-foreground placeholder:text-muted-foreground"
+          className="resize-none border-none focus-visible:ring-0 p-0 text-base min-h-10 bg-transparent text-foreground placeholder:text-muted-foreground"
         />
 
         <div className="flex items-center justify-between">
