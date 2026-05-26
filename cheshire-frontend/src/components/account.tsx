@@ -4,6 +4,7 @@ import type { AuthUser } from "@/lib/auth"
 import { updateStoredUser, authFetch } from "@/lib/auth"
 import AvatarCropperModal from "@/components/avatar-cropper-modal"
 import { formatTimestamp } from "@/lib/helpers/format_timestamps"
+import { X } from "lucide-react"
 
 async function fetchSessionTimestamp(sessionId: string): Promise<string | null> {
   return authFetch(`/api/v1/${sessionId}/latest-timestamp`)
@@ -19,9 +20,10 @@ interface AccountProps {
   setProfileImage: (image: string) => void
   user: AuthUser
   chats: Chat[]
+  onClose: () => void 
 }
 
-export default function Account({ setProfileImage, user, chats }: AccountProps) {
+export default function Account({ setProfileImage, user, chats, onClose }: AccountProps) {
   const [avatarSrc, setAvatarSrc] = useState(
     user.avatar_uri && user.avatar_uri !== "avatars/default.png"
       ? `/api/v1/${user.avatar_uri}`
@@ -100,7 +102,15 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full relative">
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 z-50 w-9 h-9 rounded-full border border-border bg-background hover:bg-muted transition flex items-center justify-center text-muted-foreground hover:text-foreground"
+        aria-label="Close"
+      >
+        <X size={18} />
+      </button>
+
       {/* Left panel */}
       <div className="w-[320px] bg-muted flex flex-col items-center justify-center relative gap-3">
         <input

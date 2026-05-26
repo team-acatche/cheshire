@@ -201,6 +201,7 @@ export default function App({ user, onLogout }: AppProps) {
             setProfileImage={setProfileImage}
             user={user}
             chats={chats}
+            onClose={() => setPage("chat")}
           />
         ) : (
           <main className={`h-dvh w-full min-w-0 overflow-hidden ${!file ? "p-8" : "p-0"}`}>
