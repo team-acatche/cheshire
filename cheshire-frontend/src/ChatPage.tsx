@@ -31,7 +31,6 @@ import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
 
-// ✅ Chat type
 export type Chat = {
   session_id: string
   title: string
@@ -48,6 +47,7 @@ interface ChatPageProps {
   onDeleteChat?: (sessionId: string) => void
   onRenameChat?: (sessionId: string, newTitle: string) => void
   onLogout: () => void
+  onOpenSettings: () => void
 }
 
 export default function ChatPage({
@@ -60,6 +60,7 @@ export default function ChatPage({
   onDeleteChat,
   onRenameChat,
   onLogout,
+  onOpenSettings,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
@@ -70,13 +71,11 @@ export default function ChatPage({
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
   const [showHowToUse, setShowHowToUse] = useState(false)
 
-  const startRename = (chat:Chat) => {
+  const startRename = (chat: Chat) => {
     setRenamingId(chat.session_id)
-    
     const lastDotIndex = chat.title.lastIndexOf(".")
     if (lastDotIndex !== -1) {
-      const nameOnly = chat.title.substring(0, lastDotIndex)
-      setRenameValue(nameOnly)
+      setRenameValue(chat.title.substring(0, lastDotIndex))
     } else {
       setRenameValue(chat.title)
     }
@@ -84,18 +83,15 @@ export default function ChatPage({
 
   const commitRename = (sessionId: string) => {
     const trimmed = renameValue.trim()
-
     if (trimmed && onRenameChat) {
       const originalChat = chats.find((c) => c.session_id === sessionId)
-
       if (originalChat) {
         const lastDotIndex = originalChat.title.lastIndexOf(".")
-        const extension =
-          lastDotIndex !== -1
-            ? originalChat.title.substring(lastDotIndex)
-            : ""
-        const finalName = trimmed + extension
-        onRenameChat(sessionId, finalName)
+        const extension = 
+        lastDotIndex !== -1 
+        ? originalChat.title.substring(lastDotIndex) 
+        : ""
+        onRenameChat(sessionId, trimmed + extension)
       }
     }
     setRenamingId(null)
@@ -115,35 +111,34 @@ export default function ChatPage({
         {/* ACCOUNT */}
         <div
           onClick={onGoAccount}
-          className="flex items-center gap-3 cursor-pointer hover:bg-gray-100 p-2 rounded-md transition-colors"
+          className="flex items-center gap-3 cursor-pointer hover:bg-muted p-2 rounded-md transition-colors"
         >
-          <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-black">
-            <img src={profileImage} className="h-full w-full object-cover" />
+          <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-border shrink-0">
+            <img src={profileImage} className="h-full w-full object-cover" alt="profile" />
           </div>
-
           <div>
-            <div className="font-medium">{userName}</div>
-            <div className="text-xs text-gray-400">account settings</div>
+            <div className="font-medium text-foreground">{userName}</div>
+            <div className="text-xs text-muted-foreground">account settings</div>
           </div>
         </div>
 
         {/* NEW CHAT */}
         <div
           onClick={onNewChat}
-          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 transition-colors"
+          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors"
         >
-          <Pencil className="h-4 w-4 shrink-0 text-gray-500" />
-          <span className="leading-none">New Chat</span>
+          <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="leading-none text-foreground">New Chat</span>
         </div>
 
         {/* CHAT HISTORY */}
-        <div className="text-xs text-gray-400 mt-4">
-          YOUR CHATS
+        <div className="text-xs text-muted-foreground mt-4 px-1 uppercase tracking-wide">
+          Your Documents
         </div>
 
         <div className="flex flex-col gap-1">
           {safeChats.length === 0 && (
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-muted-foreground px-1">
               No chats yet
             </div>
           )}
@@ -151,14 +146,14 @@ export default function ChatPage({
           {safeChats.map((chat) => (
             <div
               key={chat.session_id}
-              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-gray-100 transition-colors cursor-pointer"
+              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-muted transition-colors cursor-pointer"
               onClick={() => {
                 if (renamingId !== chat.session_id) {
                   onSelectChat(chat)
                 }
               }}
             >
-              <FileText className="h-4 w-4 shrink-0 text-gray-500" />
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
 
               {renamingId === chat.session_id ? (
                 <input
@@ -171,10 +166,10 @@ export default function ChatPage({
                   }}
                   onBlur={() => commitRename(chat.session_id)}
                   onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 rounded border border-gray-300 bg-white px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
                 />
               ) : (
-                <span className="flex-1 truncate leading-none text-gray-800">
+                <span className="flex-1 truncate leading-none text-foreground">
                   {chat.title}
                 </span>
               )}
@@ -185,20 +180,17 @@ export default function ChatPage({
                     <button
                       type="button"
                       onClick={(e) => e.stopPropagation()}
-                      className="ml-auto shrink-0 rounded p-1.5 opacity-50 transition hover:bg-gray-200 hover:opacity-100 group-hover:opacity-100 data-[state=open]:bg-gray-200 data-[state=open]:opacity-100"
+                      className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
                       aria-label="Chat options"
                     >
-                      <MoreHorizontal className="h-4 w-4 text-gray-500" />
+                      <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
                     </button>
                   </DropdownMenuTrigger>
 
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-52 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
-                  >
+                  <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuGroup>
                       <div className="px-2 py-2">
-                        <p className="truncate text-sm font-medium text-gray-900">
+                        <p className="truncate text-sm font-medium text-foreground">
                           {chat.title}
                         </p>
                       </div>
@@ -210,7 +202,7 @@ export default function ChatPage({
                           e.stopPropagation()
                           startRename(chat)
                         }}
-                        className="cursor-pointer rounded-md"
+                        className="cursor-pointer"
                       >
                         <PenLine className="mr-2 h-4 w-4" />
                         Rename
@@ -218,11 +210,11 @@ export default function ChatPage({
 
                       <DropdownMenuItem
                         disabled
-                        className="cursor-not-allowed rounded-md text-gray-400 focus:bg-transparent"
+                        className="cursor-not-allowed"
                       >
                         <Share2 className="mr-2 h-4 w-4" />
                         Share
-                        <span className="ml-auto text-[10px] uppercase tracking-wide">
+                        <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
                           Soon
                         </span>
                       </DropdownMenuItem>
@@ -235,7 +227,7 @@ export default function ChatPage({
                           e.stopPropagation()
                           setChatToDelete(chat)
                         }}
-                        className="cursor-pointer rounded-md"
+                        className="cursor-pointer"
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Delete
@@ -250,12 +242,11 @@ export default function ChatPage({
 
       </SidebarContent>
 
-      <SidebarFooter className="border-t p-4">
-        <div className="flex flex-col gap-2 text-sm text-gray-600">
+      <SidebarFooter className="border-t border-border p-4">
+        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
           <button
-            type="button"
-            onClick={onGoAccount}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 hover:text-black"
+            onClick={onOpenSettings}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
           >
             <Settings className="h-4 w-4 shrink-0" />
             <span>Settings</span>
@@ -264,7 +255,7 @@ export default function ChatPage({
           <button
             type="button"
             onClick={() => setShowHowToUse(true)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-gray-100 hover:text-black"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
           >
             <BadgeQuestionMark className="h-4 w-4 shrink-0" />
             <span>How to use?</span>
@@ -273,13 +264,14 @@ export default function ChatPage({
           <button
             type="button"
             onClick={onLogout}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-red-50 hover:text-red-600"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-destructive/10 hover:text-destructive"
           >
             <LogOut className="h-4 w-4 shrink-0" />
             <span>Sign out</span>
           </button>
         </div>
       </SidebarFooter>
+
       <DeleteChatDialog
         chat={chatToDelete}
         onClose={() => setChatToDelete(null)}

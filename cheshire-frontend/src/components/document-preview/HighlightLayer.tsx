@@ -29,7 +29,7 @@ export function HighlightLayer({
         position: "absolute",
         inset: 0,
         pointerEvents: "none",
-        zIndex: 20,
+        zIndex: 5,
       }}
     >
       {Array.from(groups.entries()).map(([bboxKey, group]) => (
