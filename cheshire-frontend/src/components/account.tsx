@@ -48,7 +48,6 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
           return [chat.session_id, ts] as const
         })
       )
-
       setChatTimestamps(Object.fromEntries(entries))
     }
 
@@ -58,7 +57,6 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
   const uploadAvatar = async (file: File, previewUrl: string) => {
     setAvatarSrc(previewUrl)
     setProfileImage(previewUrl)
-
     setUploading(true)
     setUploadProgress(0)
 
@@ -66,9 +64,7 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
     formData.append("avatar", file)
 
     const xhr = new XMLHttpRequest()
-
     xhr.open("POST", "/api/v1/avatars", true)
-
     xhr.withCredentials = true
 
     xhr.upload.onprogress = (event) => {
@@ -86,11 +82,7 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
 
         setAvatarSrc(data.avatar_url)
         setProfileImage(data.avatar_url)
-
-        updateStoredUser({
-          avatar_uri: data.avatar_url.replace("/api/v1/", ""),
-        })
-
+        updateStoredUser({ avatar_uri: data.avatar_url.replace("/api/v1/", "") })
         setUploadProgress(100)
       } else {
         console.error("Upload failed:", xhr.status)
@@ -109,6 +101,7 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
 
   return (
     <div className="flex h-full">
+      {/* Left panel */}
       <div className="w-[320px] bg-muted flex flex-col items-center justify-center relative gap-3">
         <input
           type="file"
@@ -132,7 +125,7 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
               setSelectedImage(reader.result as string)
               setShowCropper(true)
             }
-
+            
             reader.readAsDataURL(file)
 
             e.target.value = ""
@@ -141,19 +134,14 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
 
         <label
           htmlFor="profile-upload"
-          className={`cursor-pointer text-center ${
-            uploading ? "pointer-events-none opacity-50" : ""
-          }`}
+          className={`cursor-pointer text-center ${uploading ? "pointer-events-none opacity-50" : ""}`}
         >
           <img
             src={avatarSrc}
-            onError={(e) => {
-              e.currentTarget.src = "/User.png"
-            }}
+            onError={(e) => { e.currentTarget.src = "/User.png" }}
             alt="Profile"
             className="w-32 h-32 rounded-full object-cover mb-2 ring-2 ring-border"
           />
-
           <p className="text-xs text-muted-foreground">
             {uploading ? "Uploading..." : "Change photo"}
           </p>
@@ -166,7 +154,6 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-
               <p className="mt-1 text-xs text-muted-foreground">
                 Uploading {uploadProgress}%
               </p>
@@ -178,10 +165,10 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
           {user.full_name ?? user.username ?? "—"}
         </h2>
       </div>
-      
+
       {/* Right content */}
-      <div className="flex-1 p-10 overflow-y-auto">
-        <h1 className="text-xl font-semibold mb-2">Information</h1>
+      <div className="flex-1 p-10 overflow-y-auto bg-background">
+        <h1 className="text-xl font-semibold mb-2 text-foreground">Information</h1>
         <hr className="mb-6 border-border" />
 
         <div className="space-y-4 mb-10">
@@ -206,7 +193,7 @@ export default function Account({ setProfileImage, user, chats }: AccountProps) 
             chats.slice(0, 5).map((chat) => (
               <div
                 key={chat.session_id}
-                className="p-2 border rounded-md text-sm flex items-center justify-between bg-card text-card-foreground"
+                className="p-3 border border-border rounded-md text-sm flex items-center justify-between bg-card text-card-foreground"
               >
                 <span className="text-foreground">{chat.title}</span>
 
