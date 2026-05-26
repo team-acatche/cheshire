@@ -68,7 +68,6 @@ export default function App({ user, onLogout }: AppProps) {
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // Derive profile image URL from user data, with a fallback to default avatar
   const [profileImage, setProfileImage] = useState(
     user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
   )
@@ -126,6 +125,34 @@ export default function App({ user, onLogout }: AppProps) {
     if (currentSessionId === sessionId) handleNewChat()
   }
 
+  // Delete ALL sessions sequentially and reset UI state
+  const handleDeleteAllChats = async () => {
+    const results = await Promise.allSettled(
+      chats.map(chat => deleteSession(chat.session_id))
+    )
+
+    // Filter out only the sessions that were successfully deleted
+    const deletedIds = new Set(
+      chats
+        .filter((_, i) => results[i].status === "fulfilled" && (results[i] as PromiseFulfilledResult<boolean>).value)
+        .map(c => c.session_id)
+    )
+
+    const anyFailed = results.some(
+      (r, i) => r.status === "rejected" || !(r as PromiseFulfilledResult<boolean>).value
+    )
+
+    setChats(prev => prev.filter(c => !deletedIds.has(c.session_id)))
+
+    if (currentSessionId && deletedIds.has(currentSessionId)) {
+      handleNewChat()
+    }
+
+    if (anyFailed) {
+      throw new Error("Some sessions could not be deleted")
+    }
+  }
+
   const handleRenameChat = async (sessionId: string, newTitle: string) => {
     const ok = await renameSession(sessionId, newTitle)
     if (!ok) {
@@ -162,6 +189,8 @@ export default function App({ user, onLogout }: AppProps) {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        chats={chats}
+        onDeleteAllChats={handleDeleteAllChats}
       />
 
       <SidebarTrigger />
@@ -191,7 +220,7 @@ export default function App({ user, onLogout }: AppProps) {
                 transition={{ duration: 0.35, ease: "easeOut" }}
                 className="flex w-full max-w-3xl flex-col items-center text-center"
               >
-                <h1 className="text-5xl font-bold tracking-tight text-slate-950">
+                <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">
                   Hi, {user.full_name ?? user.username ?? ""}!
                 </h1>
 
@@ -267,7 +296,7 @@ export default function App({ user, onLogout }: AppProps) {
                   />
 
                   <div className="max-w-md text-center md:text-left">
-                    <h2 className="mb-2 text-xl font-bold text-slate-800">
+                    <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
                       About Cheshire
                     </h2>
                     <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
@@ -295,7 +324,7 @@ export default function App({ user, onLogout }: AppProps) {
                       <div key={number} className="flex gap-4">
                         <div className="font-bold text-slate-400">{number}</div>
                         <div>
-                          <h4 className="font-semibold text-slate-800">{title}</h4>
+                          <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
                           <p className="text-base text-muted-foreground">{description}</p>
                         </div>
                       </div>
