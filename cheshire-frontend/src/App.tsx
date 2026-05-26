@@ -317,8 +317,8 @@ export default function App({ user, onLogout }: AppProps) {
 
                   <div className="grid gap-6">
                     {[
-                      ["01", "Document Preview", "A preview of your uploaded technical document."],
-                      ["02", "Document Highlights", "Automatically find security risks and get clear suggestions on how to fix them."],
+                      ["01", "Document Review", "A preview of your uploaded technical document."],
+                      ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
                       ["03", "Chatbot", "Discuss findings directly with the AI."],
                     ].map(([number, title, description]) => (
                       <div key={number} className="flex gap-4">
