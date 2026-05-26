@@ -12,6 +12,7 @@ import DocumentPreview from "./components/document-preview/DocumentPreview"
 import {
   evaluateDocument,
   getSessionResults,
+  type EvaluationStatus,
 } from "./lib/helpers/evaluate_document"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
@@ -64,6 +65,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [evaluationStatus, setEvaluationStatus] = useState<EvaluationStatus>("PENDING")
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -90,6 +92,7 @@ export default function App({ user, onLogout }: AppProps) {
     setPage("chat")
     setCurrentSessionId(null)
     setFile(null)
+    setEvaluationStatus("PENDING")
   }
 
   const handleSelectChat = async (chat: Chat) => {
@@ -209,7 +212,27 @@ export default function App({ user, onLogout }: AppProps) {
             <div className="flex h-full items-center justify-center">
               <Card className="w-full max-w-sm rounded-2xl border border-slate-200 shadow-sm">
                 <CardContent className="flex items-center justify-center p-6">
-                  <LoadingPage />
+                  <div className="flex flex-col items-center gap-4">
+                    <LoadingPage />
+
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-slate-700">
+                        {evaluationStatus === "PENDING" && "Preparing evaluation..."}
+                        {evaluationStatus === "RUNNING" && "Analyzing document..."}
+                        {evaluationStatus === "FAILED" && "Evaluation failed"}
+                      </p>
+
+                      <div className="mt-1 space-y-1">
+                        <p className="text-xs text-muted-foreground">
+                          {currentFileName}
+                        </p>
+
+                        <p className="text-xs text-muted-foreground">
+                          This may take several minutes depending on document size.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -252,13 +275,23 @@ export default function App({ user, onLogout }: AppProps) {
                                 return
                               }
 
+                              setCurrentFileName(fileInput.name)
+                              setEvaluationStatus("PENDING")
                               setIsProcessing(true)
                               try {
-                                const response = await evaluateDocument(fileInput)
+                                const response = await evaluateDocument(
+                                  fileInput,
+                                  (status) => {
+                                    setEvaluationStatus(status)
+                                  }
+                                )
                                 if (response === null) {
+                                  setEvaluationStatus("FAILED")
                                   alert("Failed to evaluate document.")
                                   return
                                 }
+
+                                setEvaluationStatus("DONE")
 
                                 const newChat: Chat = {
                                   session_id: response.session_id,
