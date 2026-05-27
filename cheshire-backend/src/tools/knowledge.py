@@ -53,6 +53,8 @@ def upsert_fact(
             "value": incorrect_fact_knowledge_id
         }):
             known_incorrect_doc = docs[0]
+        else:
+            return {"result": f"Fact with id {incorrect_fact_knowledge_id} not found."}
 
     for fact in facts:
         # 1. Check if we have an explicit doc to replace

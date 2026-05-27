@@ -59,6 +59,23 @@ class QdrantKnowledgeRepository(KnowledgeRepository):
             logger.error(f"QdrantRepository: Failed to save documents: {e}")
             raise
 
+    def delete_with_session(self, session_id: str) -> None:
+        self._document_store.delete_by_filter(filters={
+            "operator": "AND",
+            "conditions": [
+                {
+                    "field": "meta.session_id",
+                    "operator": "==",
+                    "value": session_id,
+                },
+                {
+                    "field": "meta.is_global",
+                    "operator": "==",
+                    "value": False,
+                },
+            ]
+        })
+
 class QdrantEventRepository(KnowledgeRepository):
     def __init__(self, document_store: QdrantDocumentStore):
         self._document_store = document_store
@@ -71,6 +88,13 @@ class QdrantEventRepository(KnowledgeRepository):
 
     def save(self, documents: List[Document]) -> None:
         self._document_store.write_documents(documents, policy=DuplicatePolicy.SKIP)
+
+    def delete_with_session(self, session_id: str) -> None:
+        self._document_store.delete_by_filter(filters={
+            "field": "meta.session_id",
+            "operator": "==",
+            "value": session_id,
+        })
 
 class QdrantRepositoryManager:
     @staticmethod

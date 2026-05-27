@@ -430,7 +430,13 @@ class TestDeleteSession:
         # Create session directory as required by the endpoint logic
         (user_dir / session_id).mkdir(parents=True, exist_ok=True)
 
-        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+        mock_event_store = MagicMock()
+        mock_knowledge_store = MagicMock()
+
+        with (
+            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
+            patch("endpoints.chat.KnowledgeRepositoryFactory.create_repositories", return_value=(mock_event_store, mock_knowledge_store))
+        ):
             response = client.delete(f"/api/v1/{session_id}")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -443,6 +449,10 @@ class TestDeleteSession:
         assert session_repo2.get_session(session_id) is None
         assert len(event_repo2.get_recent(session_id)) == 0
         conn2.close()
+
+        # Verify that delete_with_session was called on vector repositories
+        mock_event_store.delete_with_session.assert_called_once_with(session_id)
+        mock_knowledge_store.delete_with_session.assert_called_once_with(session_id)
 
     def test_session_dir_not_configured(self):
         """SESSIONS_PATH is None → 500."""

@@ -11,7 +11,6 @@ async def ollama_config() -> PipelineConfig:
     # Force fastembed (onnxruntime) to use CPU to avoid NVRTC/CUDA initialization crashes
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-    # TODO: remove this once the user can supply their own config
     from dotenv import load_dotenv
     load_dotenv(".env.user")
 

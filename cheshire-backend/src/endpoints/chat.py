@@ -230,6 +230,15 @@ def delete_session(
     session_repo.delete_session(session_id)
     event_repo.delete_messages_from_session(session_id)
 
+    # Clean up vector store facts and events
+    event_store_repo, knowledge_store_repo = KnowledgeRepositoryFactory.create_repositories(
+        RepositoryType.QDRANT,
+        storage_path=DATA_PATH,
+        username=current_user.user_id
+    )
+    event_store_repo.delete_with_session(session_id)
+    knowledge_store_repo.delete_with_session(session_id)
+
     shutil.rmtree(session_dir)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

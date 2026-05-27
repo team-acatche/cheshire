@@ -23,3 +23,8 @@ class VulnerabilityDetails(BaseModel):
 
     def __hash__(self):
         return hash(self.model_dump_json(exclude={"bbox"}))
+
+class Contradiction(BaseModel):
+    finding_a_title: Annotated[str, Field(description="Title of the first conflicting finding.")]
+    finding_b_title: Annotated[str, Field(description="Title of the second conflicting finding.")]
+    description: Annotated[str, Field(description="Description of the contradiction between the two findings.")]

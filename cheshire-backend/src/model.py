@@ -24,10 +24,7 @@ from cheshire_configs.core import PipelineConfig, EvaluationType
 load_dotenv("../.env.user", verbose=True)
 load_dotenv()
 
-async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional[list[VulnerabilityDetails]]:
-	if document_path.suffix != ".pdf" or not document_path.exists():
-		return None
-
+async def evaluate_rag(document_path: Path, config: PipelineConfig, *, agent: Agent) -> Optional[list[VulnerabilityDetails]]:
 	if config.preprocessor and config.document_store:
 		logger.info(f"agent({document_path.name}): Preprocessing...")
 		config.preprocessor(document_path, config.document_store)
@@ -57,10 +54,45 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		except Exception as e:
 			logger.error(f"Failed to retrieve orientation bundle: {e}")
 
+	response = agent.run(messages=[ChatMessage.from_user("Start the audit")])
+	logger.info(f"agent({document_path.name}): Audit complete.")
+
+	return response.get("vulnerabilities_list", [])
+
+async def evaluate_full_document(document_path: Path, *, agent: Agent) -> Optional[list[VulnerabilityDetails]]:
+	from haystack.components.converters.image import PDFToImageContent
+
+	messages = []
+
+	logger.info(f"agent({document_path.name}): Converting PDF to images...")
+	converter = PDFToImageContent()
+	pages = converter.run(sources=[document_path])["image_contents"]
+	assert len(pages) > 0
+	logger.info(f"agent({document_path.name}): PDF converted to images.")
+
+	messages.append(ChatMessage.from_user(content_parts=["Audit the following file:", *pages]))
+
+	response = agent.run(messages=messages)
+	logger.info(f"agent({document_path.name}): Audit complete.")
+
+	return response.get("vulnerabilities_list", [])
+
+
+
+async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional[list[VulnerabilityDetails]]:
+	if document_path.suffix != ".pdf" or not document_path.exists():
+		return None
+
 	logger.info(f"agent({document_path.name}): Starting audit...")
+
+	if config.mode == EvaluationType.MULTISTEP:
+		from cheshire_configs.preprocessors.multistep.steps import run_pass1, run_pass2
+		all_findings, document_index = run_pass1(str(document_path))
+		return run_pass2(all_findings, document_index)
+	
 	analyst = Agent(
 		chat_generator=config.model,
-		system_prompt=system_prompt,
+		system_prompt=config.system_prompt,
 		tools=config.tools,
 		exit_conditions=["finish"],
 		streaming_callback=print_streaming_chunk, # TODO (feat): switch to logger
@@ -69,21 +101,9 @@ async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional
 		}
 	)
 
-	messages: list[ChatMessage] = []
+	if config.mode == EvaluationType.RAG:
+		return await evaluate_rag(document_path, config, agent=analyst)
 	if config.mode == EvaluationType.FULL_DOCUMENT:
-		from haystack.components.converters.image import PDFToImageContent
-
-		logger.info(f"agent({document_path.name}): Converting PDF to images...")
-		converter = PDFToImageContent()
-		pages = converter.run(sources=[document_path])["image_contents"]
-		assert len(pages) > 0
-		logger.info(f"agent({document_path.name}): PDF converted to images.")
-
-		messages.append(ChatMessage.from_user(content_parts=["Audit the following file:", *pages]))
-	else:
-		messages.append(ChatMessage.from_user("Start the audit"))
-
-	response = analyst.run(messages=messages)
-	logger.info(f"agent({document_path.name}): Audit complete.")
-
-	return response.get("vulnerabilities_list", [])
+		return await evaluate_full_document(document_path, agent=analyst)
+	
+	return None
