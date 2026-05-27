@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
@@ -27,6 +27,34 @@ import {
 } from "@/components/ui/resizable"
 import Account from "./components/account"
 import SettingsModal from "./components/settings-modal"
+
+// ─── Pending session persistence ──────────────────────────────────────────────
+const PENDING_SESSIONS_KEY = "cheshire_pending_sessions"
+
+interface PendingSession {
+  session_id: string
+  title: string
+  startedAt: number
+}
+
+function loadPendingSessions(): PendingSession[] {
+  try {
+    const raw = sessionStorage.getItem(PENDING_SESSIONS_KEY)
+    return raw ? (JSON.parse(raw) as PendingSession[]) : []
+  } catch {
+    return []
+  }
+}
+
+function savePendingSession(session: PendingSession) {
+  const existing = loadPendingSessions().filter(s => s.session_id !== session.session_id)
+  sessionStorage.setItem(PENDING_SESSIONS_KEY, JSON.stringify([...existing, session]))
+}
+
+function removePendingSession(session_id: string) {
+  const existing = loadPendingSessions().filter(s => s.session_id !== session_id)
+  sessionStorage.setItem(PENDING_SESSIONS_KEY, JSON.stringify(existing))
+}
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -75,15 +103,64 @@ export default function App({ user, onLogout }: AppProps) {
   const [findingsLoading, setFindingsLoading] = useState(false)
   const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
+  const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // Track active polling tasks so we can resume them after refresh
+  const pollingRef = useRef<Set<string>>(new Set())
 
   const [profileImage, setProfileImage] = useState(
     user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
   )
 
-  // Load existing sessions on mount
+  // ── Resume polling for any pending sessions after mount ───────────────────
+  const resumePolling = (session_id: string, title: string) => {
+    if (pollingRef.current.has(session_id)) return
+    pollingRef.current.add(session_id)
+
+    pollEvaluation(session_id).then(response => {
+      pollingRef.current.delete(session_id)
+      removePendingSession(session_id)
+
+      if (response === null) {
+        setChats(prev =>
+          prev.map(c => c.session_id === session_id ? { ...c, status: "failed" } : c)
+        )
+        setCurrentSessionId(current => {
+          if (current === session_id) setFindingsLoading(false)
+          return current
+        })
+        return
+      }
+
+      setChats(prev =>
+        prev.map(c =>
+          c.session_id === session_id
+            ? { ...c, findings: response.vulnerabilities, status: "done" }
+            : c
+        )
+      )
+
+      // If user is still on this session, load findings and fetch the blob
+      setCurrentSessionId(current => {
+        if (current === session_id) {
+          setFindings(response.vulnerabilities)
+          setFindingsLoading(false)
+          // Fetch the actual document blob now that evaluation is done
+          authFetch(`/api/v1/${session_id}/document`)
+            .then(r => r.ok ? r.blob() : null)
+            .then(blob => {
+              if (blob) setFile(URL.createObjectURL(blob))
+            })
+            .catch(() => {})
+        }
+        return current
+      })
+    })
+  }
+
+  // Load existing sessions on mount, then merge pending sessions
   useEffect(() => {
     const loadSessions = async () => {
       const sessions = await fetchSessions()
@@ -91,7 +168,6 @@ export default function App({ user, onLogout }: AppProps) {
       const chatsWithTimestamps = await Promise.all(
         sessions.map(async (s: any) => {
           const latestTimestamp = await fetchSessionTimestamp(s.session_id)
-
           return {
             session_id: s.session_id,
             title: s.title,
@@ -102,10 +178,36 @@ export default function App({ user, onLogout }: AppProps) {
         })
       )
 
-      setChats(sortChatsByLatest(chatsWithTimestamps))
+      // Restore pending sessions from sessionStorage
+      const pending = loadPendingSessions()
+      const doneIds = new Set(chatsWithTimestamps.map(c => c.session_id))
+
+      const pendingChats: Chat[] = pending
+        .filter(p => !doneIds.has(p.session_id)) // don't double-add if already done
+        .map(p => ({
+          session_id: p.session_id,
+          title: p.title,
+          findings: [],
+          status: "processing" as const,
+          latestTimestamp: null,
+        }))
+
+      const merged = sortChatsByLatest([...pendingChats, ...chatsWithTimestamps])
+      setChats(merged)
+
+      // Resume polling for any pending sessions
+      for (const p of pending) {
+        if (!doneIds.has(p.session_id)) {
+          resumePolling(p.session_id, p.title)
+        } else {
+          // Already done server-side, clean up
+          removePendingSession(p.session_id)
+        }
+      }
     }
 
     loadSessions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Sidebar helpers ───────────────────────────────────────────────────────
@@ -119,14 +221,23 @@ export default function App({ user, onLogout }: AppProps) {
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    // Allow selecting any done chat freely — even while another is evaluating
     setPage("chat")
+    setCurrentSessionId(chat.session_id)
+    setCurrentFileName(chat.title)
+
+    if (chat.status === "processing") {
+      // Show loading state; polling will update when done
+      setFile(null)
+      setFindings([])
+      setFindingsLoading(true)
+      return
+    }
+
+    // Done or unknown status — load doc + results
     setFile(null)
     setFindings([])
     setFindingsLoading(true)
-    setCurrentSessionId(chat.session_id)
-    setCurrentFileName(chat.title)
- 
+
     try {
       const [blob, results] = await Promise.all([
         authFetch(`/api/v1/${chat.session_id}/document`)
@@ -143,7 +254,6 @@ export default function App({ user, onLogout }: AppProps) {
 
   const touchChat = (sessionId: string) => {
     const now = new Date().toISOString()
-
     setChats(prev =>
       sortChatsByLatest(
         prev.map(chat =>
@@ -161,17 +271,16 @@ export default function App({ user, onLogout }: AppProps) {
       console.error(`Failed to delete session ${sessionId}`)
       return
     }
+    removePendingSession(sessionId)
     setChats(prev => prev.filter(c => c.session_id !== sessionId))
     if (currentSessionId === sessionId) handleNewChat()
   }
 
-  // Delete ALL sessions sequentially and reset UI state
   const handleDeleteAllChats = async () => {
     const results = await Promise.allSettled(
       chats.map(chat => deleteSession(chat.session_id))
     )
 
-    // Filter out only the sessions that were successfully deleted
     const deletedIds = new Set(
       chats
         .filter((_, i) => results[i].status === "fulfilled" && (results[i] as PromiseFulfilledResult<boolean>).value)
@@ -182,6 +291,7 @@ export default function App({ user, onLogout }: AppProps) {
       (r, i) => r.status === "rejected" || !(r as PromiseFulfilledResult<boolean>).value
     )
 
+    deletedIds.forEach(id => removePendingSession(id))
     setChats(prev => prev.filter(c => !deletedIds.has(c.session_id)))
 
     if (currentSessionId && deletedIds.has(currentSessionId)) {
@@ -205,24 +315,24 @@ export default function App({ user, onLogout }: AppProps) {
     if (currentSessionId === sessionId) setCurrentFileName(newTitle)
   }
 
-
-
   // Upload
   const handleFileUpload = async (fileInput: File) => {
     if (fileInput.type !== "application/pdf") {
       alert("Only PDF files are supported.")
       return
     }
-  
 
-    // 1. Submit immediately - backend returns session_id in ~200ms
+    // 1. Submit immediately
     const session_id = await submitEvaluation(fileInput)
     if (!session_id) {
       alert("Failed to submit document for evaluation.")
       return
     }
 
-    // 2. Add to sidebar right away with status: "processing"
+    // 2. Persist to sessionStorage so refresh can restore it
+    savePendingSession({ session_id, title: fileInput.name, startedAt: Date.now() })
+
+    // 3. Add to sidebar with status: "processing"
     const pendingChat: Chat = {
       session_id,
       title: fileInput.name,
@@ -231,9 +341,7 @@ export default function App({ user, onLogout }: AppProps) {
     }
     setChats(prev => [pendingChat, ...prev])
 
-
-    // 3. Switch main view to the new doc right away — user can see the PDF
-    //    and switch to other chats freely while evaluation runs in background
+    // 4. Switch main view immediately — user sees the PDF while evaluation runs
     setFile(fileInput)
     setFindings([])
     setFindingsLoading(true)
@@ -241,35 +349,36 @@ export default function App({ user, onLogout }: AppProps) {
     setCurrentFileName(fileInput.name)
     setPage("chat")
 
-    // 3. Poll in the background - UI is fully usable during this time
+    // 5. Poll in the background
+    pollingRef.current.add(session_id)
     pollEvaluation(session_id).then(response => {
+      pollingRef.current.delete(session_id)
+      removePendingSession(session_id)
+
       if (response === null) {
-        // Mark sidebar entry as failed
         setChats(prev =>
           prev.map(c => c.session_id === session_id ? { ...c, status: "failed" } : c)
         )
-        // If user is still on this doc, clear the loading state
-
-        setFindingsLoading(prev2 => {
-          return false
+        setCurrentSessionId(current => {
+          if (current === session_id) setFindingsLoading(false)
+          return current
         })
         return
       }
 
-      // Update sidebar entry to done
       setChats(prev =>
         prev.map(c =>
           c.session_id === session_id
-          ? { ...c, findings: response.vulnerabilities, status: "done" }
-          : c
+            ? { ...c, findings: response.vulnerabilities, status: "done" }
+            : c
         )
       )
 
-      // If user is still on this session, load findings in to view
       setCurrentSessionId(current => {
         if (current === session_id) {
           setFindings(response.vulnerabilities)
           setFindingsLoading(false)
+          // The File object is already in state from upload; no need to re-fetch blob
         }
         return current
       })

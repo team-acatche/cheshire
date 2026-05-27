@@ -40,7 +40,7 @@ export type Chat = {
   session_id: string
   title: string
   findings: VulnerabilityFinding[]
-  status?: ChatStatus   // undefined = legacy/done
+  status?: ChatStatus
   latestTimestamp?: string | null
 }
 
@@ -146,14 +146,12 @@ export default function ChatPage({
               <div
                 key={chat.session_id}
                 className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
-                  ${isProcessing
-                    ? "opacity-70 cursor-default"
-                    : isFailed
-                      ? "opacity-60 cursor-default"
-                      : "hover:bg-muted cursor-pointer"
+                  ${isFailed
+                    ? "opacity-60 cursor-default"
+                    : "hover:bg-muted cursor-pointer"
                   }`}
                 onClick={() => {
-                  if (!isProcessing && !isFailed && renamingId !== chat.session_id) {
+                  if (!isFailed && renamingId !== chat.session_id) {
                     onSelectChat(chat)
                   }
                 }}
