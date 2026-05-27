@@ -1,14 +1,6 @@
 import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
 import TextareaAutosize from "react-textarea-autosize"
-import UploadSimpleIcon from "./ui/upload-icon"
-import {
-  Select,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-} from "./ui/select"
 import SentIcon from "./ui/sent-icon"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -402,7 +394,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
       </div>
 
       {/* Input */}
-      <div className="sticky bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
+      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
         <div className="mx-auto max-w-4xl">
 
           <div
