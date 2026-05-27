@@ -4,6 +4,7 @@ import "./index.css"
 import LandingPage from "./landingpage.tsx"
 import App from "./App.tsx"
 import { getStoredUser, type AuthUser } from "./lib/auth"
+import { ThemeProvider } from "./lib/theme"
 
 function Root() {
   // Restore session from localStorage so a page refresh doesn't log the user out.
@@ -18,6 +19,8 @@ function Root() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Root />
+    <ThemeProvider>
+      <Root />
+    </ThemeProvider>
   </StrictMode>
 )

@@ -3,7 +3,7 @@ import React, { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { loginRequest, type AuthUser } from "@/lib/auth"
 
@@ -12,7 +12,7 @@ interface LoginFormProps extends React.ComponentProps<"div"> {
 }
 
 export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
-  const [showPassword, setShowPassword] = useState(false)
+  const [showPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -42,7 +42,7 @@ export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
           <form className="p-6 md:p-8" onSubmit={handleSubmit}>
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
-                <h1 className="text-2xl font-bold">Welcome back!</h1>
+                <h1 className="text-2xl font-bold">Welcome to Cheshire!</h1>
                 <p className="text-balance text-muted-foreground">
                   Login using your Active Directory (AD) credentials
                 </p>
@@ -60,7 +60,7 @@ export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
                   id="email"
                   name="email"
                   type="email"
-                  placeholder="name@metrobank.com"
+                  placeholder="name@example.com"
                   required
                   disabled={loading}
                 />
@@ -69,9 +69,6 @@ export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
               <Field>
                 <div className="flex items-center">
                   <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <a href="#" className="ml-auto text-sm underline-offset-2 hover:underline">
-                    Forgot your password?
-                  </a>
                 </div>
                 <div className="relative">
                   <Input
@@ -81,13 +78,7 @@ export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
                     required
                     disabled={loading}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
+                  
                 </div>
               </Field>
 
@@ -99,22 +90,15 @@ export function LoginForm({ className, onLogin, ...props }: LoginFormProps) {
             </FieldGroup>
           </form>
 
-          <div className="relative hidden bg-white md:flex md:items-center md:justify-center border-l">
+          <div className="relative hidden bg-card md:flex md:items-center md:justify-center border-l">
             <img
-              src="/cheshire.png"
+              src="/cheshire-black.png"
               alt="Cheshire Logo"
-              className="w-60 h-60 object-contain"
+              className="w-60 h-60 object-contain dark:invert"
             />
           </div>
         </CardContent>
       </Card>
-
-      <FieldDescription className="px-6 text-center text-xs">
-        By clicking continue, you agree to our{" "}
-        <a href="#" className="underline underline-offset-4">Terms of Service</a>{" "}
-        and{" "}
-        <a href="#" className="underline underline-offset-4">Privacy Policy</a>.
-      </FieldDescription>
     </div>
   )
 }

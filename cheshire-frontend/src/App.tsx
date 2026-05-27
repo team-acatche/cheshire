@@ -25,6 +25,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import Account from "./components/account"
+import SettingsModal from "./components/settings-modal"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -65,8 +66,8 @@ export default function App({ user, onLogout }: AppProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
-  // Derive profile image URL from user data, with a fallback to default avatar
   const [profileImage, setProfileImage] = useState(
     user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
   )
@@ -124,6 +125,34 @@ export default function App({ user, onLogout }: AppProps) {
     if (currentSessionId === sessionId) handleNewChat()
   }
 
+  // Delete ALL sessions sequentially and reset UI state
+  const handleDeleteAllChats = async () => {
+    const results = await Promise.allSettled(
+      chats.map(chat => deleteSession(chat.session_id))
+    )
+
+    // Filter out only the sessions that were successfully deleted
+    const deletedIds = new Set(
+      chats
+        .filter((_, i) => results[i].status === "fulfilled" && (results[i] as PromiseFulfilledResult<boolean>).value)
+        .map(c => c.session_id)
+    )
+
+    const anyFailed = results.some(
+      (r, i) => r.status === "rejected" || !(r as PromiseFulfilledResult<boolean>).value
+    )
+
+    setChats(prev => prev.filter(c => !deletedIds.has(c.session_id)))
+
+    if (currentSessionId && deletedIds.has(currentSessionId)) {
+      handleNewChat()
+    }
+
+    if (anyFailed) {
+      throw new Error("Some sessions could not be deleted")
+    }
+  }
+
   const handleRenameChat = async (sessionId: string, newTitle: string) => {
     const ok = await renameSession(sessionId, newTitle)
     if (!ok) {
@@ -153,6 +182,15 @@ export default function App({ user, onLogout }: AppProps) {
         userName={user.full_name ?? user.username ?? user.email}
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
+        onLogout={handleLogout}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        chats={chats}
+        onDeleteAllChats={handleDeleteAllChats}
       />
 
       <SidebarTrigger />
@@ -163,7 +201,7 @@ export default function App({ user, onLogout }: AppProps) {
             setProfileImage={setProfileImage}
             user={user}
             chats={chats}
-            onLogout={handleLogout}
+            onClose={() => setPage("chat")}
           />
         ) : (
           <main className={`h-dvh w-full min-w-0 overflow-hidden ${!file ? "p-8" : "p-0"}`}>
@@ -183,7 +221,7 @@ export default function App({ user, onLogout }: AppProps) {
                 transition={{ duration: 0.35, ease: "easeOut" }}
                 className="flex w-full max-w-3xl flex-col items-center text-center"
               >
-                <h1 className="text-5xl font-bold tracking-tight text-slate-950">
+                <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">
                   Hi, {user.full_name ?? user.username ?? ""}!
                 </h1>
 
@@ -253,13 +291,13 @@ export default function App({ user, onLogout }: AppProps) {
               >
                 <div className="flex flex-col items-center gap-8 md:flex-row">
                   <img
-                    src="/cheshire.png"
+                    src="/cheshire-black.png"
                     alt="Cheshire Logo"
-                    className="h-44 w-44 object-contain md:h-52 md:w-52"
+                    className="h-44 w-44 object-contain md:h-52 md:w-52 dark:invert"
                   />
 
                   <div className="max-w-md text-center md:text-left">
-                    <h2 className="mb-2 text-xl font-bold text-slate-800">
+                    <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
                       About Cheshire
                     </h2>
                     <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
@@ -280,14 +318,14 @@ export default function App({ user, onLogout }: AppProps) {
 
                   <div className="grid gap-6">
                     {[
-                      ["01", "Document Preview", "A preview of your uploaded technical document."],
-                      ["02", "Document Highlights", "Automatically find security risks and get clear suggestions on how to fix them."],
+                      ["01", "Document Review", "A preview of your uploaded technical document."],
+                      ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
                       ["03", "Chatbot", "Discuss findings directly with the AI."],
                     ].map(([number, title, description]) => (
                       <div key={number} className="flex gap-4">
                         <div className="font-bold text-slate-400">{number}</div>
                         <div>
-                          <h4 className="font-semibold text-slate-800">{title}</h4>
+                          <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
                           <p className="text-base text-muted-foreground">{description}</p>
                         </div>
                       </div>
@@ -312,7 +350,7 @@ export default function App({ user, onLogout }: AppProps) {
                   </CardContent>
                 </ResizablePanel>
 
-                <ResizableHandle withHandle />
+                {!settingsOpen && <ResizableHandle withHandle />}
 
                 <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
                   {currentSessionId && (
@@ -322,6 +360,7 @@ export default function App({ user, onLogout }: AppProps) {
                       sessionId={currentSessionId}
                       username={user.user_id}
                       profileImage={profileImage}
+                      onOpenSettings={() => setSettingsOpen(true)}
                     />
                   )}
                 </ResizablePanel>
