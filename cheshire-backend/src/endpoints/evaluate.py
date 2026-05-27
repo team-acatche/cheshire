@@ -100,12 +100,6 @@ def _run_evaluation(
         shutil.move(tmp_file_path, document_path / saved_filename)
         logger.info(f"run_evaluation({filename}): {filename} saved to {document_path}.")
 
-        # Persist session
-        with sqlite3.connect(user_db_path) as session_db:
-            SqliteSessionRepository(session_db).save_new_session(
-                Session(session_id=session_id, title=filename)
-            )
-
         # Init vector stores
         KnowledgeRepositoryFactory.create_repositories(
             RepositoryType.QDRANT, storage_path=DATA_PATH, username=user_id
