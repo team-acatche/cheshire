@@ -21,8 +21,7 @@ import {
   FileText,
   MoreHorizontal,
   Trash2,
-  PenLine,
-  Share2,
+  PenLine
   LogOut,
   Loader2,
 } from "lucide-react"
@@ -233,14 +232,6 @@ export default function ChatPage({
                         >
                           <PenLine className="mr-2 h-4 w-4" />
                           Rename
-                        </DropdownMenuItem>
-
-                        <DropdownMenuItem disabled className="cursor-not-allowed">
-                          <Share2 className="mr-2 h-4 w-4" />
-                          Share
-                          <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
-                            Soon
-                          </span>
                         </DropdownMenuItem>
 
                         <DropdownMenuSeparator />
