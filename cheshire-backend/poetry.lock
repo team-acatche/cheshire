@@ -3759,6 +3759,21 @@ files = [
 et-xmlfile = "*"
 
 [[package]]
+name = "openrouter-haystack"
+version = "1.0.0"
+description = ""
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "openrouter_haystack-1.0.0-py3-none-any.whl", hash = "sha256:72002e15506c1d794452687fba2932270e22734630892844ba890e9b24238e86"},
+    {file = "openrouter_haystack-1.0.0.tar.gz", hash = "sha256:0375006b85a6fe01037378d0ce5af0fa22aa23c5e77b37c18ab1fa48f0bbcb59"},
+]
+
+[package.dependencies]
+haystack-ai = ">=2.22.0"
+
+[[package]]
 name = "packaging"
 version = "26.2"
 description = "Core utilities for Python packages"
@@ -7096,4 +7111,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "0cf312aec3bf6db5e593b5d01964b55e16212c5e16bd58dcccaaa726cb7f63e9"
+content-hash = "455021a412997973864793eebe751b2569dbd1b9ba03719ac7e6581a81ba62d4"
