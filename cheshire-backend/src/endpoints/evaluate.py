@@ -163,7 +163,6 @@ async def evaluate_document(
     )
     _session_id: str = session_id or str(uuid.uuid4())
 
-
     # Buffer the upload now - background task runs after response is sent
     # save the file into a temporary directory
     tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
@@ -188,7 +187,16 @@ async def evaluate_document(
         config=config,
     )
 
-    logger.info(f"POST /evaluate: session {_session_id} queued.")
+    # save session immediately
+    with sqlite3.connect(user_db_path) as session_db:
+        session_repo = SqliteSessionRepository(session_db)
+        # if session already exists, just update title (background task updates results)
+        if session_id:
+            session_repo.change_title(_session_id, new_title=filename)
+        else:
+            session_repo.save_new_session(Session(session_id=_session_id, title=filename))
+
+    logger.info(f"POST /evaluate: session '{_session_id}' queued.")
     return SubmitResponse(session_id=_session_id, status="PENDING")
 
 # ─────────────────────────────────────────────────────────────────────────────
