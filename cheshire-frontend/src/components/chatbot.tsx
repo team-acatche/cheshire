@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
-import { Textarea } from "./ui/textarea"
+import TextareaAutosize from "react-textarea-autosize"
 import UploadSimpleIcon from "./ui/upload-icon"
 import {
   Select,
@@ -258,14 +258,18 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
 
       {/* Chat area */}
       <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-start gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`
+                flex items-start gap-4
+                animate-in fade-in slide-in-from-bottom-2 duration-300
+                ${msg.role === "user" ? "justify-end" : "justify-start"}
+              `}
             >
               {msg.role !== "user" && (
-                <div className="w-8 h-8 overflow-hidden shrink-0">
+                <div className="w-8 h-8 mt-1 overflow-hidden shrink-0 opacity-80">
                   <img src="/cheshire-black.png" className="w-full h-full object-cover dark:invert" alt="agent" />
                 </div>
               )}
@@ -273,8 +277,8 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
               <div
                 className={
                   msg.role === "user"
-                    ? "btn-gradient max-w-[80%] px-3 py-2 rounded-2xl rounded-br-sm text-white text-sm [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90"
-                    : "w-full min-w-0 overflow-hidden px-4 text-foreground wrap-break-word"
+                    ? "btn-gradient max-w-[80%] px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90"
+                    : "flex-1 min-w-0 overflow-hidden text-foreground"
                 }
               >
                 {(() => {
@@ -354,7 +358,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
                       </ReactMarkdown>
                     )
                     return msg.role === "user" ? content : (
-                      <div className="w-full max-w-187.5 min-w-0 space-y-4 overflow-hidden wrap-break-word">
+                      <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden break-words">
                         {content}
                       </div>
                     )
@@ -376,8 +380,8 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
           ))}
 
           {typing && (
-            <div className="flex items-start gap-3 justify-start">
-              <div className="w-8 h-8 overflow-hidden shrink-0">
+            <div className="flex items-start gap-3 animate-in fade-in duration-300">
+              <div className="w-6 h-6 mt-1 overflow-hidden shrink-0 opacity-80">
                 <img
                   src="/cheshire-black.png"
                   className="w-full h-full object-cover dark:invert"
@@ -385,12 +389,10 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
                 />
               </div>
 
-              <div className="rounded-2xl rounded-bl-sm border border-border bg-muted/40 px-4 py-3 shadow-sm">
-                <div className="flex items-center gap-1">
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.3s]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.15s]" />
-                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70" />
-                </div>
+              <div className="flex items-center gap-1 pt-1.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60" />
               </div>
             </div>
           )}
@@ -400,28 +402,84 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-4 flex flex-col gap-2 bg-card">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="What would you like to know?"
-          className="resize-none border-none focus-visible:ring-0 p-0 text-base min-h-10 bg-transparent text-foreground placeholder:text-muted-foreground"
-          disabled={typing}
-        />
+      <div className="sticky bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
+        <div className="mx-auto max-w-4xl">
 
-        <div className="flex items-center justify-between">
-          
-
-          <button
-            onClick={sendMessage}
-            disabled={typing || !input.trim()}
-            className="bg-muted hover:bg-muted/70 text-muted-foreground p-2 rounded-full transition-colors"
+          <div
+            className="
+              relative
+              flex items-end gap-3
+              rounded-[28px]
+              border border-border/60
+              bg-background/80
+              px-5 py-4
+              shadow-[0_8px_30px_rgba(0,0,0,0.06)]
+              backdrop-blur-xl
+              transition-all duration-200
+              focus-within:border-border
+              focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.10)]
+            "
           >
-            <SentIcon size={22} color="currentColor" />
-          </button>
+
+            {/* soft inner glow */}
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/5" />
+
+            <TextareaAutosize
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="What would you like to know?"
+              disabled={typing}
+              minRows={1}
+              maxRows={8}
+              className="
+                max-h-52
+                flex-1
+                resize-none
+                border-0
+                bg-transparent
+                p-0
+                text-[15px]
+                leading-7
+                text-foreground
+                shadow-none
+                outline-none
+                focus:outline-none
+                focus-visible:ring-0
+                disabled:opacity-50
+                placeholder:text-muted-foreground/70
+              "
+            />
+
+            <button
+              onClick={sendMessage}
+              disabled={typing || !input.trim()}
+              className="
+                flex h-10 w-10 shrink-0 items-center justify-center
+                rounded-full
+                bg-muted
+                text-muted-foreground
+                transition-all duration-200
+
+                hover:scale-105
+                hover:bg-muted/80
+
+                active:scale-95
+
+                disabled:scale-100
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
+            >
+              <SentIcon size={18} color="currentColor" />
+            </button>
+          </div>
+
+          <p className="mt-2 text-center text-xs text-muted-foreground/60">
+            Cheshire can make mistakes. Verify important security findings.
+          </p>
         </div>
-      </div>
+</div>
     </Card>
   )
 }
