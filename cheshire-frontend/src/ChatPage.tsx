@@ -223,6 +223,11 @@ export default function ChatPage({
                           <p className="truncate text-sm font-medium text-foreground">
                             {chat.title}
                           </p>
+                            {chat.latestTimestamp && (
+                              <span className="mt-1 truncate text-[10px] text-gray-400">
+                                Last Activity: {formatTimestamp(chat.latestTimestamp)}
+                              </span>
+                            )}
                         </div>
 
                         <DropdownMenuSeparator />

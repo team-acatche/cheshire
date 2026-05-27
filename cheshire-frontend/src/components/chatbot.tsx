@@ -401,19 +401,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
         />
 
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <UploadSimpleIcon size={22} color="currentColor" />
-            <Select>
-              <SelectTrigger className="border-none shadow-none focus:ring-0 h-auto p-0 gap-1 font-medium text-muted-foreground">
-                <SelectValue placeholder="Agent 1" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Agent 1">Agent 1</SelectItem>
-                <SelectItem value="Agent 2">Agent 2</SelectItem>
-                <SelectItem value="Agent 3">Agent 3</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          
 
           <button
             onClick={sendMessage}
