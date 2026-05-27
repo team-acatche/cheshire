@@ -10,16 +10,15 @@ import {
 } from "./components/ui/sidebar"
 import DocumentPreview from "./components/document-preview/DocumentPreview"
 import {
-  evaluateDocument,
+  submitEvaluation,
+  pollEvaluation,
   getSessionResults,
-  type EvaluationStatus,
 } from "./lib/helpers/evaluate_document"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
 import type { Chat } from "./ChatPage"
-import { LoadingPage } from "./components/ui/loadingpage"
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -62,10 +61,9 @@ interface AppProps {
 export default function App({ user, onLogout }: AppProps) {
   const [file, setFile] = useState<File | string | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
+  const [findingsLoading, setFindingsLoading] = useState(false)
   const [chats, setChats] = useState<Chat[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [evaluationStatus, setEvaluationStatus] = useState<EvaluationStatus>("PENDING")
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf");
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -74,7 +72,7 @@ export default function App({ user, onLogout }: AppProps) {
     user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
   )
 
-  // Load sessions on mount
+  // Load existing sessions on mount
   useEffect(() => {
     fetchSessions().then(sessions =>
       setChats(
@@ -82,39 +80,42 @@ export default function App({ user, onLogout }: AppProps) {
           session_id: s.session_id,
           title: s.title,
           findings: [],
+          status: "done" as const,
         }))
       )
     )
   }, [])
 
+  // ── Sidebar helpers ───────────────────────────────────────────────────────
+
   const handleNewChat = () => {
     setFindings([])
+    setFindingsLoading(false)
     setPage("chat")
     setCurrentSessionId(null)
     setFile(null)
-    setEvaluationStatus("PENDING")
   }
 
   const handleSelectChat = async (chat: Chat) => {
-    setIsProcessing(true)
+    // Allow selecting any done chat freely — even while another is evaluating
     setPage("chat")
-
+    setFile(null)
+    setFindings([])
+    setFindingsLoading(true)
+    setCurrentSessionId(chat.session_id)
+    setCurrentFileName(chat.title)
+ 
     try {
-      const docUrl = `/api/v1/${chat.session_id}/document`
-
       const [blob, results] = await Promise.all([
-        authFetch(docUrl).then(r => (r.ok ? r.blob() : null)).catch(() => null),
+        authFetch(`/api/v1/${chat.session_id}/document`)
+          .then(r => r.ok ? r.blob() : null)
+          .catch(() => null),
         getSessionResults(chat.session_id),
       ])
-
-      const objectUrl = blob ? URL.createObjectURL(blob) : null
-
-      setFile(objectUrl)
+      setFile(blob ? URL.createObjectURL(blob) : null)
       setFindings(results)
-      setCurrentSessionId(chat.session_id)
-      setCurrentFileName(chat.title)
     } finally {
-      setIsProcessing(false)
+      setFindingsLoading(false)
     }
   }
 
@@ -168,6 +169,77 @@ export default function App({ user, onLogout }: AppProps) {
     if (currentSessionId === sessionId) setCurrentFileName(newTitle)
   }
 
+
+
+  // Upload
+  const handleFileUpload = async (fileInput: File) => {
+    if (fileInput.type !== "application/pdf") {
+      alert("Only PDF files are supported.")
+      return
+    }
+  
+
+    // 1. Submit immediately - backend returns session_id in ~200ms
+    const session_id = await submitEvaluation(fileInput)
+    if (!session_id) {
+      alert("Failed to submit document for evaluation.")
+      return
+    }
+
+    // 2. Add to sidebar right away with status: "processing"
+    const pendingChat: Chat = {
+      session_id,
+      title: fileInput.name,
+      findings: [],
+      status: "processing",
+    }
+    setChats(prev => [pendingChat, ...prev])
+
+
+    // 3. Switch main view to the new doc right away — user can see the PDF
+    //    and switch to other chats freely while evaluation runs in background
+    setFile(fileInput)
+    setFindings([])
+    setFindingsLoading(true)
+    setCurrentSessionId(session_id)
+    setCurrentFileName(fileInput.name)
+    setPage("chat")
+
+    // 3. Poll in the background - UI is fully usable during this time
+    pollEvaluation(session_id).then(response => {
+      if (response === null) {
+        // Mark sidebar entry as failed
+        setChats(prev =>
+          prev.map(c => c.session_id === session_id ? { ...c, status: "failed" } : c)
+        )
+        // If user is still on this doc, clear the loading state
+
+        setFindingsLoading(prev2 => {
+          return false
+        })
+        return
+      }
+
+      // Update sidebar entry to done
+      setChats(prev =>
+        prev.map(c =>
+          c.session_id === session_id
+          ? { ...c, findings: response.vulnerabilities, status: "done" }
+          : c
+        )
+      )
+
+      // If user is still on this session, load findings in to view
+      setCurrentSessionId(current => {
+        if (current === session_id) {
+          setFindings(response.vulnerabilities)
+          setFindingsLoading(false)
+        }
+        return current
+      })
+    })
+  }
+
   const handleLogout = () => {
     clearAuth()
     onLogout()
@@ -208,35 +280,7 @@ export default function App({ user, onLogout }: AppProps) {
           />
         ) : (
           <main className={`h-dvh w-full min-w-0 overflow-hidden ${!file ? "p-8" : "p-0"}`}>
-          {isProcessing ? (
-            <div className="flex h-full items-center justify-center">
-              <Card className="w-full max-w-sm rounded-2xl border border-slate-200 shadow-sm">
-                <CardContent className="flex items-center justify-center p-6">
-                  <div className="flex flex-col items-center gap-4">
-                    <LoadingPage />
-
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-slate-700">
-                        {evaluationStatus === "PENDING" && "Preparing evaluation..."}
-                        {evaluationStatus === "RUNNING" && "Analyzing document..."}
-                        {evaluationStatus === "FAILED" && "Evaluation failed"}
-                      </p>
-
-                      <div className="mt-1 space-y-1">
-                        <p className="text-xs text-muted-foreground">
-                          {currentFileName}
-                        </p>
-
-                        <p className="text-xs text-muted-foreground">
-                          This may take several minutes depending on document size.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          ) : !file ? (
+          { !file ? (
             <div className="flex h-full flex-col items-center justify-center gap-14">
               <motion.section
                 initial={{ opacity: 0, y: 14 }}
@@ -263,52 +307,15 @@ export default function App({ user, onLogout }: AppProps) {
                           <Upload className="h-4 w-4" />
                           Upload
                           <input
-                            type="file"
-                            accept=".pdf"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const fileInput = e.target.files?.[0]
-                              if (!fileInput) return
-
-                              if (fileInput.type !== "application/pdf") {
-                                alert("Only PDF files are supported.")
-                                return
-                              }
-
-                              setCurrentFileName(fileInput.name)
-                              setEvaluationStatus("PENDING")
-                              setIsProcessing(true)
-                              try {
-                                const response = await evaluateDocument(
-                                  fileInput,
-                                  (status) => {
-                                    setEvaluationStatus(status)
-                                  }
-                                )
-                                if (response === null) {
-                                  setEvaluationStatus("FAILED")
-                                  alert("Failed to evaluate document.")
-                                  return
-                                }
-
-                                setEvaluationStatus("DONE")
-
-                                const newChat: Chat = {
-                                  session_id: response.session_id,
-                                  title: fileInput.name,
-                                  findings: response.vulnerabilities,
-                                }
-
-                                setChats(prev => [newChat, ...prev])
-                                setFile(fileInput)
-                                setFindings(response.vulnerabilities)
-                                setCurrentSessionId(response.session_id)
-                                setCurrentFileName(fileInput.name)
-                              } finally {
-                                setIsProcessing(false)
-                              }
-                            }}
-                          />
+                              type="file"
+                              accept=".pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0]
+                                if (f) handleFileUpload(f)
+                                e.target.value = ""
+                              }}
+                            />
                         </label>
                       </Button>
                     </CardAction>
@@ -379,6 +386,7 @@ export default function App({ user, onLogout }: AppProps) {
                       src={file}
                       findings={findings}
                       fileName={currentFileName}
+                      findingsLoading={findingsLoading}
                     />
                   </CardContent>
                 </ResizablePanel>
@@ -403,7 +411,6 @@ export default function App({ user, onLogout }: AppProps) {
         </main>
         )}
       </SidebarInset>
-
     </SidebarProvider>
   )
 }

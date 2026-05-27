@@ -1,3 +1,7 @@
+// cheshire-frontend/src/components/document-preview/DocumentPreview.tsx
+// Change from original: accepts findingsLoading prop and shows a banner
+// in the toolbar area while the AI audit is still running.
+
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import {
@@ -8,6 +12,7 @@ import {
   Plus,
   Minus,
   ShieldAlert,
+  Loader2,
 } from "lucide-react";
 import {
   Popover,
@@ -45,9 +50,11 @@ interface DocumentPreviewProps {
   src: File | string;
   findings: VulnerabilityFinding[];
   fileName?: string;
+  /** True while the AI audit is still running — shows a banner instead of the findings count */
+  findingsLoading?: boolean;
 }
 
-export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -118,7 +125,6 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
 
       // Measure immediately on first attach (no debounce needed)
       setContainerWidth(node.getBoundingClientRect().width);
-
       const ro = new ResizeObserver(([entry]) => debouncedSetWidth(entry.contentRect.width));
       ro.observe(node);
       roRef.current = ro;
@@ -297,40 +303,50 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
       {/* Toolbar — only once the PDF has loaded */}
       {isPdf && numPages > 0 && (
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
+
+          {/* Left — findings badge OR loading indicator */}
           <div className="justify-self-start">
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
-                  <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
-                  <span className="text-xs text-muted-foreground">Total Findings</span>
-                  <span className="text-sm font-semibold text-foreground">{findings.length}</span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[360px] p-0 border bg-background shadow-md" align="start">
-                <div className="px-3 py-2 border-b bg-muted/40">
-                  <div className="text-sm font-semibold">Findings</div>
-                  <div className="text-xs text-muted-foreground">Jump directly to a finding</div>
-                </div>
-                <div className="max-h-72 overflow-y-auto">
-                  {Object.entries(groupedFindings).map(([page, pf]) => (
-                    <div key={page} className="mb-2">
-                      <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">Page {page}</div>
-                      {pf.map((finding, idx) => (
-                        <button
-                          key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
-                          onClick={() => scrollToPageNumber(finding.page_no)}
-                          className="w-full px-3 py-2 text-left hover:bg-amber-100/60 transition-colors"
-                        >
-                          <div className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</div>
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
+            {findingsLoading ? (
+              <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Analyzing document…
+              </div>
+            ) : (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
+                    <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
+                    <span className="text-xs text-muted-foreground">Total Findings</span>
+                    <span className="text-sm font-semibold text-foreground">{findings.length}</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[360px] p-0 border bg-background shadow-md" align="start">
+                  <div className="px-3 py-2 border-b bg-muted/40">
+                    <div className="text-sm font-semibold">Findings</div>
+                    <div className="text-xs text-muted-foreground">Jump directly to a finding</div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {Object.entries(groupedFindings).map(([page, pf]) => (
+                      <div key={page} className="mb-2">
+                        <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">Page {page}</div>
+                        {pf.map((finding, idx) => (
+                          <button
+                            key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
+                            onClick={() => scrollToPageNumber(finding.page_no)}
+                            className="w-full px-3 py-2 text-left hover:bg-amber-100/60 transition-colors"
+                          >
+                            <div className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</div>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
 
+          {/* Center — zoom */}
           <div className="justify-self-center">
             <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
               <button onClick={handleZoomOut} disabled={zoomLevel <= MIN_ZOOM}
@@ -347,6 +363,7 @@ export function DocumentPreview({ src, findings, fileName }: DocumentPreviewProp
             </div>
           </div>
 
+          {/* Right — pagination */}
           <div className="justify-self-end flex items-center gap-2">
             <button onClick={goToPrevPage} disabled={currentPage === 1}
               className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">

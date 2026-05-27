@@ -2,7 +2,7 @@ import type { VulnerabilityFinding } from "../../types/VulnerabilityFinding"
 import { authFetch } from "@/lib/auth"
 import { PROVIDER } from "@/globals"
 
-// Types
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SubmitResponse {
   session_id: string
@@ -19,58 +19,52 @@ export interface EvaluateResponse {
   vulnerabilities: VulnerabilityFinding[]
 }
 
-export type EvaluationStatus = "PENDING" | "RUNNING" | "FAILED" | "DONE";
+export type EvaluationStatus = "PENDING" | "RUNNING" | "FAILED" | "DONE"
 
-// —— Polling config ————————————————————————————————————————————————————————————
+// ── Polling config ────────────────────────────────────────────────────────────
 
 function pollInterval(elapsedMs: number): number {
-  if (elapsedMs < 60_000) return 3_000 // every 3 s for the first minute
-  if (elapsedMs < 180_000) return 8_000 // every 8 s up to 3 minutes
-  return 15_000 // every 15 s after that
+  if (elapsedMs < 60_000)  return 3_000
+  if (elapsedMs < 180_000) return 8_000
+  return 15_000
 }
 
-const POLL_TIMEOUT_MS = 40 * 60 * 1_000 // 40 minutes hard stop
+const POLL_TIMEOUT_MS = 40 * 60 * 1_000
 
-// —— Main ——————————————————————————————————————————————————————————————————————
-/**
- * POST /api/v1/evaluate — uploads a PDF and kicks off an AI audit.
- * Backend identifies the user via the JWT in the Authorization header.
- */
-export async function evaluateDocument(
-  file: File,
-  onProgress?: (status: EvaluationStatus) => void,
-): Promise<EvaluateResponse | null> {
+// ── Submit only ───────────────────────────────────────────────────────────────
+// This will be called first to get the session_id immediately so the sidebar can show it.
 
-  // 1. Submit - backend returns 202 immediately 
+export async function submitEvaluation(file: File): Promise<string | null> {
   const formData = new FormData()
   formData.append("uploaded_document", file)
 
-  let session_id: string
   try {
     const res = await authFetch(`/api/v1/evaluate?provider=${PROVIDER}`, {
       method: "POST",
       body: formData,
     })
     if (!res.ok) {
-      console.error("evaluate submit network error:", await res.text().catch(() => res.statusText))
+      console.error("evaluate submit error:", await res.text().catch(() => res.statusText))
       return null
     }
     const data = await res.json() as SubmitResponse
-    session_id = data.session_id
+    return data.session_id
   } catch (err) {
     console.error("evaluate submit network error:", err)
     return null
   }
+}
 
+// ── Poll until done ───────────────────────────────────────────────────────────
+// This will be called after submitEvaluation() with the returned session_id.
+
+export async function pollEvaluation(
+  session_id: string,
+  onProgress?: (status: EvaluationStatus) => void,
+): Promise<EvaluateResponse | null> {
   onProgress?.("PENDING")
 
-  // 2. Poll GET /evaluate/{session_id}/status
-  //    - 200 -> still in progress, read body for status at ring
-  //    - 301 -> done;  browser/fetch follows to /result automatically
-  //                    the final 200 response contains the vulnerability list
-
   const startedAt = Date.now()
-  let lastStatus: EvaluationStatus | null = null
 
   while (true) {
     const elapsed = Date.now() - startedAt
@@ -83,8 +77,6 @@ export async function evaluateDocument(
 
     let pollRes: globalThis.Response
     try {
-      // redirect: "follow" (default) - fetch will transparently follow the 301
-      // and hand us the /result response body directly
       pollRes = await authFetch(`/api/v1/${session_id}/status`)
     } catch (err) {
       console.error("evaluate poll network error:", err)
@@ -92,12 +84,11 @@ export async function evaluateDocument(
     }
 
     if (!pollRes.ok) {
-      console.error("evaluate poll non-OK", pollRes.status)
+      console.error("evaluate poll non-OK:", pollRes.status)
       return null
     }
 
-    // Detect whether fetch followed a redirect to /result
-    // After a 301 -> 200 redirect the URL changes to .../result
+    // fetch follows the 301 automatically — detect by checking the final URL
     const finalUrl = pollRes.url ?? ""
     if (finalUrl.includes("/result")) {
       onProgress?.("DONE")
@@ -105,7 +96,6 @@ export async function evaluateDocument(
       return { session_id, vulnerabilities }
     }
 
-    // Still on /status - read the status body
     const body = await pollRes.json() as StatusResponse
 
     if (body.status === "FAILED") {
@@ -113,12 +103,21 @@ export async function evaluateDocument(
       return null
     }
 
-    if (body.status !== lastStatus) {
-      lastStatus = body.status
-      onProgress?.(body.status)
-    }
+    onProgress?.(body.status)
   }
 }
+
+// ── Combined helper (backwards compat) ────────────────────────────────────────
+
+export async function evaluateDocument(
+  file: File,
+  onProgress?: (status: EvaluationStatus) => void,
+): Promise<EvaluateResponse | null> {
+  const session_id = await submitEvaluation(file)
+  if (!session_id) return null
+  return pollEvaluation(session_id, onProgress)
+}
+
 
 export async function getSessionResults(sessionId: string): Promise<VulnerabilityFinding[]> {
   return authFetch(`/api/v1/${sessionId}/result`)
@@ -128,10 +127,7 @@ export async function getSessionResults(sessionId: string): Promise<Vulnerabilit
 
 export async function getSessionDocumentUrl(sessionId: string): Promise<string | null> {
   return authFetch(`/api/v1/${sessionId}/document`)
-    .then(r => {
-      if (!r.ok) return null
-      return r.blob().then(blob => URL.createObjectURL(blob))
-    })
+    .then(r => r.ok ? r.blob().then(b => URL.createObjectURL(b)) : null)
     .catch(() => null)
 }
 
