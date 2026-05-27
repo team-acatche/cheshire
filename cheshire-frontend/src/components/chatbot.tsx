@@ -376,11 +376,21 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
           ))}
 
           {typing && (
-            <div className="flex justify-start">
-              <div className="bg-muted px-3 py-2 rounded-2xl rounded-bl-sm flex gap-1">
-                <span className="animate-bounce text-muted-foreground">.</span>
-                <span className="animate-bounce delay-100 text-muted-foreground">.</span>
-                <span className="animate-bounce delay-200 text-muted-foreground">.</span>
+            <div className="flex items-start gap-3 justify-start">
+              <div className="w-8 h-8 overflow-hidden shrink-0">
+                <img
+                  src="/cheshire-black.png"
+                  className="w-full h-full object-cover dark:invert"
+                  alt="agent"
+                />
+              </div>
+
+              <div className="rounded-2xl rounded-bl-sm border border-border bg-muted/40 px-4 py-3 shadow-sm">
+                <div className="flex items-center gap-1">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.3s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.15s]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70" />
+                </div>
               </div>
             </div>
           )}
