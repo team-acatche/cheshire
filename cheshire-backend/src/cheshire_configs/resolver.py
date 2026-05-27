@@ -14,8 +14,8 @@ from cheshire_configs.registry import configs
 
 async def resolve_config(
     configs: Annotated[dict[Provider, PipelineConfig], Depends(configs)],
-    evaluation_mode: EvaluationType = EvaluationType.RAG,
-    provider: Provider = Provider.OLLAMA,
+    evaluation_mode: EvaluationType = EvaluationType.MULTISTEP,
+    provider: Provider = Provider.OPENROUTER,
 ) -> PipelineConfig:
     factory: PipelineConfig | None = configs.get(provider)
     if not factory:
