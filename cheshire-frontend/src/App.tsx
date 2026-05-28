@@ -115,7 +115,7 @@ export default function App({ user, onLogout }: AppProps) {
   )
 
   // ── Resume polling for any pending sessions after mount ───────────────────
-  const resumePolling = (session_id: string, title: string) => {
+  const resumePolling = (session_id: string, _: string) => {
     if (pollingRef.current.has(session_id)) return
     pollingRef.current.add(session_id)
 
@@ -153,7 +153,7 @@ export default function App({ user, onLogout }: AppProps) {
             .then(blob => {
               if (blob) setFile(URL.createObjectURL(blob))
             })
-            .catch(() => {})
+            .catch(() => { })
         }
         return current
       })
@@ -288,11 +288,11 @@ export default function App({ user, onLogout }: AppProps) {
     )
 
     const anyFailed = results.some(
-      (r, i) => r.status === "rejected" || !(r as PromiseFulfilledResult<boolean>).value
+      (result, _) => result.status === "rejected" || !(result as PromiseFulfilledResult<boolean>).value
     )
 
     deletedIds.forEach(id => removePendingSession(id))
-    setChats(prev => prev.filter(c => !deletedIds.has(c.session_id)))
+    setChats(prev => prev.filter(chat => !deletedIds.has(chat.session_id)))
 
     if (currentSessionId && deletedIds.has(currentSessionId)) {
       handleNewChat()
@@ -425,33 +425,33 @@ export default function App({ user, onLogout }: AppProps) {
           />
         ) : (
           <main className={`h-dvh w-full min-w-0 overflow-hidden ${!file ? "p-8" : "p-0"}`}>
-          { !file ? (
-            <div className="flex h-full flex-col items-center justify-center gap-14">
-              <motion.section
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
-                className="flex w-full max-w-3xl flex-col items-center text-center"
-              >
-                <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">
-                  Hi, {user.full_name ?? user.username ?? ""}!
-                </h1>
+            {!file ? (
+              <div className="flex h-full flex-col items-center justify-center gap-14">
+                <motion.section
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.35, ease: "easeOut" }}
+                  className="flex w-full max-w-3xl flex-col items-center text-center"
+                >
+                  <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">
+                    Hi, {user.full_name ?? user.username ?? ""}!
+                  </h1>
 
-                <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
-                  <CardContent className="space-y-4 p-2 text-center">
-                    <p className="text-lg text-muted-foreground text-center">
-                      Welcome to Cheshire. Please upload a PDF document to start the evaluation.
-                    </p>
+                  <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
+                    <CardContent className="space-y-4 p-2 text-center">
+                      <p className="text-lg text-muted-foreground text-center">
+                        Welcome to Cheshire. Please upload a PDF document to start the evaluation.
+                      </p>
 
-                    <CardAction className="w-full flex items-center justify-center">
-                      <Button
-                        asChild
-                        className="w-40 mx-auto block"
-                      >
-                        <label className="flex items-center justify-center gap-2 cursor-pointer">
-                          <Upload className="h-4 w-4" />
-                          Upload
-                          <input
+                      <CardAction className="w-full flex items-center justify-center">
+                        <Button
+                          asChild
+                          className="w-40 mx-auto block"
+                        >
+                          <label className="flex items-center justify-center gap-2 cursor-pointer">
+                            <Upload className="h-4 w-4" />
+                            Upload
+                            <input
                               type="file"
                               accept=".pdf"
                               className="hidden"
@@ -461,100 +461,100 @@ export default function App({ user, onLogout }: AppProps) {
                                 e.target.value = ""
                               }}
                             />
-                        </label>
-                      </Button>
-                    </CardAction>
-                  </CardContent>
-                </Card>
-              </motion.section>
+                          </label>
+                        </Button>
+                      </CardAction>
+                    </CardContent>
+                  </Card>
+                </motion.section>
 
-              <motion.section
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
-                className="flex w-full max-w-6xl flex-col items-center justify-center gap-10 md:flex-row"
-              >
-                <div className="flex flex-col items-center gap-8 md:flex-row">
-                  <img
-                    src="/cheshire-black.png"
-                    alt="Cheshire Logo"
-                    className="h-44 w-44 object-contain md:h-52 md:w-52 dark:invert"
-                  />
+                <motion.section
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
+                  className="flex w-full max-w-6xl flex-col items-center justify-center gap-10 md:flex-row"
+                >
+                  <div className="flex flex-col items-center gap-8 md:flex-row">
+                    <img
+                      src="/cheshire-black.png"
+                      alt="Cheshire Logo"
+                      className="h-44 w-44 object-contain md:h-52 md:w-52 dark:invert"
+                    />
 
-                  <div className="max-w-md text-center md:text-left">
-                    <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
-                      About Cheshire
-                    </h2>
-                    <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
-                      Cheshire is an assessment tool designed to identify vulnerabilities
-                      in your Technical Document Specification (TDS) using AI analysis.
-                      It streamlines the review process by highlighting potential security
-                      gaps and ensuring your documentation adheres to industry standards.
-                    </p>
+                    <div className="max-w-md text-center md:text-left">
+                      <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
+                        About Cheshire
+                      </h2>
+                      <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
+                        Cheshire is an assessment tool designed to identify vulnerabilities
+                        in your Technical Document Specification (TDS) using AI analysis.
+                        It streamlines the review process by highlighting potential security
+                        gaps and ensuring your documentation adheres to industry standards.
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="hidden h-56 w-px bg-slate-100 md:block" />
+                  <div className="hidden h-56 w-px bg-slate-100 md:block" />
 
-                <div className="w-full max-w-sm">
-                  <h3 className="mb-6 text-lg font-semibold uppercase tracking-wider text-slate-400">
-                    Features
-                  </h3>
+                  <div className="w-full max-w-sm">
+                    <h3 className="mb-6 text-lg font-semibold uppercase tracking-wider text-slate-400">
+                      Features
+                    </h3>
 
-                  <div className="grid gap-6">
-                    {[
-                      ["01", "Document Review", "A preview of your uploaded technical document."],
-                      ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
-                      ["03", "Chatbot", "Discuss findings directly with the AI."],
-                    ].map(([number, title, description]) => (
-                      <div key={number} className="flex gap-4">
-                        <div className="font-bold text-slate-400">{number}</div>
-                        <div>
-                          <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
-                          <p className="text-base text-muted-foreground">{description}</p>
+                    <div className="grid gap-6">
+                      {[
+                        ["01", "Document Review", "A preview of your uploaded technical document."],
+                        ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
+                        ["03", "Chatbot", "Discuss findings directly with the AI."],
+                      ].map(([number, title, description]) => (
+                        <div key={number} className="flex gap-4">
+                          <div className="font-bold text-slate-400">{number}</div>
+                          <div>
+                            <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
+                            <p className="text-base text-muted-foreground">{description}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </motion.section>
-            </div>
-          ) : (
-            <Card className="size-full min-w-0 overflow-hidden shadow-none">
-              <ResizablePanelGroup
-                orientation="horizontal"
-                className="h-full w-full min-w-0 overflow-hidden"
-              >
-                <ResizablePanel defaultSize={60} minSize={30} className="min-w-0 overflow-hidden">
-                  <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden">
-                    <DocumentPreview
-                      src={file}
-                      findings={findings}
-                      fileName={currentFileName}
-                      findingsLoading={findingsLoading}
-                    />
-                  </CardContent>
-                </ResizablePanel>
+                </motion.section>
+              </div>
+            ) : (
+              <Card className="size-full min-w-0 overflow-hidden shadow-none">
+                <ResizablePanelGroup
+                  orientation="horizontal"
+                  className="h-full w-full min-w-0 overflow-hidden"
+                >
+                  <ResizablePanel defaultSize={60} minSize={30} className="min-w-0 overflow-hidden">
+                    <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden">
+                      <DocumentPreview
+                        src={file}
+                        findings={findings}
+                        fileName={currentFileName}
+                        findingsLoading={findingsLoading}
+                      />
+                    </CardContent>
+                  </ResizablePanel>
 
-                {!settingsOpen && <ResizableHandle withHandle />}
+                  {!settingsOpen && <ResizableHandle withHandle />}
 
-                <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
-                  {currentSessionId && (
-                    <Chatbot
-                      key={currentSessionId}
-                      findings={findings}
-                      sessionId={currentSessionId}
-                      username={user.user_id}
-                      profileImage={profileImage}
-                      onOpenSettings={() => setSettingsOpen(true)}
-                      onActivity={() => touchChat(currentSessionId)}
-                    />
-                  )}
-                </ResizablePanel>
-              </ResizablePanelGroup>
-            </Card>
-          )}
-        </main>
+                  <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
+                    {currentSessionId && (
+                      <Chatbot
+                        key={currentSessionId}
+                        findings={findings}
+                        sessionId={currentSessionId}
+                        username={user.user_id}
+                        profileImage={profileImage}
+                        onOpenSettings={() => setSettingsOpen(true)}
+                        onActivity={() => touchChat(currentSessionId)}
+                      />
+                    )}
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              </Card>
+            )}
+          </main>
         )}
       </SidebarInset>
     </SidebarProvider>
