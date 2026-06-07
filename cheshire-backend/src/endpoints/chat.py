@@ -77,6 +77,18 @@ async def get_sessions(
     current_user: Annotated[User, Depends(get_current_user)],
     session_db_path: Annotated[Path, Depends(get_user_db_path)],
 ) -> list[Session]:
+    """
+    Returns all sessions for the current user, ordered by created_at DESC.
+ 
+    Each Session now includes a `status` field:
+        "pending"    — uploaded, not yet picked up by the worker
+        "processing" — worker is actively evaluating
+        "done"       — evaluation complete, results available
+        "failed"     — evaluation failed
+ 
+    The frontend uses this to restore the sidebar state after a refresh
+    without relying on sessionStorage.
+    """
     if not session_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     with sqlite3.connect(session_db_path) as db:

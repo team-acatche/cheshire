@@ -1,5 +1,5 @@
 import type { VulnerabilityFinding } from "../../types/VulnerabilityFinding"
-import { authFetch, clearAuth } from "@/lib/auth"
+import { authFetch } from "@/lib/auth"
 import { PROVIDER } from "@/globals"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -10,7 +10,7 @@ interface SubmitResponse {
 }
 
 interface StatusResponse {
-  status: "PENDING" | "RUNNING" | "FAILED"
+  status: "PENDING" | "RUNNING" | "PROCESSING" |"FAILED"
   error?: string
 }
 
@@ -19,7 +19,7 @@ export interface EvaluateResponse {
   vulnerabilities: VulnerabilityFinding[]
 }
 
-export type EvaluationStatus = "PENDING" | "RUNNING" | "FAILED" | "DONE"
+export type EvaluationStatus = "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "DONE"
 
 // ── Polling config ────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ export async function submitEvaluation(file: File): Promise<string | null> {
       console.error("evaluate submit error:", await res.text().catch(() => res.statusText))
       return null
     }
-    const data = await res.json() as SubmitResponse
+    const data = (await res.json()) as SubmitResponse
     return data.session_id
   } catch (err) {
     console.error("evaluate submit network error:", err)
@@ -77,7 +77,7 @@ export async function pollEvaluation(
 
     let pollRes: globalThis.Response
     try {
-      pollRes = await authFetch(`/api/v1/${session_id}/status`)
+      pollRes = await authFetch(`/api/v1/${session_id}/status`, { redirect: "follow"})
     } catch (err) {
       console.error("evaluate poll network error:", err)
       return null
@@ -96,14 +96,14 @@ export async function pollEvaluation(
       return { session_id, vulnerabilities }
     }
 
+    // Still in progress
     const body = await pollRes.json() as StatusResponse
-
     if (body.status === "FAILED") {
       console.error("evaluate job failed:", body.error)
       return null
     }
 
-    onProgress?.(body.status)
+    onProgress?.(body.status as EvaluationStatus)
   }
 }
 
