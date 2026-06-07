@@ -347,7 +347,7 @@ def delete_session(
     session_id: str,
 ) -> Response:
     session_dir = user_path / session_id
-    if not user_db_path.exists() or not session_dir.exists():
+    if not user_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     # Connect to repositories
@@ -367,7 +367,10 @@ def delete_session(
     event_store_repo.delete_with_session(session_id)
     knowledge_store_repo.delete_with_session(session_id)
 
-    shutil.rmtree(session_dir)
+    session_dir = user_path / session_id
+    if session_dir.exists():
+        shutil.rmtree(session_dir)
+        
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
