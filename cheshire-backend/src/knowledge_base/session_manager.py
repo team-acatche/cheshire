@@ -72,18 +72,22 @@ class SqliteSessionRepository(SessionRepository):
         )""")
 
         for col, definition in [
-            ("status", "TEXT DEFAULT 'done' NOT NULL"),
-            ("created_at", "TEXT DEFAULT CURRENT_TIMESTAMP")
+            ("status", "TEXT DEFAULT 'done'"),
+            ("created_at", "TEXT DEFAULT '1970-01-01 00:00:00'")
         ]:
             try:
                 self.cursor.execute(f"ALTER TABLE session ADD COLUMN {col} {definition}")
             except sqlite.OperationalError:
                 pass
 
+        self.db.commit()
+        self.cursor = self.db.cursor()
+
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_title ON session(title)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_session_status ON session(status)")
-
         self.db.commit()
+
+        
     
     def get_sessions(self) -> list[Session]:
         """Returns all sessions."""
