@@ -24,9 +24,10 @@ interface ChatbotProps {
   profileImage?: string
   onOpenSettings: () => void
   onActivity?: () => void
+  evaluationPending?: boolean
 }
 
-export function Chatbot({ findings, sessionId, profileImage, onActivity }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluationPending = false }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
@@ -61,10 +62,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
           )
         } else {
           setMessages([
-            { role: "bot1", text: "Hello! I'm your security audit assistant." },
-            { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
             ...findings.map((f): Message => ({ role: "bot1", text: JSON.stringify(f) })),
-            { role: "bot1", text: "How can I help you?" },
           ])
         }
       } catch {
@@ -195,7 +193,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
 
   // ── Send message with retry ───────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!input.trim() || typing) return
+    if (!input.trim() || typing || evaluationPending) return
 
     const userText = input
     setMessages(prev => [...prev, { role: "user", text: userText }])
@@ -421,7 +419,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="What would you like to know?"
-              disabled={typing}
+              disabled={typing || evaluationPending}
               minRows={1}
               maxRows={8}
               className="
@@ -445,7 +443,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity }: Chatb
 
             <button
               onClick={sendMessage}
-              disabled={typing || !input.trim()}
+              disabled={typing || evaluationPending || !input.trim()}
               className="
                 flex h-10 w-10 shrink-0 items-center justify-center
                 rounded-full

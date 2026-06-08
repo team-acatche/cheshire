@@ -518,6 +518,7 @@ export default function App({ user, onLogout }: AppProps) {
                         profileImage={profileImage}
                         onOpenSettings={() => setSettingsOpen(true)}
                         onActivity={() => touchChat(currentSessionId)}
+                        evaluationPending={findingsLoading}
                       />
                     )}
                   </ResizablePanel>
