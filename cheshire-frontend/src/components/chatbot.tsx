@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
 import TextareaAutosize from "react-textarea-autosize"
 import SentIcon from "./ui/sent-icon"
@@ -11,6 +11,7 @@ import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 import { EVALUATION_MODE, PROVIDER } from "@/globals"
 import { authFetch } from "@/lib/auth"
+import { ChevronDown } from "lucide-react"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
@@ -31,8 +32,29 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
+  const [showScrollDown, setShowScrollDown] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const lastEventIdRef = useRef<string | null>(null)
+  const isAtBottomRef = useRef(true)
+
+  // ── Scroll state tracking ──────────────────────────────────────────────────
+  const checkScrollPosition = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+    const atBottom = distanceFromBottom < 80
+    isAtBottomRef.current = atBottom
+    setShowScrollDown(!atBottom)
+    if (atBottom) setUnreadCount(0)
+  }, [])
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" })
+    setUnreadCount(0)
+  }, [])
 
   // ── Load history on session change ────────────────────────────────────────
   useEffect(() => {
@@ -70,6 +92,10 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       }
     }
     fetchHistory()
+    // Reset scroll state on session switch
+    setShowScrollDown(false)
+    setUnreadCount(0)
+    isAtBottomRef.current = true
   }, [sessionId, findings])
 
   // ── Message update helpers ────────────────────────────────────────────────
@@ -84,6 +110,10 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       }
       return updated
     })
+    // If user is scrolled up, increment unread counter
+    if (!isAtBottomRef.current) {
+      setUnreadCount(prev => prev + 1)
+    }
   }
 
   const replaceLastBotMessage = (text: string) => {
@@ -110,13 +140,10 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
     for (const line of lines) {
       if (line.startsWith(":")) {
-        // SSE comment — keepalive ping, ignore silently
         return
       } else if (line.startsWith("event:")) {
         eventType = line.slice("event:".length).trim()
       } else if (line.startsWith("data:")) {
-        // Collect data lines separately — do NOT concat with +=
-        // to avoid merging multi-line data without a separator
         dataLines.push(line.slice("data:".length).trim())
       } else if (line.startsWith("id:")) {
         eventId = line.slice("id:".length).trim()
@@ -170,11 +197,9 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
       if (value) {
         buffer += decoder.decode(value, { stream: true })
-        // Normalise line endings
         buffer = buffer.replace(/\r\n/g, "\n")
 
         const frames = buffer.split("\n\n")
-        // Keep the last (possibly partial) frame in the buffer
         buffer = frames.pop() ?? ""
 
         for (const frame of frames) {
@@ -183,7 +208,6 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       }
 
       if (done) {
-        // Flush any remaining bytes in the buffer
         const remaining = buffer.trim()
         if (remaining) processFrame(remaining)
         break
@@ -191,7 +215,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     }
   }
 
-  // ── Send message with retry ───────────────────────────────────────────────
+  // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = async () => {
     if (!input.trim() || typing || evaluationPending) return
 
@@ -199,15 +223,16 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     setMessages(prev => [...prev, { role: "user", text: userText }])
     setInput("")
     setTyping(true)
-    // Append placeholder bot message that tokens stream into
     setMessages(prev => [...prev, { role: "bot1", text: "" }])
     onActivity?.()
+    // Scroll to bottom when user sends a message
+    setTimeout(() => scrollToBottom("smooth"), 50)
 
     const MAX_RETRIES = 2
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         await consumeSSE(userText, lastEventIdRef.current)
-        break // success
+        break
       } catch {
         if (attempt === MAX_RETRIES) {
           setMessages(prev => {
@@ -221,7 +246,6 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
             return updated
           })
         } else {
-          // Exponential backoff before retry
           await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         }
       }
@@ -238,8 +262,11 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     }
   }
 
+  // ── Auto-scroll only when already at bottom ───────────────────────────────
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    if (isAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+    }
   }, [messages, typing])
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -247,7 +274,11 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-6 pb-0 shadow-sm">
 
       {/* Chat area */}
-      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+      <div
+        ref={scrollContainerRef}
+        onScroll={checkScrollPosition}
+        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+      >
         <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
           {messages.map((msg, i) => (
             <div
@@ -391,10 +422,27 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
         </div>
       </div>
 
-      {/* Input */}
-      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
-        <div className="mx-auto max-w-4xl">
+      {/* Input area — position relative so the scroll button can be anchored to it */}
+      <div className="relative sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
 
+        {/* Scroll-to-bottom button */}
+        {showScrollDown && (
+          <button
+            onClick={() => scrollToBottom("smooth")}
+            className="
+              absolute -top-12 left-1/2 -translate-x-1/2
+              flex h-10 w-10 items-center justify-center
+              rounded-full
+              hover:bg-background/50
+              transition-all duration-200
+            "
+            aria-label="Scroll to latest message"
+          >
+            <ChevronDown className="h-7 w-7 drop-shadow-lg" />
+          </button>
+        )}
+
+        <div className="mx-auto max-w-4xl">
           <div
             className="
               relative
@@ -410,8 +458,6 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.10)]
             "
           >
-
-            {/* soft inner glow */}
             <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/5" />
 
             <TextareaAutosize
@@ -450,12 +496,9 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 bg-muted
                 text-muted-foreground
                 transition-all duration-200
-
                 hover:scale-105
                 hover:bg-muted/80
-
                 active:scale-95
-
                 disabled:scale-100
                 disabled:cursor-not-allowed
                 disabled:opacity-50
@@ -469,7 +512,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
             Cheshire can make mistakes. Verify important security findings.
           </p>
         </div>
-</div>
+      </div>
     </Card>
   )
 }
