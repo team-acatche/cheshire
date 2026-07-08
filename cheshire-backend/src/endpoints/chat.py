@@ -64,9 +64,9 @@ async def get_sessions(
     
 @chat_router.get("/{session_id}")
 async def chat_history(
-    session_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     history_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: str,
 ):
     if not history_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -82,14 +82,13 @@ async def chat_history(
 
 @chat_router.post("/{session_id}")
 async def chat(
-    session_id: str,
-    body: ChatBody,
     current_user: Annotated[User, Depends(get_current_user)],
     config: Annotated[PipelineConfig, Depends(resolve_config)],
     user_path: Annotated[Path, Depends(get_user_path)],
     history_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: str,
+    body: ChatBody,
 ):
-    # TODO: make this SSE
     user_id = current_user.user_id
     if not history_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -193,10 +192,10 @@ PROTOCOL:
 
 @chat_router.get("/{session_id}/latest-timestamp", status_code=status.HTTP_200_OK)
 async def get_latest_event_timestamp(
-    response: Response,
-    session_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: str,
+    response: Response,
 ):
     if not user_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -212,10 +211,10 @@ async def get_latest_event_timestamp(
 
 @chat_router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_session(
-    session_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     user_path: Annotated[Path, Depends(get_user_path)],
     user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: str,
 ) -> Response:
     session_dir = user_path / session_id
     
@@ -245,9 +244,9 @@ def delete_session(
 
 @chat_router.put("/{session_id}/rename")
 def rename_session(
-    session_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: str,
     body: RenameBody,
 ) -> Session:
     if not user_db_path.exists():
