@@ -12,13 +12,9 @@ from tools.base import add_vulnerability_tool, read_vulnerabilities_tool, finish
 from tools.exa import web_search
 
 class EvaluationType(StrEnum):
-    RAG = auto()
-    FULL_DOCUMENT = auto()
     MULTISTEP = auto()
 
 class Provider(StrEnum):
-    OLLAMA = auto()
-    TOGETHER_AI = auto()
     OPENROUTER = auto()
 
 @runtime_checkable
@@ -55,7 +51,7 @@ class DefaultToolFactory(ToolFactory):
 class PipelineConfig:
     model: ChatGenerator
     tools: ToolsType = field(default_factory=list)
-    mode: EvaluationType = EvaluationType.RAG
+    mode: EvaluationType = EvaluationType.MULTISTEP
     document_store: Optional[DocumentStore] = None
     preprocessor: Optional[DocumentPreprocessor] = None
     document_embedder: Optional[Callable[[], DocumentEmbedder]] = None

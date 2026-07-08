@@ -21,18 +21,18 @@ from auth.dependencies import get_current_user
 from auth.models import User
 
 # Override the registry dependency to avoid real model initialization
-# This also ensures resolve_config finds a valid config for the default OLLAMA provider
+# This also ensures resolve_config finds a valid config for the default provider
 mock_config = PipelineConfig(
     model=MagicMock(),
     tools=[],
-    mode=EvaluationType.RAG
+    mode=EvaluationType.MULTISTEP
 )
 def mock_get_current_user():
     return User(user_id="test_id", email="test@example.com", sessions_folder="testuser", username="testuser", full_name="Test User", avatar_uri="default.png")
 
 @pytest.fixture(autouse=True)
 def setup_overrides():
-    api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
+    api.dependency_overrides[configs] = lambda: {Provider.OPENROUTER: mock_config}
     api.dependency_overrides[get_current_user] = mock_get_current_user
     with patch("endpoints.evaluate.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())):
         yield

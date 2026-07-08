@@ -24,7 +24,7 @@ from knowledge_base.session_manager import Session, SqliteSessionRepository
 mock_config = PipelineConfig(
     model=MagicMock(),
     tools=[],
-    mode=EvaluationType.RAG,
+    mode=EvaluationType.MULTISTEP,
 )
 TEST_USER = User(
     user_id="test_id",
@@ -42,7 +42,7 @@ def mock_get_current_user():
 
 @pytest.fixture(autouse=True)
 def setup_overrides():
-    api.dependency_overrides[configs] = lambda: {Provider.OLLAMA: mock_config}
+    api.dependency_overrides[configs] = lambda: {Provider.OPENROUTER: mock_config}
     api.dependency_overrides[get_current_user] = mock_get_current_user
     yield
     api.dependency_overrides.clear()
