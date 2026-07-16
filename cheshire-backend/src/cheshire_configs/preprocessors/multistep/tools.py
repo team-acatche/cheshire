@@ -1,5 +1,6 @@
 from typing import Annotated, Any
 from haystack.tools import tool
+from knowledge_base.repository import KnowledgeRepository
 from cheshire_configs.preprocessors.multistep.helpers import LocalFinding, EvaluationChunk
 
 
@@ -19,6 +20,7 @@ def get_standard(
 
     :return: a dict containing company standard requirements relevant to the query.
     """
+    knowledge_repo: KnowledgeRepository
     _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH, username="system")
     results = knowledge_repo.search(query=query)
     facts: list[str] = [f"[Company standard requirement] {document.content}" for document in results]

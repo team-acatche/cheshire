@@ -30,10 +30,10 @@ class FindingsParser:
         last_message: ChatMessage,
         chunk: EvaluationChunk
     ) -> dict:
-        element_by_id = {e.element_id: e for e in chunk.element_refs}
-        figure_by_id = {f.figure_id: f for f in chunk.figures}
+        element_by_id: dict[str, ElementRef] = {e.element_id: e for e in chunk.element_refs}
+        figure_by_id: dict[str, FigureRef] = {f.figure_id: f for f in chunk.figures}
 
-        raw = (last_message.text or "[]").strip()
+        raw: str = (last_message.text or "[]").strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -41,7 +41,8 @@ class FindingsParser:
         raw = raw.strip()
 
         try:
-            items = json.loads(raw)
+            # to be validated before conversion later (@ lines 57-100)
+            items: Any = json.loads(raw)
         except json.JSONDecodeError:
             return {"vulnerabilities": []}
 
@@ -53,15 +54,16 @@ class FindingsParser:
         vulnerabilities: list[VulnerabilityDetails] = []
 
         for item in items:
+            item: Any
             if not isinstance(item, dict):
                 continue
             element_id: str | None = item.get("element_id")
             figure_id: str | None = item.get("figure_id")
-            sub_bbox: list[int] | None = item.get("sub_bbox")
+            sub_bbox: list[float] | None = item.get("sub_bbox")
             page_no: int = item.get("page_no", 0)
-            bbox = BoundingBox(l=0, t=0, r=0, b=0)
+            bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
 
-            if figure_id and figure_id in figure_by_id:
+            if figure_id in figure_by_id and figure_id is not None:
                 fig = figure_by_id[figure_id]
                 page_no = fig.page_number
 
@@ -87,7 +89,7 @@ class FindingsParser:
                 else:
                     bbox = fig.bbox_pdf
 
-            elif element_id and element_id in element_by_id:
+            elif element_id in element_by_id is not None:
                 elem = element_by_id[element_id]
                 bbox = elem.bbox_pdf
 

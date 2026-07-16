@@ -54,7 +54,7 @@ class SynthesisMessageBuilder:
         document_index: dict
     ) -> dict:
         # Convert pydantic models to dicts for JSON serialization
-        findings_data = [
+        findings_data: list[dict] = [
             f.model_dump() if hasattr(f, "model_dump") else f
             for f in all_findings
         ]

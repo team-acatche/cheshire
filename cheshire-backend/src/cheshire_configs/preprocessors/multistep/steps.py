@@ -3,13 +3,14 @@ from dataclasses import dataclass
 from haystack import Pipeline
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessing_pipeline, build_evaluation_pipeline
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding
+from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding, ElementRef, FigureRef
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_synthesis_pipeline
-from tools.helpers.output_schema import VulnerabilityDetails
+from tools.helpers.output_schema import VulnerabilityDetails, Contradiction
 from docling_core.types.doc import BoundingBox
 
 import logging
+from typing import Any
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -20,11 +21,11 @@ class PreprocessingPassResults:
     chunks: list[EvaluationChunk]
 
 
-def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
+def run_pass1(pdf_path: str) -> PreprocessingPassResults:
     preprocessing_pipeline: Pipeline = build_preprocessing_pipeline()
 
     logger.info("[1/2] Preprocessing document with Docling...")
-    prep_result = preprocessing_pipeline.run({
+    prep_result: dict = preprocessing_pipeline.run({
         "docling_converter": {"pdf_path": pdf_path}
     })
     chunks: list[EvaluationChunk] = prep_result["docling_converter"]["chunks"]
@@ -41,13 +42,15 @@ def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
     all_findings: list[LocalFinding] = []
 
     for i, chunk in enumerate(chunks):
+        i: int
+        chunk: EvaluationChunk
         logger.info(
             f"  [{i + 1}/{len(chunks)}] {chunk.heading} "
             f"(p{chunk.page_range[0]}-{chunk.page_range[1]}, "
             f"{len(chunk.figures)} figure(s))..."
         )
 
-        previous_findings = [
+        previous_findings: list[dict] = [
             {
                 "finding": f.finding,
                 "standard_ref": f.standard_ref,
@@ -58,7 +61,7 @@ def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
             for f in all_findings
         ]
 
-        result = evaluation_pipeline.run({
+        result: dict = evaluation_pipeline.run({
             "chunk_message_builder": {
                 "chunk": chunk,
                 "document_index": document_index,
@@ -88,9 +91,12 @@ def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
 def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
     logger.info("[Pass 2] Deduplicating and synthesising...")
 
+    all_findings: list[LocalFinding] = results.findings
+    document_index: dict = results.document_index
+
     pipeline: Pipeline = build_synthesis_pipeline()
 
-    result = pipeline.run({
+    result: dict = pipeline.run({
         "synthesis_message_builder": {
             "all_findings": all_findings,
             "document_index": document_index
@@ -101,12 +107,13 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
     accepted_local: list[LocalFinding] = (
         result.get("agent", {}).get("accepted_findings") or []
     )
-    contradictions = result.get("agent", {}).get("contradictions") or []
+    contradictions: list[Contradiction] = result.get("agent", {}).get("contradictions") or []
 
     logger.info(f"  {len(all_findings)} to {len(accepted_local)} after deduplication.")
     if contradictions:
         logger.info(f"  {len(contradictions)} contradiction(s) flagged:")
         for c in contradictions:
+            c: Contradiction
             logger.info(f"    - \"{c.finding_a_title}\" vs \"{c.finding_b_title}\": {c.description}")
 
     # Safeguard: if synthesis dropped all findings, fall back to programmatic dedup
@@ -115,57 +122,66 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
             f"Synthesis returned 0 findings from {len(all_findings)} inputs. "
             f"Falling back to programmatic deduplication."
         )
-        seen = set()
-        deduped = []
+        seen: set[tuple[Any, Any, Any]] = set()
+        deduped: list[LocalFinding] = []
         for f in all_findings:
+            f: LocalFinding | dict
             # support both dataclass and dict
-            element_id = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
-            figure_id = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
-            finding = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
-            key = (element_id, figure_id, finding)
+            element_id: str | None = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+            figure_id: str | None = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
+            finding: str = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
+            key: tuple[str | None, str | None, str] = (element_id, figure_id, finding)
             if key not in seen:
                 deduped.append(f)
                 seen.add(key)
         accepted_local = deduped
         logger.info(f"  Programmatic dedup: {len(all_findings)} to {len(accepted_local)}.")
 
-    element_by_id = {}
-    figure_by_id = {}
+    element_by_id: dict[str, ElementRef] = {}
+    figure_by_id: dict[str, FigureRef] = {}
     for chunk in results.chunks:
+        chunk: EvaluationChunk
         for e in chunk.element_refs:
+            e: ElementRef
             element_by_id[e.element_id] = e
         for fig in chunk.figures:
+            fig: FigureRef
             figure_by_id[fig.figure_id] = fig
 
     final_vulnerabilities: list[VulnerabilityDetails] = []
     for f in accepted_local:
-        element_id = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
-        figure_id = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
-        sub_bbox = getattr(f, "sub_bbox", None) or (f.get("sub_bbox") if isinstance(f, dict) else None)
-        finding = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
-        title = getattr(f, "title", None) or (f.get("title") if isinstance(f, dict) else None)
-        web_refs = getattr(f, "web_references", None) or (f.get("web_references") if isinstance(f, dict) else None) or []
-        recs = getattr(f, "recommendations", None) or (f.get("recommendations") if isinstance(f, dict) else None) or []
+        f: LocalFinding | dict
+        element_id: str | None = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+        figure_id: str | None = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
+        sub_bbox: list[float] | None = getattr(f, "sub_bbox", None) or (f.get("sub_bbox") if isinstance(f, dict) else None)
+        finding: str = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
+        title: str | None = getattr(f, "title", None) or (f.get("title") if isinstance(f, dict) else None)
+        web_refs: list[str] = getattr(f, "web_references", None) or (f.get("web_references") if isinstance(f, dict) else None) or []
+        recs: list[str] = getattr(f, "recommendations", None) or (f.get("recommendations") if isinstance(f, dict) else None) or []
 
-        page_no = 1
-        bbox = BoundingBox(l=0, t=0, r=0, b=0)
+        page_no: int = 1
+        bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
 
         if figure_id and figure_id in figure_by_id:
-            fig = figure_by_id[figure_id]
+            fig: FigureRef = figure_by_id[figure_id]
             page_no = fig.page_number
 
             if sub_bbox and len(sub_bbox) == 4:
+                sx1: float
+                sy1: float
+                sx2: float
+                sy2: float
                 sx1, sy1, sx2, sy2 = sub_bbox
-                max_coord = max(sx1, sy1, sx2, sy2)
-                scale_factor = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+                max_coord: float = max(sx1, sy1, sx2, sy2)
+                scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
 
-                frac_x1 = max(0.0, min(1.0, sx1 / scale_factor))
-                frac_y1 = max(0.0, min(1.0, sy1 / scale_factor))
-                frac_x2 = max(0.0, min(1.0, sx2 / scale_factor))
-                frac_y2 = max(0.0, min(1.0, sy2 / scale_factor))
+                frac_x1: float = max(0.0, min(1.0, sx1 / scale_factor))
+                frac_y1: float = max(0.0, min(1.0, sy1 / scale_factor))
+                frac_x2: float = max(0.0, min(1.0, sx2 / scale_factor))
+                frac_y2: float = max(0.0, min(1.0, sy2 / scale_factor))
 
-                fig_w = fig.bbox_pdf.r - fig.bbox_pdf.l
-                fig_h = fig.bbox_pdf.t - fig.bbox_pdf.b
+                fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+                fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
 
                 bbox = BoundingBox(
                     l=fig.bbox_pdf.l + frac_x1 * fig_w,
@@ -177,11 +193,11 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 bbox = fig.bbox_pdf
 
         elif element_id and element_id in element_by_id:
-            elem = element_by_id[element_id]
+            elem: ElementRef = element_by_id[element_id]
             page_no = elem.page_number
             bbox = elem.bbox_pdf
 
-        final_title = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
+        final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         final_vulnerabilities.append(
             VulnerabilityDetails(
                 title=final_title,

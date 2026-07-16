@@ -85,7 +85,7 @@ def _make_tools() -> list[Tool]:
 
 
 def build_preprocessing_pipeline() -> Pipeline:
-    pipeline = Pipeline()
+    pipeline: Pipeline = Pipeline()
 
     pipeline.add_component(
         "docling_converter",
@@ -97,7 +97,7 @@ def build_preprocessing_pipeline() -> Pipeline:
 
 
 def add_local_finding_tool(state_key: str) -> Tool:
-    _tool = create_tool_from_function(
+    _tool: Tool = create_tool_from_function(
         function=add_local_finding,
         description="Record a local vulnerability/finding gap.",
         outputs_to_state={state_key: {"source": "finding"}}
@@ -106,7 +106,7 @@ def add_local_finding_tool(state_key: str) -> Tool:
     return _tool
 
 def accept_local_finding_tool(state_key: str) -> Tool:
-    _tool = create_tool_from_function(
+    _tool: Tool = create_tool_from_function(
         function=accept_local_finding,
         description="Accept a local finding as valid and non-duplicate. Call this for each unique local finding you want to keep.",
         outputs_to_state={state_key: {"source": "finding"}}
@@ -117,14 +117,14 @@ def accept_local_finding_tool(state_key: str) -> Tool:
 
 
 def build_evaluation_pipeline() -> Pipeline:
-    generator = OpenRouterChatGenerator(
+    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
-    agent_tools = _make_tools() + [add_local_finding_tool("findings_list")]
+    agent_tools: list[Tool] = _make_tools() + [add_local_finding_tool("findings_list")]
 
-    agent = Agent(
+    agent: Agent = Agent(
         chat_generator=generator,
         tools=agent_tools,
         system_prompt=PASS1_SYSTEM_PROMPT,
@@ -136,7 +136,7 @@ def build_evaluation_pipeline() -> Pipeline:
         }
     )
 
-    pipeline = Pipeline()
+    pipeline: Pipeline = Pipeline()
     pipeline.add_component("chunk_message_builder", ChunkMessageBuilder())
     pipeline.add_component("agent", agent)
 
@@ -145,7 +145,7 @@ def build_evaluation_pipeline() -> Pipeline:
     return pipeline
 
 def build_synthesis_pipeline() -> Pipeline:
-    generator = OpenRouterChatGenerator(
+    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
@@ -153,7 +153,7 @@ def build_synthesis_pipeline() -> Pipeline:
     from tools.base import flag_contradiction_tool
     from tools.helpers.output_schema import Contradiction
 
-    agent = Agent(
+    agent: Agent = Agent(
         chat_generator=generator,
         tools=[
             accept_local_finding_tool("accepted_findings"),
@@ -168,7 +168,7 @@ def build_synthesis_pipeline() -> Pipeline:
         }
     )
 
-    pipeline = Pipeline()
+    pipeline: Pipeline = Pipeline()
     pipeline.add_component("synthesis_message_builder", SynthesisMessageBuilder())
     pipeline.add_component("agent", agent)
 

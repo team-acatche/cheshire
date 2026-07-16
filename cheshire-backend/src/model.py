@@ -11,8 +11,8 @@ from typing import Optional
 
 from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.core import PipelineConfig
-from cheshire_configs.preprocessors.multistep.steps import run_pass1, run_pass2
+from cheshire_configs.preprocessors.multistep.steps import run_pass1, run_pass2, PreprocessingPassResults
 
 async def evaluate_file(document_path: Path, config: PipelineConfig) -> Optional[list[VulnerabilityDetails]]:
-	all_findings, document_index = run_pass1(str(document_path))
-	return run_pass2(all_findings, document_index)
+	results: PreprocessingPassResults = run_pass1(str(document_path))
+	return run_pass2(results)
