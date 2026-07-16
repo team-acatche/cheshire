@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 from haystack.tools import tool
-from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
+from cheshire_configs.preprocessors.multistep.helpers import LocalFinding, EvaluationChunk
 
 
 from globals import DATA_PATH

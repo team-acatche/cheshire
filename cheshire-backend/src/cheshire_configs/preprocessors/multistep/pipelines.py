@@ -8,7 +8,6 @@ from haystack.tools import Tool, create_tool_from_function
 from haystack_integrations.components.generators.openrouter import OpenRouterChatGenerator
 
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding
-from cheshire_configs.preprocessors.multistep.pipelines import add_local_finding_tool
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
