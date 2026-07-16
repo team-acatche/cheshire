@@ -13,6 +13,33 @@ from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
 
 
+@dataclass(frozen=True, kw_only=True)
+class ImageBoundingBox:
+    """
+    A set of bounding box coordinates meant to represent a subregion within a rendered page.
+    Serves as a normalized conversion from Docling's BoundingBox.
+    """
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+    @staticmethod
+    def from_docling_bbox(
+        bbox: BoundingBox, 
+        page_height: float,
+        scale: float
+    ) -> "ImageBoundingBox":
+        """
+        Converts a Docling Bounding Box to an ImageBoundingBox.
+        """
+        return ImageBoundingBox(
+            x1 = round(bbox.l * scale),
+            y1 = round((page_height - bbox.t) * scale),
+            x2 = round(bbox.r * scale),
+            y2 = round((page_height - bbox.b) * scale)
+        )
+
 @dataclass
 class ElementRef:
     """
@@ -23,7 +50,7 @@ class ElementRef:
     element_id: str             
     label: str                  
     page_number: int            
-    bbox_image_px: list[float]  
+    bbox_image_px: ImageBoundingBox
     bbox_pdf: BoundingBox       
     text_excerpt: str           
 
@@ -72,32 +99,6 @@ class EvaluationChunk:
     figures: list[FigureRef] = field(default_factory=list)
 
 
-def _to_image_px(
-    bbox: BoundingBox, 
-    page_height: float,
-    scale: float
-) -> list[float]:
-    """
-    Docling stores bboxes in PDF coordinate space:
-      - origin at bottom-left
-      - Y increases upward
-      - units in points
-
-    Rendered page images use image coordinate space:
-      - origin at top-left
-      - Y increases downward
-      - units in pixels
-
-    bbox.t is the top edge in PDF space (larger Y value).
-    Subtracting from page_height flips the axis, then multiply by scale.
-    """
-    x1 = round(bbox.l * scale)
-    y1 = round((page_height - bbox.t) * scale)
-    x2 = round(bbox.r * scale)
-    y2 = round((page_height - bbox.b) * scale)
-    return [x1, y1, x2, y2]
-
-
 def _build_element_lookup(
     doc: DoclingDocument,
     scale: float
@@ -130,7 +131,7 @@ def _build_element_lookup(
         if page is None or page.size is None:
             continue
 
-        bbox_px = _to_image_px(prov.bbox, page.size.height, scale)
+        bbox_px = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
 
         if label == "table" and hasattr(item, "export_to_markdown"):
             text = item.export_to_markdown()
@@ -191,7 +192,7 @@ def _build_figure_lookup(
         if page is None or page.size is None:
             continue
 
-        bbox_px = _to_image_px(prov.bbox, page.size.height, scale)
+        bbox_px = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
 
         try:
             img = picture.get_image(result)
