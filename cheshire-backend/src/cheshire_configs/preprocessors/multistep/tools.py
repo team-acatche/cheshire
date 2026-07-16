@@ -6,12 +6,6 @@ from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
 from globals import DATA_PATH
 from knowledge_base.qdrant import QdrantRepositoryManager
 
-_chunks_cache: list = []
-
-def set_chunks_cache(chunks: list) -> None:
-    global _chunks_cache
-    _chunks_cache = chunks
-
 @tool
 def get_standard(
     query: Annotated[str, "The query to search for company security requirements (e.g. 'password hashing', 'session management')."]
@@ -32,7 +26,8 @@ def get_standard(
 
 @tool
 def query_other_section(
-    section_title: Annotated[str, "The title or heading of the section to query (e.g. 'Authentication', 'Section 5')."]
+    section_title: Annotated[str, "The title or heading of the section to query (e.g. 'Authentication', 'Section 5')."],
+    chunks_cache: list[EvaluationChunk],
 ) -> str:
     """
     Retrieves the full text of another section in the document by title search.
@@ -42,12 +37,9 @@ def query_other_section(
     :param section_title: the title or heading of the section to retrieve.
     :return: the text of the matching section, or a warning if not found.
     """
-    global _chunks_cache
-    if not _chunks_cache:
-        return "Warning: Document content is not cached or available for search."
         
     matches = []
-    for chunk in _chunks_cache:
+    for chunk in chunks_cache:
         if section_title.lower() in chunk.heading.lower():
             matches.append(
                 f"--- Section: {chunk.heading} (pages {chunk.page_range[0]}-{chunk.page_range[1]}) ---\n"

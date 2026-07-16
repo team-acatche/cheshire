@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from haystack import Pipeline
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessing_pipeline, build_evaluation_pipeline
@@ -10,9 +12,16 @@ from docling_core.types.doc import BoundingBox
 import logging
 logger = logging.getLogger("uvicorn.error")
 
+
+@dataclass(frozen=True, kw_only=True)
+class PreprocessingPassResults:
+    findings: list[LocalFinding]
+    document_index: dict
+    chunks: list[EvaluationChunk]
+
+
 def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
     preprocessing_pipeline: Pipeline = build_preprocessing_pipeline()
-    evaluation_pipeline: Pipeline = build_evaluation_pipeline()
 
     logger.info("[1/2] Preprocessing document with Docling...")
     prep_result = preprocessing_pipeline.run({
@@ -26,8 +35,7 @@ def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
         f"{len(document_index['figures'])} figures."
     )
 
-    from cheshire_configs.preprocessors.multistep.tools import set_chunks_cache
-    set_chunks_cache(chunks)
+    evaluation_pipeline: Pipeline = build_evaluation_pipeline()
 
     logger.info("[2/2] Evaluating sections...")
     all_findings: list[LocalFinding] = []
@@ -55,6 +63,9 @@ def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
                 "chunk": chunk,
                 "document_index": document_index,
                 "previous_findings": previous_findings
+            },
+            "agent": {
+                "chunks_cache": chunks
             }
         })
 
@@ -68,9 +79,13 @@ def run_pass1(pdf_path: str) -> tuple[list[LocalFinding], dict]:
             f"      to {len(state_findings)} finding(s) recorded."
         )
 
-    return all_findings, document_index
+    return PreprocessingPassResults(
+        findings=all_findings,
+        document_index=document_index,
+        chunks=chunks
+    )
 
-def run_pass2(all_findings: list, document_index: dict) -> list[VulnerabilityDetails]:
+def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
     logger.info("[Pass 2] Deduplicating and synthesising...")
 
     pipeline: Pipeline = build_synthesis_pipeline()
@@ -114,12 +129,9 @@ def run_pass2(all_findings: list, document_index: dict) -> list[VulnerabilityDet
         accepted_local = deduped
         logger.info(f"  Programmatic dedup: {len(all_findings)} to {len(accepted_local)}.")
 
-    # Resolve coordinates and convert to VulnerabilityDetails
-    from cheshire_configs.preprocessors.multistep.tools import _chunks_cache
-
     element_by_id = {}
     figure_by_id = {}
-    for chunk in _chunks_cache:
+    for chunk in results.chunks:
         for e in chunk.element_refs:
             element_by_id[e.element_id] = e
         for fig in chunk.figures:

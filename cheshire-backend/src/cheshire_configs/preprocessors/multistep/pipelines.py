@@ -3,14 +3,17 @@ import os
 from haystack import Pipeline
 from haystack.components.agents import Agent
 from haystack.utils import Secret
-from haystack.tools import Tool
+from haystack.tools import Tool, create_tool_from_function
 
 from haystack_integrations.components.generators.openrouter import OpenRouterChatGenerator
 
+from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding
+from cheshire_configs.preprocessors.multistep.pipelines import add_local_finding_tool
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
 from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder, PASS2_SYSTEM_PROMPT
+from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
 
 from typing import cast
 from tools.exa import web_search
@@ -94,10 +97,6 @@ def build_preprocessing_pipeline() -> Pipeline:
     return pipeline
 
 
-from haystack.tools import create_tool_from_function
-from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
-from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
-
 def add_local_finding_tool(state_key: str) -> Tool:
     _tool = create_tool_from_function(
         function=add_local_finding,
@@ -124,7 +123,6 @@ def build_evaluation_pipeline() -> Pipeline:
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
-    from cheshire_configs.preprocessors.multistep.pipelines import add_local_finding_tool
     agent_tools = _make_tools() + [add_local_finding_tool("findings_list")]
 
     agent = Agent(
@@ -134,6 +132,7 @@ def build_evaluation_pipeline() -> Pipeline:
         max_agent_steps=10,
         exit_conditions=["text"],
         state_schema={
+            "chunks_cache": {"type": list[EvaluationChunk]},
             "findings_list": {"type": list},
         }
     )
