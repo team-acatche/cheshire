@@ -2,9 +2,10 @@ from docling_core.types.doc import BoundingBox
 from haystack import component
 from haystack.dataclasses import ChatMessage
 import json
+from typing import Any
 
 from tools.helpers.output_schema import VulnerabilityDetails
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk
+from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, ElementRef, FigureRef
 
 
 @component
@@ -64,21 +65,25 @@ class FindingsParser:
             bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
 
             if figure_id in figure_by_id and figure_id is not None:
-                fig = figure_by_id[figure_id]
+                fig: FigureRef = figure_by_id[figure_id]
                 page_no = fig.page_number
 
                 if sub_bbox and len(sub_bbox) == 4:
+                    sx1: float
+                    sy1: float
+                    sx2: float
+                    sy2: float
                     sx1, sy1, sx2, sy2 = sub_bbox
-                    max_coord = max(sx1, sy1, sx2, sy2)
-                    scale_factor = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+                    max_coord: float = max(sx1, sy1, sx2, sy2)
+                    scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
                     
-                    frac_x1 = max(0.0, min(1.0, sx1 / scale_factor))
-                    frac_y1 = max(0.0, min(1.0, sy1 / scale_factor))
-                    frac_x2 = max(0.0, min(1.0, sx2 / scale_factor))
-                    frac_y2 = max(0.0, min(1.0, sy2 / scale_factor))
+                    frac_x1: float = max(0.0, min(1.0, sx1 / scale_factor))
+                    frac_y1: float = max(0.0, min(1.0, sy1 / scale_factor))
+                    frac_x2: float = max(0.0, min(1.0, sx2 / scale_factor))
+                    frac_y2: float = max(0.0, min(1.0, sy2 / scale_factor))
                     
-                    fig_w = fig.bbox_pdf.r - fig.bbox_pdf.l
-                    fig_h = fig.bbox_pdf.t - fig.bbox_pdf.b
+                    fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+                    fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
                     
                     bbox = BoundingBox(
                         l=fig.bbox_pdf.l + frac_x1 * fig_w,
@@ -90,7 +95,7 @@ class FindingsParser:
                     bbox = fig.bbox_pdf
 
             elif element_id in element_by_id is not None:
-                elem = element_by_id[element_id]
+                elem: ElementRef = element_by_id[element_id]
                 bbox = elem.bbox_pdf
 
             try:
