@@ -84,7 +84,6 @@ class LocalFinding(BaseModel):
     recommendations: Optional[List[str]] = Field(default_factory=list, description="Optional list of recommendation strings.")
 
 
-
 @dataclass
 class EvaluationChunk:
     """
@@ -386,7 +385,8 @@ def build_chunks(
                     f"[ID:{ref_id}|{elem.label}|p{elem.page_number}]"
                 )
                 text_lines.append(elem.text_excerpt)
-                text_lines.append("")
+                text_lines.append("") # forces an extra newline when joined @ line 406
+                continue
 
             fig: FigureRef | None = figure_lookup.get(ref_id)
             if fig is not None and fig.base64_png:
@@ -427,14 +427,15 @@ def _attach_figures_by_page(
     figure to the chunk whose page range contains the figure's page,
     falling back to the nearest chunk by page distance.
     """
-    attached_ids: set[str] = set()
-    for chunk in chunks:
-        chunk: EvaluationChunk
-        attached_ids.update(f.figure_id for f in chunk.figures)
+    attached_ids: set[str] = {
+        figure.figure_id
+        for chunk in chunks
+        for figure in chunk.figures
+    }
 
-    for fig in figure_lookup.values():
-        fig: FigureRef
-        if not fig.base64_png or fig.figure_id in attached_ids:
+    for figure in figure_lookup.values():
+        figure: FigureRef
+        if not figure.base64_png or figure.figure_id in attached_ids:
             continue
 
         # Prefer a chunk whose page range includes the figure's page
@@ -443,19 +444,19 @@ def _attach_figures_by_page(
 
         for chunk in chunks:
             chunk: EvaluationChunk
-            if chunk.page_range[0] <= fig.page_number <= chunk.page_range[1]:
+            if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
                 best_chunk = chunk
                 break
             dist: float = min(
-                abs(fig.page_number - chunk.page_range[0]),
-                abs(fig.page_number - chunk.page_range[1])
+                abs(figure.page_number - chunk.page_range[0]),
+                abs(figure.page_number - chunk.page_range[1])
             )
             if dist < best_dist:
                 best_dist = dist
                 best_chunk = chunk
 
         if best_chunk is not None:
-            best_chunk.figures.append(fig)
+            best_chunk.figures.append(figure)
 
 
 def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
@@ -474,10 +475,11 @@ def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
     for _heading, indices in heading_groups.items():
         _heading: str
         indices: list[int]
+        # skip single chunk or empty sections
         if len(indices) <= 1:
             continue
 
-        # Collect all unique figures from every chunk in this section
+        # collect all figures from a multi-chunk section
         all_figures: list[FigureRef] = []
         seen_ids: set[str] = set()
         for idx in indices:
@@ -488,7 +490,7 @@ def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
                     all_figures.append(fig)
                     seen_ids.add(fig.figure_id)
 
-        # Distribute to every chunk so the agent always sees them
+        # distribute to every chunk with the same header
         for idx in indices:
             idx: int
             chunks[idx].figures = list(all_figures)

@@ -4,6 +4,7 @@ from haystack import Pipeline
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessing_pipeline, build_evaluation_pipeline
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding, ElementRef, FigureRef
+from cheshire_configs.preprocessors.multistep.components.findings_parser import clamp
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_synthesis_pipeline
 from tools.helpers.output_schema import VulnerabilityDetails, Contradiction
@@ -137,6 +138,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         accepted_local = deduped
         logger.info(f"  Programmatic dedup: {len(all_findings)} to {len(accepted_local)}.")
 
+    # reconstruct element and figure lookup for findings parsing
     element_by_id: dict[str, ElementRef] = {}
     figure_by_id: dict[str, FigureRef] = {}
     for chunk in results.chunks:
@@ -148,6 +150,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
             fig: FigureRef
             figure_by_id[fig.figure_id] = fig
 
+    # parsing the final set of findings
     final_vulnerabilities: list[VulnerabilityDetails] = []
     for f in accepted_local:
         f: LocalFinding | dict
@@ -162,7 +165,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         page_no: int = 1
         bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
 
-        if figure_id and figure_id in figure_by_id:
+        if figure_id and (figure_id in figure_by_id):
             fig: FigureRef = figure_by_id[figure_id]
             page_no = fig.page_number
 
@@ -175,10 +178,10 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 max_coord: float = max(sx1, sy1, sx2, sy2)
                 scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
 
-                frac_x1: float = max(0.0, min(1.0, sx1 / scale_factor))
-                frac_y1: float = max(0.0, min(1.0, sy1 / scale_factor))
-                frac_x2: float = max(0.0, min(1.0, sx2 / scale_factor))
-                frac_y2: float = max(0.0, min(1.0, sy2 / scale_factor))
+                frac_x1: float = clamp(0.0, sx1 / scale_factor, 1.0)
+                frac_y1: float = clamp(0.0, sy1 / scale_factor, 1.0)
+                frac_x2: float = clamp(0.0, sx2 / scale_factor, 1.0)
+                frac_y2: float = clamp(0.0, sy2 / scale_factor, 1.0)
 
                 fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
                 fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
