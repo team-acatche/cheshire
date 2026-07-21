@@ -1,6 +1,6 @@
 from haystack import component
 from haystack.dataclasses import ChatMessage, ImageContent, TextContent
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk
+from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, FigureRef
 import json
 
 
@@ -20,7 +20,7 @@ class ChunkMessageBuilder:
         previous_findings: list | None = None
     ) -> dict:
 
-        prompt_text = f"Document index:\n{json.dumps(document_index, indent=2)}"
+        prompt_text: str = f"Document index:\n{json.dumps(document_index, indent=2)}"
         
         if previous_findings:
             prompt_text += f"\n\nFindings identified in previous sections:\n{json.dumps(previous_findings, indent=2)}"
@@ -36,6 +36,7 @@ class ChunkMessageBuilder:
         ]
 
         for fig in chunk.figures:
+            fig: FigureRef
             content.append(TextContent(f"\n[Figure ID:{fig.figure_id} | page {fig.page_number}]"))
             content.append(ImageContent(fig.base64_png, "image/png"))
 

@@ -1,11 +1,26 @@
+import json
+from typing import Any
+
 from docling_core.types.doc import BoundingBox
 from haystack import component
 from haystack.dataclasses import ChatMessage
-import json
 
 from tools.helpers.output_schema import VulnerabilityDetails
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk
+from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, ElementRef, FigureRef
 
+def clamp(min_val: float, value: float, max_val: float) -> float:
+    """
+    Clamps a value to the range [min_val, max_val].
+
+    Args:
+        min_val: The minimum value of the range.
+        value: The value to clamp.
+        max_val: The maximum value of the range.
+
+    Returns:
+        The clamped value.
+    """
+    return max(min_val, min(value, max_val))
 
 @component
 class FindingsParser:
@@ -30,76 +45,85 @@ class FindingsParser:
         last_message: ChatMessage,
         chunk: EvaluationChunk
     ) -> dict:
-        element_by_id = {e.element_id: e for e in chunk.element_refs}
-        figure_by_id = {f.figure_id: f for f in chunk.figures}
+        element_by_id: dict[str, ElementRef] = {e.element_id: e for e in chunk.element_refs}
+        figure_by_id: dict[str, FigureRef] = {f.figure_id: f for f in chunk.figures}
 
-        raw = (last_message.text or "[]").strip()
+        # extract raw findings JSON from code block
+        raw: str = (last_message.text or "[]").strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
         raw = raw.strip()
 
+        # validate schema before deseralizing later @ lines 57-100
         try:
-            items = json.loads(raw)
+            findings: Any = json.loads(raw)
         except json.JSONDecodeError:
             return {"vulnerabilities": []}
 
-        if isinstance(items, dict):
-            items = [items]
-        elif not isinstance(items, list):
+        # convert single-item dict to list
+        if isinstance(findings, dict):
+            findings = [findings]
+        elif not isinstance(findings, list):
             return {"vulnerabilities": []}
 
         vulnerabilities: list[VulnerabilityDetails] = []
 
-        for item in items:
-            if not isinstance(item, dict):
+        for finding in findings:
+            finding: Any
+            if not isinstance(finding, dict):
                 continue
-            element_id: str | None = item.get("element_id")
-            figure_id: str | None = item.get("figure_id")
-            sub_bbox: list[int] | None = item.get("sub_bbox")
-            page_no: int = item.get("page_no", 0)
-            bbox = BoundingBox(l=0, t=0, r=0, b=0)
+            element_id: str | None = finding.get("element_id")
+            figure_id: str | None = finding.get("figure_id")
+            sub_bbox: list[float] | None = finding.get("sub_bbox")
+            page_no: int = finding.get("page_no", 0)
+            bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
 
-            if figure_id and figure_id in figure_by_id:
-                fig = figure_by_id[figure_id]
+            if figure_id in figure_by_id and figure_id is not None:
+                fig: FigureRef = figure_by_id[figure_id]
                 page_no = fig.page_number
 
                 if sub_bbox and len(sub_bbox) == 4:
-                    sx1, sy1, sx2, sy2 = sub_bbox
-                    max_coord = max(sx1, sy1, sx2, sy2)
-                    scale_factor = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+                    scaled_x1: float
+                    scaled_y1: float
+                    scaled_x2: float
+                    scaled_y2: float
+                    scaled_x1, scaled_y1, scaled_x2, scaled_y2 = sub_bbox
+                    max_coord: float = max(scaled_x1, scaled_y1, scaled_x2, scaled_y2)
+                    scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
                     
-                    frac_x1 = max(0.0, min(1.0, sx1 / scale_factor))
-                    frac_y1 = max(0.0, min(1.0, sy1 / scale_factor))
-                    frac_x2 = max(0.0, min(1.0, sx2 / scale_factor))
-                    frac_y2 = max(0.0, min(1.0, sy2 / scale_factor))
+                    normalized_x1: float = clamp(0.0, scaled_x1 / scale_factor, 1.0)
+                    normalized_y1: float = clamp(0.0, scaled_y1 / scale_factor, 1.0)
+                    normalized_x2: float = clamp(0.0, scaled_x2 / scale_factor, 1.0)
+                    normalized_y2: float = clamp(0.0, scaled_y2 / scale_factor, 1.0)
                     
-                    fig_w = fig.bbox_pdf.r - fig.bbox_pdf.l
-                    fig_h = fig.bbox_pdf.t - fig.bbox_pdf.b
+                    fig_width: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+                    fig_height: float = fig.bbox_pdf.t - fig.bbox_pdf.b
                     
                     bbox = BoundingBox(
-                        l=fig.bbox_pdf.l + frac_x1 * fig_w,
-                        t=fig.bbox_pdf.t - frac_y1 * fig_h,
-                        r=fig.bbox_pdf.l + frac_x2 * fig_w,
-                        b=fig.bbox_pdf.t - frac_y2 * fig_h
+                        l=fig.bbox_pdf.l + normalized_x1 * fig_width,
+                        t=fig.bbox_pdf.t - normalized_y1 * fig_height,
+                        r=fig.bbox_pdf.l + normalized_x2 * fig_width,
+                        b=fig.bbox_pdf.t - normalized_y2 * fig_height
                     )
                 else:
                     bbox = fig.bbox_pdf
 
-            elif element_id and element_id in element_by_id:
-                elem = element_by_id[element_id]
+            # if finding references an element, 
+            elif element_id in element_by_id is not None:
+                elem: ElementRef = element_by_id[element_id]
                 bbox = elem.bbox_pdf
 
             try:
                 vulnerabilities.append(
                     VulnerabilityDetails(
-                        title=item["title"],
-                        description=item["description"],
+                        title=finding["title"],
+                        description=finding["description"],
                         page_no=page_no,
                         bbox=bbox,
-                        web_references=item.get("web_references", []),
-                        recommendations=item.get("recommendations", [])
+                        web_references=finding.get("web_references", []),
+                        recommendations=finding.get("recommendations", [])
                     )
                 )
             except Exception:

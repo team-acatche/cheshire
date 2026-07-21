@@ -1,16 +1,11 @@
 from typing import Annotated, Any
 from haystack.tools import tool
-from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
+from knowledge_base.repository import KnowledgeRepository
+from cheshire_configs.preprocessors.multistep.helpers import LocalFinding, EvaluationChunk
 
 
 from globals import DATA_PATH
 from knowledge_base.qdrant import QdrantRepositoryManager
-
-_chunks_cache: list = []
-
-def set_chunks_cache(chunks: list) -> None:
-    global _chunks_cache
-    _chunks_cache = chunks
 
 @tool
 def get_standard(
@@ -25,6 +20,7 @@ def get_standard(
 
     :return: a dict containing company standard requirements relevant to the query.
     """
+    knowledge_repo: KnowledgeRepository
     _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH, username="system")
     results = knowledge_repo.search(query=query)
     facts: list[str] = [f"[Company standard requirement] {document.content}" for document in results]
@@ -32,7 +28,8 @@ def get_standard(
 
 @tool
 def query_other_section(
-    section_title: Annotated[str, "The title or heading of the section to query (e.g. 'Authentication', 'Section 5')."]
+    section_title: Annotated[str, "The title or heading of the section to query (e.g. 'Authentication', 'Section 5')."],
+    chunks_cache: list[EvaluationChunk],
 ) -> str:
     """
     Retrieves the full text of another section in the document by title search.
@@ -42,12 +39,9 @@ def query_other_section(
     :param section_title: the title or heading of the section to retrieve.
     :return: the text of the matching section, or a warning if not found.
     """
-    global _chunks_cache
-    if not _chunks_cache:
-        return "Warning: Document content is not cached or available for search."
         
     matches = []
-    for chunk in _chunks_cache:
+    for chunk in chunks_cache:
         if section_title.lower() in chunk.heading.lower():
             matches.append(
                 f"--- Section: {chunk.heading} (pages {chunk.page_range[0]}-{chunk.page_range[1]}) ---\n"

@@ -3,14 +3,16 @@ import os
 from haystack import Pipeline
 from haystack.components.agents import Agent
 from haystack.utils import Secret
-from haystack.tools import Tool
+from haystack.tools import Tool, create_tool_from_function
 
 from haystack_integrations.components.generators.openrouter import OpenRouterChatGenerator
 
+from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
 from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder, PASS2_SYSTEM_PROMPT
+from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
 
 from typing import cast
 from tools.exa import web_search
@@ -83,7 +85,7 @@ def _make_tools() -> list[Tool]:
 
 
 def build_preprocessing_pipeline() -> Pipeline:
-    pipeline = Pipeline()
+    pipeline: Pipeline = Pipeline()
 
     pipeline.add_component(
         "docling_converter",
@@ -94,12 +96,8 @@ def build_preprocessing_pipeline() -> Pipeline:
     return pipeline
 
 
-from haystack.tools import create_tool_from_function
-from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
-from cheshire_configs.preprocessors.multistep.helpers import LocalFinding
-
 def add_local_finding_tool(state_key: str) -> Tool:
-    _tool = create_tool_from_function(
+    _tool: Tool = create_tool_from_function(
         function=add_local_finding,
         description="Record a local vulnerability/finding gap.",
         outputs_to_state={state_key: {"source": "finding"}}
@@ -108,7 +106,7 @@ def add_local_finding_tool(state_key: str) -> Tool:
     return _tool
 
 def accept_local_finding_tool(state_key: str) -> Tool:
-    _tool = create_tool_from_function(
+    _tool: Tool = create_tool_from_function(
         function=accept_local_finding,
         description="Accept a local finding as valid and non-duplicate. Call this for each unique local finding you want to keep.",
         outputs_to_state={state_key: {"source": "finding"}}
@@ -119,26 +117,26 @@ def accept_local_finding_tool(state_key: str) -> Tool:
 
 
 def build_evaluation_pipeline() -> Pipeline:
-    generator = OpenRouterChatGenerator(
+    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
-    from cheshire_configs.preprocessors.multistep.pipelines import add_local_finding_tool
-    agent_tools = _make_tools() + [add_local_finding_tool("findings_list")]
+    agent_tools: list[Tool] = _make_tools() + [add_local_finding_tool("findings_list")]
 
-    agent = Agent(
+    agent: Agent = Agent(
         chat_generator=generator,
         tools=agent_tools,
         system_prompt=PASS1_SYSTEM_PROMPT,
         max_agent_steps=10,
         exit_conditions=["text"],
         state_schema={
+            "chunks_cache": {"type": list[EvaluationChunk]},
             "findings_list": {"type": list},
         }
     )
 
-    pipeline = Pipeline()
+    pipeline: Pipeline = Pipeline()
     pipeline.add_component("chunk_message_builder", ChunkMessageBuilder())
     pipeline.add_component("agent", agent)
 
@@ -146,8 +144,41 @@ def build_evaluation_pipeline() -> Pipeline:
 
     return pipeline
 
+
+PASS2_SYSTEM_PROMPT = """\
+You are a technical reviewer synthesising a multi-section document audit.
+
+INPUT
+A JSON array of local findings and a document index.
+Each local finding has these fields: element_id, figure_id, sub_bbox, element_type, finding, standard_ref, severity, confidence.
+
+TOOLS
+- accept_local_finding(finding): Accept a local finding as valid and non-duplicate. \
+The `finding` dictionary must match the schema: \
+{ "element_id": "str", "figure_id": "str|null", "sub_bbox": [x1,y1,x2,y2]|null, "element_type": "str", "finding": "str", "standard_ref": "str", "severity": "str", "confidence": float }
+- flag_contradiction(finding_a_title, finding_b_title, description): \
+Flag two findings that contradict each other across sections.
+
+TASKS
+  1. Review every finding in the input.
+  2. Deduplicate: if multiple findings describe the same issue across \
+different sections, call accept_local_finding only for the most detailed version.
+  3. For each unique, valid finding, call accept_local_finding with the original \
+fields exactly as provided.
+  4. If two findings contradict each other, call flag_contradiction.
+
+CONSTRAINTS
+- You MUST call accept_local_finding for every valid, non-duplicate finding. \
+This is the only way findings are recorded.
+- Preserve ALL original fields exactly as given when calling accept_local_finding. \
+Do NOT rename, rewrite, or omit any field.
+- Do NOT accept duplicate findings. Only accept the most detailed version \
+of each unique issue.
+- After processing all findings, output a brief text summary of what you did.\
+"""
+
 def build_synthesis_pipeline() -> Pipeline:
-    generator = OpenRouterChatGenerator(
+    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
@@ -155,7 +186,7 @@ def build_synthesis_pipeline() -> Pipeline:
     from tools.base import flag_contradiction_tool
     from tools.helpers.output_schema import Contradiction
 
-    agent = Agent(
+    agent: Agent = Agent(
         chat_generator=generator,
         tools=[
             accept_local_finding_tool("accepted_findings"),
@@ -170,7 +201,7 @@ def build_synthesis_pipeline() -> Pipeline:
         }
     )
 
-    pipeline = Pipeline()
+    pipeline: Pipeline = Pipeline()
     pipeline.add_component("synthesis_message_builder", SynthesisMessageBuilder())
     pipeline.add_component("agent", agent)
 

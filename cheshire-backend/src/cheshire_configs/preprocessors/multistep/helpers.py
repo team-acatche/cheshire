@@ -3,7 +3,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Optional, List
+from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 
 
@@ -11,7 +11,35 @@ from docling_core.types.doc import BoundingBox
 from docling.chunking import HierarchicalChunker
 from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.document import ProvenanceItem
 
+
+@dataclass(frozen=True, kw_only=True)
+class ImageBoundingBox:
+    """
+    A set of bounding box coordinates meant to represent a subregion within a rendered page.
+    Serves as a normalized conversion from Docling's BoundingBox.
+    """
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+    @staticmethod
+    def from_docling_bbox(
+        bbox: BoundingBox, 
+        page_height: float,
+        scale: float
+    ) -> "ImageBoundingBox":
+        """
+        Converts a Docling Bounding Box to an ImageBoundingBox.
+        """
+        return ImageBoundingBox(
+            x1 = round(bbox.l * scale),
+            y1 = round((page_height - bbox.t) * scale),
+            x2 = round(bbox.r * scale),
+            y2 = round((page_height - bbox.b) * scale)
+        )
 
 @dataclass
 class ElementRef:
@@ -23,7 +51,7 @@ class ElementRef:
     element_id: str             
     label: str                  
     page_number: int            
-    bbox_image_px: list[float]  
+    bbox_image_px: ImageBoundingBox
     bbox_pdf: BoundingBox       
     text_excerpt: str           
 
@@ -56,7 +84,6 @@ class LocalFinding(BaseModel):
     recommendations: Optional[List[str]] = Field(default_factory=list, description="Optional list of recommendation strings.")
 
 
-
 @dataclass
 class EvaluationChunk:
     """
@@ -70,32 +97,6 @@ class EvaluationChunk:
     structured_text: str # text for the model
     element_refs: list[ElementRef] = field(default_factory=list)
     figures: list[FigureRef] = field(default_factory=list)
-
-
-def _to_image_px(
-    bbox: BoundingBox, 
-    page_height: float,
-    scale: float
-) -> list[float]:
-    """
-    Docling stores bboxes in PDF coordinate space:
-      - origin at bottom-left
-      - Y increases upward
-      - units in points
-
-    Rendered page images use image coordinate space:
-      - origin at top-left
-      - Y increases downward
-      - units in pixels
-
-    bbox.t is the top edge in PDF space (larger Y value).
-    Subtracting from page_height flips the axis, then multiply by scale.
-    """
-    x1 = round(bbox.l * scale)
-    y1 = round((page_height - bbox.t) * scale)
-    x2 = round(bbox.r * scale)
-    y2 = round((page_height - bbox.b) * scale)
-    return [x1, y1, x2, y2]
 
 
 def _build_element_lookup(
@@ -112,10 +113,12 @@ def _build_element_lookup(
     _last_table_header: str | None = None
 
     for item, _level in doc.iterate_items():
+        item: Any
+        _level: int
         if not hasattr(item, "prov") or not item.prov:
             continue
 
-        label = (
+        label: str = (
             item.label.value
             if hasattr(item.label, "value")
             else str(item.label)
@@ -125,20 +128,23 @@ def _build_element_lookup(
         if label in ("picture", "page_header", "page_footer"):
             continue
 
-        prov = item.prov[0]
-        page = doc.pages.get(prov.page_no)
+        prov: ProvenanceItem = item.prov[0]
+        page: Any = doc.pages.get(prov.page_no)
         if page is None or page.size is None:
             continue
 
-        bbox_px = _to_image_px(prov.bbox, page.size.height, scale)
+        bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
 
+        text: str = ""
         if label == "table" and hasattr(item, "export_to_markdown"):
             text = item.export_to_markdown()
-            lines = text.strip().split('\n')
+            lines: list[str] = text.strip().split('\n')
 
             # Detect if this table has a header separator (e.g. |---|---|)
             sep_idx: int | None = None
             for i, line in enumerate(lines[:4]):
+                i: int
+                line: str
                 if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
                     sep_idx = i
                     break
@@ -154,8 +160,6 @@ def _build_element_lookup(
             text = item.text
         elif hasattr(item, "export_to_markdown"):
             text = item.export_to_markdown()
-        else:
-            text = ""
 
         lookup[item.self_ref] = ElementRef(
             element_id=item.self_ref,
@@ -183,21 +187,22 @@ def _build_figure_lookup(
     lookup: dict[str, FigureRef] = {}
 
     for picture in doc.pictures:
+        picture: Any
         if not picture.prov:
             continue
 
-        prov = picture.prov[0]
-        page = doc.pages.get(prov.page_no)
+        prov: ProvenanceItem = picture.prov[0]
+        page: Any = doc.pages.get(prov.page_no)
         if page is None or page.size is None:
             continue
 
-        bbox_px = _to_image_px(prov.bbox, page.size.height, scale)
+        bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
 
         try:
-            img = picture.get_image(result)
-            buf = BytesIO()
+            img: Any = picture.get_image(result)
+            buf: BytesIO = BytesIO()
             img.save(buf, format="PNG")
-            b64 = base64.standard_b64encode(buf.getvalue()).decode()
+            b64: str = base64.standard_b64encode(buf.getvalue()).decode()
         except Exception:
             b64 = ""
 
@@ -221,7 +226,9 @@ def _attach_captions(doc: DoclingDocument, figures: list[dict]) -> None:
     caption (PDF coordinate space). The closest figure above the caption wins.
     """
     for item, _level in doc.iterate_items():
-        label = (
+        item: Any
+        _level: int
+        label: str = (
             item.label.value
             if hasattr(item.label, "value")
             else str(item.label)
@@ -231,21 +238,23 @@ def _attach_captions(doc: DoclingDocument, figures: list[dict]) -> None:
         if not hasattr(item, "prov") or not item.prov:
             continue
 
-        caption_prov = item.prov[0]
-        caption_page = caption_prov.page_no
-        caption_top = caption_prov.bbox.t  # top of caption in PDF space
+        caption_prov: ProvenanceItem = item.prov[0]
+        caption_page: int = caption_prov.page_no
+        caption_top: float = caption_prov.bbox.t  # top of caption in PDF space
 
         best_fig: dict | None = None
-        best_dist = float("inf")
+        best_dist: float = float("inf")
 
         for fig in figures:
+            fig: dict
             if fig["page"] != caption_page:
                 continue
             for pic in doc.pictures:
+                pic: Any
                 if pic.self_ref != fig["id"] or not pic.prov:
                     continue
-                fig_bottom = pic.prov[0].bbox.b  # bottom of figure in PDF space
-                dist = caption_top - fig_bottom  # positive = caption below figure
+                fig_bottom: float = pic.prov[0].bbox.b  # bottom of figure in PDF space
+                dist: float = caption_top - fig_bottom  # positive = caption below figure
                 if 0 < dist < best_dist:
                     best_dist = dist
                     best_fig = fig
@@ -263,7 +272,9 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     section_pages: set[int] = set()
 
     for item, _level in doc.iterate_items():
-        label = (
+        item: Any
+        _level: int
+        label: str = (
             item.label.value
             if hasattr(item.label, "value")
             else str(item.label)
@@ -271,17 +282,18 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
         if label == "section_heading" and hasattr(item, "prov") and item.prov:
             section_pages.add(item.prov[0].page_no)
 
-    all_pages = sorted(doc.pages.keys())
-    unassigned = [p for p in all_pages if p not in section_pages]
+    all_pages: list[int] = sorted(doc.pages.keys())
+    unassigned: list[int] = [p for p in all_pages if p not in section_pages]
 
     if not unassigned:
         return []
 
     gaps: list[dict] = []
-    start = unassigned[0]
-    prev = unassigned[0]
+    start: int = unassigned[0]
+    prev: int = unassigned[0]
 
     for page in unassigned[1:]:
+        page: int
         if page != prev + 1:
             gaps.append({"pages": list(range(start, prev + 1))})
             start = page
@@ -297,13 +309,14 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
         return merged_chunks
 
     import copy
-    current_chunk = copy.copy(raw_chunks[0])
+    current_chunk: EvaluationChunk = copy.copy(raw_chunks[0])
     current_chunk.element_refs = list(current_chunk.element_refs)
     current_chunk.figures = list(current_chunk.figures)
 
     for next_chunk in raw_chunks[1:]:
-        same_section = current_chunk.heading == next_chunk.heading
-        len_combined = len(current_chunk.structured_text) + len(next_chunk.structured_text)
+        next_chunk: EvaluationChunk
+        same_section: bool = current_chunk.heading == next_chunk.heading
+        len_combined: int = len(current_chunk.structured_text) + len(next_chunk.structured_text)
         
         if same_section and len_combined <= max_chars:
             current_chunk.structured_text = (
@@ -311,13 +324,14 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
             ).strip()
             current_chunk.element_refs.extend(next_chunk.element_refs)
             
-            seen_figs = {f.figure_id for f in current_chunk.figures}
+            seen_figs: set[str] = {f.figure_id for f in current_chunk.figures}
             for fig in next_chunk.figures:
+                fig: FigureRef
                 if fig.figure_id not in seen_figs:
                     current_chunk.figures.append(fig)
             
-            min_page = min(current_chunk.page_range[0], next_chunk.page_range[0])
-            max_page = max(current_chunk.page_range[1], next_chunk.page_range[1])
+            min_page: int = min(current_chunk.page_range[0], next_chunk.page_range[0])
+            max_page: int = max(current_chunk.page_range[1], next_chunk.page_range[1])
             current_chunk.page_range = (min_page, max_page)
         else:
             merged_chunks.append(current_chunk)
@@ -328,6 +342,8 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
     merged_chunks.append(current_chunk)
     
     for idx, c in enumerate(merged_chunks):
+        idx: int
+        c: EvaluationChunk
         c.chunk_id = f"chunk_{idx}"
         
     return merged_chunks
@@ -346,38 +362,42 @@ def build_chunks(
     reference it by ID in its findings output. Figure crops are collected
     separately and attached to the chunk they appear in.
     """
-    element_lookup = _build_element_lookup(doc, scale)
-    figure_lookup = _build_figure_lookup(doc, result, scale)
+    element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, scale)
+    figure_lookup: dict[str, FigureRef] = _build_figure_lookup(doc, result, scale)
 
     chunks: list[EvaluationChunk] = []
 
     for i, chunk in enumerate(chunker.chunk(doc)):
+        i: int
+        chunk: Any
         text_lines: list[str] = []
         chunk_elements: list[ElementRef] = []
         chunk_figures: list[FigureRef] = []
 
         for item in chunk.meta.doc_items:
-            ref_id = item.self_ref
+            item: Any
+            ref_id: str = item.self_ref
 
-            elem = element_lookup.get(ref_id)
+            elem: ElementRef | None = element_lookup.get(ref_id)
             if elem is not None:
                 chunk_elements.append(elem)
                 text_lines.append(
                     f"[ID:{ref_id}|{elem.label}|p{elem.page_number}]"
                 )
                 text_lines.append(elem.text_excerpt)
-                text_lines.append("")
+                text_lines.append("") # forces an extra newline when joined @ line 406
+                continue
 
-            fig = figure_lookup.get(ref_id)
+            fig: FigureRef | None = figure_lookup.get(ref_id)
             if fig is not None and fig.base64_png:
                 chunk_figures.append(fig)
 
-        all_pages = (
+        all_pages: set[int] = (
             {e.page_number for e in chunk_elements}
             | {f.page_number for f in chunk_figures}
         )
-        page_range = (min(all_pages), max(all_pages)) if all_pages else (0, 0)
-        heading = (chunk.meta.headings or [f"Section {i + 1}"])[0]
+        page_range: tuple[int, int] = (min(all_pages), max(all_pages)) if all_pages else (0, 0)
+        heading: str = (chunk.meta.headings or [f"Section {i + 1}"])[0]
 
         chunks.append(EvaluationChunk(
             chunk_id=f"chunk_{i}",
@@ -388,7 +408,7 @@ def build_chunks(
             figures=chunk_figures
         ))
 
-    merged = merge_chunks(chunks)
+    merged: list[EvaluationChunk] = merge_chunks(chunks)
     _attach_figures_by_page(merged, figure_lookup)
     _propagate_section_figures(merged)
     return merged
@@ -407,32 +427,36 @@ def _attach_figures_by_page(
     figure to the chunk whose page range contains the figure's page,
     falling back to the nearest chunk by page distance.
     """
-    attached_ids: set[str] = set()
-    for chunk in chunks:
-        attached_ids.update(f.figure_id for f in chunk.figures)
+    attached_ids: set[str] = {
+        figure.figure_id
+        for chunk in chunks
+        for figure in chunk.figures
+    }
 
-    for fig in figure_lookup.values():
-        if not fig.base64_png or fig.figure_id in attached_ids:
+    for figure in figure_lookup.values():
+        figure: FigureRef
+        if not figure.base64_png or figure.figure_id in attached_ids:
             continue
 
         # Prefer a chunk whose page range includes the figure's page
         best_chunk: EvaluationChunk | None = None
-        best_dist = float('inf')
+        best_dist: float = float('inf')
 
         for chunk in chunks:
-            if chunk.page_range[0] <= fig.page_number <= chunk.page_range[1]:
+            chunk: EvaluationChunk
+            if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
                 best_chunk = chunk
                 break
-            dist = min(
-                abs(fig.page_number - chunk.page_range[0]),
-                abs(fig.page_number - chunk.page_range[1])
+            dist: float = min(
+                abs(figure.page_number - chunk.page_range[0]),
+                abs(figure.page_number - chunk.page_range[1])
             )
             if dist < best_dist:
                 best_dist = dist
                 best_chunk = chunk
 
         if best_chunk is not None:
-            best_chunk.figures.append(fig)
+            best_chunk.figures.append(figure)
 
 
 def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
@@ -444,23 +468,31 @@ def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
     """
     heading_groups: dict[str, list[int]] = defaultdict(list)
     for i, chunk in enumerate(chunks):
+        i: int
+        chunk: EvaluationChunk
         heading_groups[chunk.heading].append(i)
 
     for _heading, indices in heading_groups.items():
+        _heading: str
+        indices: list[int]
+        # skip single chunk or empty sections
         if len(indices) <= 1:
             continue
 
-        # Collect all unique figures from every chunk in this section
+        # collect all figures from a multi-chunk section
         all_figures: list[FigureRef] = []
         seen_ids: set[str] = set()
         for idx in indices:
+            idx: int
             for fig in chunks[idx].figures:
+                fig: FigureRef
                 if fig.figure_id not in seen_ids:
                     all_figures.append(fig)
                     seen_ids.add(fig.figure_id)
 
-        # Distribute to every chunk so the agent always sees them
+        # distribute to every chunk with the same header
         for idx in indices:
+            idx: int
             chunks[idx].figures = list(all_figures)
 
 
@@ -478,15 +510,17 @@ def build_document_index(doc: DoclingDocument) -> dict:
     tables: list[dict] = []
 
     for item, _level in doc.iterate_items():
+        item: Any
+        _level: int
         if not hasattr(item, "prov") or not item.prov:
             continue
 
-        label = (
+        label: str = (
             item.label.value
             if hasattr(item.label, "value")
             else str(item.label)
         )
-        prov = item.prov[0]
+        prov: ProvenanceItem = item.prov[0]
 
         if label == "section_heading":
             sections.append({

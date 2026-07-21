@@ -27,8 +27,8 @@ user_router = APIRouter()
 
 @user_router.get("/avatars/{avatar_filename}")
 def get_avatar(
-    avatar_filename: Annotated[str, "the filename of the avatar as stored in the server"],
     user_path: Annotated[Path, Depends(get_user_path)],
+    avatar_filename: Annotated[str, "the filename of the avatar as stored in the server"],
 ) -> FileResponse:
     if SESSIONS_PATH is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSIONS_PATH not set")
@@ -48,10 +48,10 @@ class UploadAvatarResponse(BaseModel):
 
 @user_router.post("/avatars")
 async def upload_avatar(
-    avatar: Annotated[UploadFile, RequestFile()],
     user: Annotated[User, Depends(get_current_user)],
     user_path: Annotated[Path, Depends(get_user_path)],
     user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    avatar: Annotated[UploadFile, RequestFile(description="The avatar to be uploaded")],
 ) -> UploadAvatarResponse:
     if SESSIONS_PATH is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSIONS_PATH not set")

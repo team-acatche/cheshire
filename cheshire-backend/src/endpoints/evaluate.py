@@ -50,9 +50,9 @@ class EvaluateResponse(BaseModel):
 async def evaluate_document(
     config: Annotated[PipelineConfig, Depends(resolve_config)],
     current_user: Annotated[User, Depends(get_current_user)],
-    uploaded_document: Annotated[UploadFile, File(description="The document to be evaluated")],
     user_path: Annotated[Path, Depends(get_user_path)],
     user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    uploaded_document: Annotated[UploadFile, File(description="The document to be evaluated")],
     session_id: Annotated[Optional[str], Query(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
 ) -> EvaluateResponse:
     user_id = current_user.user_id
@@ -134,9 +134,9 @@ def _get_latest(session_path: Path) -> str:
 
 @evaluate_router.get("/{session_id}/result")
 def get_latest_evaluation_results(
-    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
     current_user: Annotated[User, Depends(get_current_user)],
     history_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
 ) -> list[VulnerabilityDetails]:
     if not history_db_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -149,9 +149,9 @@ def get_latest_evaluation_results(
 
 @evaluate_router.get("/{session_id}/document")
 def get_document(
-    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
     current_user: Annotated[User, Depends(get_current_user)],
     user_path: Annotated[Path, Depends(get_user_path)],
+    session_id: Annotated[str, PathParam(description="The session ID for the document.")],
 ) -> Response:
     session_path = user_path / session_id
     latest_document = session_path / "documents" / _get_latest(session_path)
