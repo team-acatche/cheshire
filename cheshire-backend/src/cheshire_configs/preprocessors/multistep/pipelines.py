@@ -11,7 +11,7 @@ from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, Lo
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
-from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder, PASS2_SYSTEM_PROMPT
+from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder
 from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
 
 from typing import cast
