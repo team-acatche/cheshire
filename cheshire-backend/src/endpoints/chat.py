@@ -218,15 +218,16 @@ async def chat(
 
     token_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
     _session_token_buffers[session_id] = []
+    response_parts: list[str] = []
 
     async def event_stream() -> AsyncGenerator[dict, None]:
         loop = asyncio.get_running_loop()
-        full_response: list[str] = []
         event_counter = 0
 
         def enqueue_chunk(chunk: StreamingChunk) -> None:
             """Called from executor thread — must use call_soon_threadsafe."""
             if chunk.content:
+                response_parts.append(chunk.content)
                 loop.call_soon_threadsafe(token_queue.put_nowait, chunk.content)
 
         async def run_agent() -> None:
@@ -265,7 +266,21 @@ PROTOCOL:
                 raise
             finally:
                 current_knowledge_state.reset(knowledge_token)
-                # call_soon_threadsafe because finally runs in the executor thread
+
+                final_text = "".join(response_parts)
+                if final_text:
+                    try:
+                        with sqlite3.connect(history_db_path) as save_db:
+                            SqliteEventRepository(save_db).save(Event(
+                                session_id=session_id,
+                                event_type=EventType.RESPONSE,
+                                content=final_text
+                            ))
+                    except Exception:
+                        logger.exception(f"session({session_id}): failed to persist response")
+                
+                _session_token_buffers.pop(session_id, None)
+                _session_agent_tasks.pop(session_id, None)
                 loop.call_soon_threadsafe(token_queue.put_nowait, None)
 
         agent_task = asyncio.create_task(run_agent())
@@ -274,22 +289,18 @@ PROTOCOL:
         try:
             while True:
                 try:
-                    # Wait up to KEEPALIVE_INTERVAL for next token.
-                    # On timeout send a keepalive comment so Cloudflare doesn't 524.
                     token = await asyncio.wait_for(token_queue.get(), timeout=KEEPALIVE_INTERVAL)
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue
 
                 if token is None:
-                    break  # sentinel — agent finished
+                    break
 
-                full_response.append(token)
                 _session_token_buffers[session_id].append((event_counter, token))
                 yield {"event": "token", "id": str(event_counter), "data": json.dumps({"content": token})}
                 event_counter += 1
 
-            # Check if agent raised
             agent_exc: Optional[BaseException] = (
                 agent_task.exception()
                 if agent_task.done() and not agent_task.cancelled()
@@ -299,20 +310,9 @@ PROTOCOL:
                 yield {"event": "error", "data": json.dumps({"message": str(agent_exc)})}
                 return
 
-            final_text = "".join(full_response)
-
-            # Persist the response — fresh connection on the async thread (safe)
-            with sqlite3.connect(history_db_path) as save_db:
-                SqliteEventRepository(save_db).save(Event(
-                    session_id=session_id,
-                    event_type=EventType.RESPONSE,
-                    content=final_text,
-                ))
-
-            yield {"event": "done", "id": "done", "data": json.dumps({"content": final_text})}
+            yield {"event": "done", "id": "done", "data": json.dumps({"content": "".join(response_parts)})}
 
         except asyncio.CancelledError:
-            agent_task.cancel()
             raise
 
         finally:
