@@ -1,15 +1,6 @@
-// src/components/chatbot.tsx
-import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react"
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from "react"
 import { Card } from "./ui/card"
-import { Textarea } from "./ui/textarea"
-import UploadSimpleIcon from "./ui/upload-icon"
-import {
-  Select,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-} from "./ui/select"
+import TextareaAutosize from "react-textarea-autosize"
 import SentIcon from "./ui/sent-icon"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -20,6 +11,7 @@ import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 import { EVALUATION_MODE, PROVIDER } from "@/globals"
 import { authFetch } from "@/lib/auth"
+import { ChevronDown } from "lucide-react"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
@@ -32,15 +24,39 @@ interface ChatbotProps {
   username: string
   profileImage?: string
   onOpenSettings: () => void
+  onActivity?: () => void
+  evaluationPending?: boolean
 }
 
-export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluationPending = false }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
+  const [showScrollDown, setShowScrollDown] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const lastEventIdRef = useRef<string | null>(null)
+  const isAtBottomRef = useRef(true)
 
-  // Load history when session changes
+  // ── Scroll state tracking ──────────────────────────────────────────────────
+  const checkScrollPosition = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+    const atBottom = distanceFromBottom < 80
+    isAtBottomRef.current = atBottom
+    setShowScrollDown(!atBottom)
+    if (atBottom) setUnreadCount(0)
+  }, [])
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" })
+    setUnreadCount(0)
+  }, [])
+
+  // ── Load history on session change ────────────────────────────────────────
   useEffect(() => {
     const fetchHistory = async () => {
       try {
@@ -61,73 +77,182 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                   text.startsWith("Arguments:") ||
                   text === "" ||
                   msg._role === "system"
-                ) {
-                  return null
-                }
-
-                return {
-                  role: msg._role as "user" | "bot1" | "bot2" | "bot3",
-                  text,
-                }
+                ) return null
+                return { role: msg._role as "user" | "bot1" | "bot2" | "bot3", text }
               })
               .filter((m): m is Message => m !== null)
           )
         } else {
           setMessages([
-            { role: "bot1", text: "Hello! I'm your security audit assistant." },
-            { role: "bot1", text: "I've evaluated the document and found the following vulnerabilities:" },
             ...findings.map((f): Message => ({ role: "bot1", text: JSON.stringify(f) })),
-            { role: "bot1", text: "How can I help you?" },
           ])
         }
       } catch {
         setMessages([{ role: "bot1", text: "Hello! I'm ready to help you with the document." }])
       }
     }
-
     fetchHistory()
+    // Reset scroll state on session switch
+    setShowScrollDown(false)
+    setUnreadCount(0)
+    isAtBottomRef.current = true
   }, [sessionId, findings])
 
+  // ── Message update helpers ────────────────────────────────────────────────
+  const appendToLastBotMessage = (text: string) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const last = updated[updated.length - 1]
+      if (!last || last.role !== "bot1") {
+        updated.push({ role: "bot1", text })
+      } else {
+        updated[updated.length - 1] = { ...last, text: last.text + text }
+      }
+      return updated
+    })
+    // If user is scrolled up, increment unread counter
+    if (!isAtBottomRef.current) {
+      setUnreadCount(prev => prev + 1)
+    }
+  }
+
+  const replaceLastBotMessage = (text: string) => {
+    setMessages(prev => {
+      const updated = [...prev]
+      const last = updated[updated.length - 1]
+      if (!last || last.role !== "bot1") {
+        updated.push({ role: "bot1", text })
+      } else {
+        updated[updated.length - 1] = { ...last, text }
+      }
+      return updated
+    })
+  }
+
+  // ── SSE frame parser ──────────────────────────────────────────────────────
+  const processFrame = (frame: string) => {
+    if (!frame.trim()) return
+
+    const lines = frame.split("\n")
+    let eventType = ""
+    const dataLines: string[] = []
+    let eventId = ""
+
+    for (const line of lines) {
+      if (line.startsWith(":")) {
+        return
+      } else if (line.startsWith("event:")) {
+        eventType = line.slice("event:".length).trim()
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trim())
+      } else if (line.startsWith("id:")) {
+        eventId = line.slice("id:".length).trim()
+      }
+    }
+
+    if (eventId) lastEventIdRef.current = eventId
+    if (!eventType || dataLines.length === 0) return
+
+    const dataStr = dataLines.join("\n")
+
+    try {
+      const parsed = JSON.parse(dataStr)
+
+      if (eventType === "token" && parsed.content) {
+        appendToLastBotMessage(parsed.content)
+      } else if (eventType === "done") {
+        if (parsed.content) replaceLastBotMessage(parsed.content)
+        lastEventIdRef.current = null
+        onActivity?.()
+      } else if (eventType === "error") {
+        replaceLastBotMessage(`Error: ${parsed.message ?? "Unknown error"}`)
+      }
+    } catch (err) {
+      console.error("Failed to parse SSE frame:", frame, err)
+    }
+  }
+
+  // ── SSE consumer ──────────────────────────────────────────────────────────
+  const consumeSSE = async (userText: string, lastEventId: string | null): Promise<void> => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream",
+    }
+    if (lastEventId !== null) headers["Last-Event-ID"] = lastEventId
+
+    const response = await authFetch(
+      `/api/v1/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`,
+      { method: "POST", headers, body: JSON.stringify({ message: userText }) }
+    )
+
+    if (!response.ok) throw new Error("Failed to send message")
+    if (!response.body) throw new Error("No response body")
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (value) {
+        buffer += decoder.decode(value, { stream: true })
+        buffer = buffer.replace(/\r\n/g, "\n")
+
+        const frames = buffer.split("\n\n")
+        buffer = frames.pop() ?? ""
+
+        for (const frame of frames) {
+          processFrame(frame)
+        }
+      }
+
+      if (done) {
+        const remaining = buffer.trim()
+        if (remaining) processFrame(remaining)
+        break
+      }
+    }
+  }
+
+  // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!input.trim()) return
+    if (!input.trim() || typing || evaluationPending) return
 
     const userText = input
     setMessages(prev => [...prev, { role: "user", text: userText }])
     setInput("")
     setTyping(true)
+    setMessages(prev => [...prev, { role: "bot1", text: "" }])
+    onActivity?.()
+    // Scroll to bottom when user sends a message
+    setTimeout(() => scrollToBottom("smooth"), 50)
 
-    try {
-      const response = await authFetch(
-        `/api/v1/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userText }),
+    const MAX_RETRIES = 2
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await consumeSSE(userText, lastEventIdRef.current)
+        break
+      } catch {
+        if (attempt === MAX_RETRIES) {
+          setMessages(prev => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last?.role === "bot1" && last.text === "") {
+              updated[updated.length - 1] = { ...last, text: "Sorry, I encountered an error. Please try again." }
+            } else {
+              updated.push({ role: "bot1", text: "Sorry, I encountered an error. Please try again." })
+            }
+            return updated
+          })
+        } else {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
         }
-      )
-
-      if (!response.ok) throw new Error("Failed to send message")
-
-      const data = await response.json()
-      const message = data.response as ResponseMessage
-      setMessages(prev => [
-        ...prev,
-        {
-          role: "bot1",
-          text: message._content
-            .filter(c => c.text)
-            .map(c => c.text)
-            .join("\n\n"),
-        },
-      ])
-    } catch {
-      setMessages(prev => [
-        ...prev,
-        { role: "bot1", text: "Sorry, I encountered an error. Please try again." },
-      ])
-    } finally {
-      setTyping(false)
+      }
     }
+
+    lastEventIdRef.current = null
+    setTyping(false)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -137,23 +262,35 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
     }
   }
 
+  // ── Auto-scroll only when already at bottom ───────────────────────────────
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+    if (isAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+    }
   }, [messages, typing])
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-6 pb-0 shadow-sm">
 
       {/* Chat area */}
-      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-        <div className="flex flex-col gap-6">
+      <div
+        ref={scrollContainerRef}
+        onScroll={checkScrollPosition}
+        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+      >
+        <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
           {messages.map((msg, i) => (
             <div
               key={i}
-              className={`flex items-start gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`
+                flex items-start gap-4
+                animate-in fade-in slide-in-from-bottom-2 duration-300
+                ${msg.role === "user" ? "justify-end" : "justify-start"}
+              `}
             >
               {msg.role !== "user" && (
-                <div className="w-8 h-8 overflow-hidden shrink-0">
+                <div className="w-8 h-8 mt-1 overflow-hidden shrink-0 opacity-80">
                   <img src="/cheshire-black.png" className="w-full h-full object-cover dark:invert" alt="agent" />
                 </div>
               )}
@@ -161,8 +298,8 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
               <div
                 className={
                   msg.role === "user"
-                    ? "btn-gradient max-w-[80%] px-3 py-2 rounded-2xl rounded-br-sm text-white text-sm [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90"
-                    : "w-full min-w-0 overflow-hidden px-4 text-foreground wrap-break-word"
+                    ? "btn-gradient max-w-[80%] px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90"
+                    : "flex-1 min-w-0 overflow-hidden text-foreground"
                 }
               >
                 {(() => {
@@ -241,9 +378,8 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
                         {msg.text}
                       </ReactMarkdown>
                     )
-
                     return msg.role === "user" ? content : (
-                      <div className="w-full max-w-187.5 min-w-0 space-y-4 overflow-hidden wrap-break-word">
+                      <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden break-words">
                         {content}
                       </div>
                     )
@@ -265,11 +401,19 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
           ))}
 
           {typing && (
-            <div className="flex justify-start">
-              <div className="bg-muted px-3 py-2 rounded-2xl rounded-bl-sm flex gap-1">
-                <span className="animate-bounce text-muted-foreground">.</span>
-                <span className="animate-bounce delay-100 text-muted-foreground">.</span>
-                <span className="animate-bounce delay-200 text-muted-foreground">.</span>
+            <div className="flex items-start gap-3 animate-in fade-in duration-300">
+              <div className="w-6 h-6 mt-1 overflow-hidden shrink-0 opacity-80">
+                <img
+                  src="/cheshire-black.png"
+                  className="w-full h-full object-cover dark:invert"
+                  alt="agent"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 pt-1.5">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60" />
               </div>
             </div>
           )}
@@ -278,37 +422,95 @@ export function Chatbot({ findings, sessionId, profileImage }: ChatbotProps) {
         </div>
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border p-4 flex flex-col gap-2 bg-card">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="What would you like to know?"
-          className="resize-none border-none focus-visible:ring-0 p-0 text-base min-h-10 bg-transparent text-foreground placeholder:text-muted-foreground"
-        />
+      {/* Input area — position relative so the scroll button can be anchored to it */}
+      <div className="relative sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <UploadSimpleIcon size={22} color="currentColor" />
-            <Select>
-              <SelectTrigger className="border-none shadow-none focus:ring-0 h-auto p-0 gap-1 font-medium text-muted-foreground">
-                <SelectValue placeholder="Agent 1" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Agent 1">Agent 1</SelectItem>
-                <SelectItem value="Agent 2">Agent 2</SelectItem>
-                <SelectItem value="Agent 3">Agent 3</SelectItem>
-              </SelectContent>
-            </Select>
+        {/* Scroll-to-bottom button */}
+        {showScrollDown && (
+          <button
+            onClick={() => scrollToBottom("smooth")}
+            className="
+              absolute -top-12 left-1/2 -translate-x-1/2
+              flex h-10 w-10 items-center justify-center
+              rounded-full
+              hover:bg-background/50
+              transition-all duration-200
+            "
+            aria-label="Scroll to latest message"
+          >
+            <ChevronDown className="h-7 w-7 drop-shadow-lg" />
+          </button>
+        )}
+
+        <div className="mx-auto max-w-4xl">
+          <div
+            className="
+              relative
+              flex items-end gap-3
+              rounded-[28px]
+              border border-border/60
+              bg-background/80
+              px-5 py-4
+              shadow-[0_8px_30px_rgba(0,0,0,0.06)]
+              backdrop-blur-xl
+              transition-all duration-200
+              focus-within:border-border
+              focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.10)]
+            "
+          >
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/5" />
+
+            <TextareaAutosize
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="What would you like to know?"
+              disabled={typing || evaluationPending}
+              minRows={1}
+              maxRows={8}
+              className="
+                max-h-52
+                flex-1
+                resize-none
+                border-0
+                bg-transparent
+                p-0
+                text-[15px]
+                leading-7
+                text-foreground
+                shadow-none
+                outline-none
+                focus:outline-none
+                focus-visible:ring-0
+                disabled:opacity-50
+                placeholder:text-muted-foreground/70
+              "
+            />
+
+            <button
+              onClick={sendMessage}
+              disabled={typing || evaluationPending || !input.trim()}
+              className="
+                flex h-10 w-10 shrink-0 items-center justify-center
+                rounded-full
+                bg-muted
+                text-muted-foreground
+                transition-all duration-200
+                hover:scale-105
+                hover:bg-muted/80
+                active:scale-95
+                disabled:scale-100
+                disabled:cursor-not-allowed
+                disabled:opacity-50
+              "
+            >
+              <SentIcon size={18} color="currentColor" />
+            </button>
           </div>
 
-          <button
-            onClick={sendMessage}
-            className="bg-muted hover:bg-muted/70 text-muted-foreground p-2 rounded-full transition-colors"
-          >
-            <SentIcon size={22} color="currentColor" />
-          </button>
+          <p className="mt-2 text-center text-xs text-muted-foreground/60">
+            Cheshire can make mistakes. Verify important security findings.
+          </p>
         </div>
       </div>
     </Card>

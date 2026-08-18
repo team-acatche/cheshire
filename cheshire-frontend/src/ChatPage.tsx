@@ -1,3 +1,5 @@
+// cheshire-frontend/src/ChatPage.tsx
+
 import {
   Sidebar,
   SidebarContent,
@@ -20,21 +22,26 @@ import {
   MoreHorizontal,
   Trash2,
   PenLine,
-  Share2,
   LogOut,
+  Loader2,
 } from "lucide-react"
 
-import { BadgeQuestionMark } from 'lucide-react';
+import { BadgeQuestionMark } from "lucide-react"
 
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding"
 import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
+import { formatTimestamp } from "./lib/helpers/format_timestamps"
+
+export type ChatStatus = "processing" | "done" | "failed"
 
 export type Chat = {
   session_id: string
   title: string
   findings: VulnerabilityFinding[]
+  status?: ChatStatus
+  latestTimestamp?: string | null
 }
 
 interface ChatPageProps {
@@ -64,9 +71,7 @@ export default function ChatPage({
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
-
-  // Rename state
-  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renamingId, setRenamingId]   = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
   const [showHowToUse, setShowHowToUse] = useState(false)
@@ -74,11 +79,7 @@ export default function ChatPage({
   const startRename = (chat: Chat) => {
     setRenamingId(chat.session_id)
     const lastDotIndex = chat.title.lastIndexOf(".")
-    if (lastDotIndex !== -1) {
-      setRenameValue(chat.title.substring(0, lastDotIndex))
-    } else {
-      setRenameValue(chat.title)
-    }
+    setRenameValue(lastDotIndex !== -1 ? chat.title.substring(0, lastDotIndex) : chat.title)
   }
 
   const commitRename = (sessionId: string) => {
@@ -87,10 +88,7 @@ export default function ChatPage({
       const originalChat = chats.find((c) => c.session_id === sessionId)
       if (originalChat) {
         const lastDotIndex = originalChat.title.lastIndexOf(".")
-        const extension = 
-        lastDotIndex !== -1 
-        ? originalChat.title.substring(lastDotIndex) 
-        : ""
+        const extension = lastDotIndex !== -1 ? originalChat.title.substring(lastDotIndex) : ""
         onRenameChat(sessionId, trimmed + extension)
       }
     }
@@ -105,7 +103,6 @@ export default function ChatPage({
 
   return (
     <Sidebar>
-
       <SidebarContent className="p-4 space-y-4">
 
         {/* ACCOUNT */}
@@ -138,106 +135,120 @@ export default function ChatPage({
 
         <div className="flex flex-col gap-1">
           {safeChats.length === 0 && (
-            <div className="text-xs text-muted-foreground px-1">
-              No chats yet
-            </div>
+            <div className="text-xs text-muted-foreground px-1">No chats yet</div>
           )}
 
-          {safeChats.map((chat) => (
-            <div
-              key={chat.session_id}
-              className="group flex items-center gap-2 rounded-md p-2 text-sm hover:bg-muted transition-colors cursor-pointer"
-              onClick={() => {
-                if (renamingId !== chat.session_id) {
-                  onSelectChat(chat)
-                }
-              }}
-            >
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {safeChats.map((chat) => {
+            const isProcessing = chat.status === "processing"
+            const isFailed     = chat.status === "failed"
 
-              {renamingId === chat.session_id ? (
-                <input
-                  autoFocus
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename(chat.session_id)
-                    if (e.key === "Escape") cancelRename()
-                  }}
-                  onBlur={() => commitRename(chat.session_id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
-                />
-              ) : (
-                <span className="flex-1 truncate leading-none text-foreground">
-                  {chat.title}
-                </span>
-              )}
+            return (
+              <div
+                key={chat.session_id}
+                className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
+                  ${isFailed
+                    ? "opacity-60 cursor-default"
+                    : "hover:bg-muted cursor-pointer"
+                  }`}
+                onClick={() => {
+                  if (!isFailed && renamingId !== chat.session_id) {
+                    onSelectChat(chat)
+                  }
+                }}
+              >
+                {/* Icon */}
+                {isProcessing ? (
+                  <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin" />
+                ) : (
+                  <FileText className={`h-4 w-4 shrink-0 ${isFailed ? "text-destructive" : "text-muted-foreground"}`} />
+                )}
 
-              {renamingId !== chat.session_id && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={(e) => e.stopPropagation()}
-                      className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
-                      aria-label="Chat options"
-                    >
-                      <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  </DropdownMenuTrigger>
+                {/* Title / rename input */}
+                {renamingId === chat.session_id ? (
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter")  commitRename(chat.session_id)
+                      if (e.key === "Escape") cancelRename()
+                    }}
+                    onBlur={() => commitRename(chat.session_id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  />
+                ) : (
+                  <div className="flex-1 min-w-0">
+                    <span className={`block truncate leading-none ${isFailed ? "text-destructive" : "text-foreground"}`}>
+                      {chat.title}
+                    </span>
+                    {isProcessing && (
+                      <span className="block text-[10px] text-muted-foreground mt-0.5">
+                        Analyzing…
+                      </span>
+                    )}
+                    {isFailed && (
+                      <span className="block text-[10px] text-destructive mt-0.5">
+                        Evaluation failed
+                      </span>
+                    )}
+                  </div>
+                )}
 
-                  <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuGroup>
-                      <div className="px-2 py-2">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {chat.title}
-                        </p>
-                      </div>
-
-                      <DropdownMenuSeparator />
-
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          startRename(chat)
-                        }}
-                        className="cursor-pointer"
+                {/* Actions — hidden while processing */}
+                {!isProcessing && renamingId !== chat.session_id && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
+                        aria-label="Chat options"
                       >
-                        <PenLine className="mr-2 h-4 w-4" />
-                        Rename
-                      </DropdownMenuItem>
+                        <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </DropdownMenuTrigger>
 
-                      <DropdownMenuItem
-                        disabled
-                        className="cursor-not-allowed"
-                      >
-                        <Share2 className="mr-2 h-4 w-4" />
-                        Share
-                        <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
-                          Soon
-                        </span>
-                      </DropdownMenuItem>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuGroup>
+                        <div className="px-2 py-2">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {chat.title}
+                          </p>
+                            {chat.latestTimestamp && (
+                              <span className="mt-1 truncate text-[10px] text-gray-400">
+                                Last Activity: {formatTimestamp(chat.latestTimestamp)}
+                              </span>
+                            )}
+                        </div>
 
-                      <DropdownMenuSeparator />
+                        <DropdownMenuSeparator />
 
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setChatToDelete(chat)
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          ))}
+                        <DropdownMenuItem
+                          onClick={(e) => { e.stopPropagation(); startRename(chat) }}
+                          className="cursor-pointer"
+                        >
+                          <PenLine className="mr-2 h-4 w-4" />
+                          Rename
+                        </DropdownMenuItem>
+
+                        <DropdownMenuSeparator />
+
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={(e) => { e.stopPropagation(); setChatToDelete(chat) }}
+                          className="cursor-pointer"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            )
+          })}
         </div>
 
       </SidebarContent>
@@ -275,9 +286,7 @@ export default function ChatPage({
       <DeleteChatDialog
         chat={chatToDelete}
         onClose={() => setChatToDelete(null)}
-        onConfirm={(sessionId) => {
-          onDeleteChat?.(sessionId)
-        }}
+        onConfirm={(sessionId) => onDeleteChat?.(sessionId)}
       />
       <HowToUseDialog
         isOpen={showHowToUse}
