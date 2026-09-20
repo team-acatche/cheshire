@@ -14,11 +14,21 @@ from endpoints.chat import chat_router
 from endpoints.user_auth import auth_router
 from endpoints.user import user_router
 
-from globals import SESSIONS_PATH
+from globals import DATA_PATH, SESSIONS_PATH, STANDARDS_DIR
+from knowledge_base.seeder import seed_knowledge_base
+from knowledge_base.qdrant import QdrantRepositoryManager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    os.makedirs(DATA_PATH, exist_ok=True) # ensure that the DATA_PATH exists
     os.makedirs(SESSIONS_PATH, exist_ok=True) # ensure that the SESSIONS_PATH exists
+    os.makedirs(STANDARDS_DIR, exist_ok=True) # ensure that the STANDARDS_DIR exists
+
+    # seed the knowledge base with company standards
+    _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH)
+    for file_path in STANDARDS_DIR.glob("*.json"):
+        standards = extract_standards_from(file_path)
+        seed_knowledge_base(knowledge_repo, standards)
     yield
 
 api = FastAPI(dependencies=[Depends(configs)], lifespan=lifespan)

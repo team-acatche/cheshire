@@ -21,7 +21,7 @@ def get_standard(
     :return: a dict containing company standard requirements relevant to the query.
     """
     knowledge_repo: KnowledgeRepository
-    _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH, username="system")
+    _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH)
     results = knowledge_repo.search(query=query)
     facts: list[str] = [f"[Company standard requirement] {document.content}" for document in results]
     return {"facts": facts}

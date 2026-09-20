@@ -11,7 +11,9 @@ GLOBAL_ASSETS_DIR = ROOT_DIR / "assets"
 # Default to ~/.cheshire in the user's home directory
 DATA_PATH = Path(os.getenv("CHESHIRE_DATA_PATH", Path.home() / ".cheshire")).expanduser().resolve()
 SESSIONS_PATH = DATA_PATH / "sessions"
+STANDARDS_DIR = GLOBAL_ASSETS_DIR / "standards"
 
 # Ensure directories exist
 DATA_PATH.mkdir(parents=True, exist_ok=True)
 SESSIONS_PATH.mkdir(parents=True, exist_ok=True)
+STANDARDS_DIR.mkdir(parents=True, exist_ok=True)

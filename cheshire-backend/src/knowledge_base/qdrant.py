@@ -100,7 +100,6 @@ class QdrantRepositoryManager:
     @staticmethod
     def get_repositories(
         storage_path: Path, 
-        username: str, 
         dimensions: int = 384
     ) -> Tuple[KnowledgeRepository, KnowledgeRepository]:
         connection_params: dict[str, Any] = {}
