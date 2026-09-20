@@ -193,6 +193,7 @@ async def evaluate_document(
     # Create / update session record in SQLite with status=PENDING.
     # This is the key change: status is now durable from the moment the
     # file lands, so the frontend can reconstruct it after any refresh.
+    assert user_db_path.exists(), f"User database path does not exist: {user_db_path}"
     with sqlite3.connect(user_db_path) as session_db:
         session_repo = SqliteSessionRepository(session_db)
         if session_id and session_repo.get_session(session_id):
