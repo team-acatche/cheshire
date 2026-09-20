@@ -391,6 +391,7 @@ export default function App({ user, onLogout }: AppProps) {
             setProfileImage={setProfileImage}
             user={user}
             chats={chats}
+            onSelectChat={handleSelectChat}
             onClose={() => setPage("chat")}
           />
         ) : (
