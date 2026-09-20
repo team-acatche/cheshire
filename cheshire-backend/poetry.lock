@@ -1701,14 +1701,14 @@ hyperframe = ">=6.1,<7"
 
 [[package]]
 name = "haystack-ai"
-version = "2.28.0"
+version = "2.31.0"
 description = "LLM framework to build customizable, production-ready LLM applications. Connect components (models, vector DBs, file converters) to pipelines or agents that can interact with your data."
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "haystack_ai-2.28.0-py3-none-any.whl", hash = "sha256:da22fc80b6fed903fc99098e56e9c5d330a8ed265485eaa1e4843773eadedcc9"},
-    {file = "haystack_ai-2.28.0.tar.gz", hash = "sha256:723d8e1ba06b214d5dcba8712d2dd7f9134b949b1d3e91dc92a14af33c893823"},
+    {file = "haystack_ai-2.31.0-py3-none-any.whl", hash = "sha256:f4387e691152778370d7b1dbcc12ef0f04fb5be4b01d6993719849a1c5dcdb3f"},
+    {file = "haystack_ai-2.31.0.tar.gz", hash = "sha256:e9fc0ae5d651bd2d92b54f08cd77ed501dbbdbaf0c7abc1d4392ebe2f01d3332"},
 ]
 
 [package.dependencies]
@@ -3760,18 +3760,18 @@ et-xmlfile = "*"
 
 [[package]]
 name = "openrouter-haystack"
-version = "1.0.0"
+version = "1.2.0"
 description = ""
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "openrouter_haystack-1.0.0-py3-none-any.whl", hash = "sha256:72002e15506c1d794452687fba2932270e22734630892844ba890e9b24238e86"},
-    {file = "openrouter_haystack-1.0.0.tar.gz", hash = "sha256:0375006b85a6fe01037378d0ce5af0fa22aa23c5e77b37c18ab1fa48f0bbcb59"},
+    {file = "openrouter_haystack-1.2.0-py3-none-any.whl", hash = "sha256:42688d752de38d57de6db5f79826aacf2bee8864ac3ca902cb4c387886f01c1a"},
+    {file = "openrouter_haystack-1.2.0.tar.gz", hash = "sha256:39c566da11dbef907a597df8aa764bf71b4c8eb243d98ebc25cab94747c3bebe"},
 ]
 
 [package.dependencies]
-haystack-ai = ">=2.22.0"
+haystack-ai = ">=2.30.0"
 
 [[package]]
 name = "packaging"
@@ -7111,4 +7111,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "455021a412997973864793eebe751b2569dbd1b9ba03719ac7e6581a81ba62d4"
+content-hash = "36b6fd0658019ab6c969b4350d61a1538c9dd73ed815942f345c65f8ffa6dbe0"

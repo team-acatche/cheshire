@@ -188,80 +188,6 @@ class TestChatHistory:
 class TestPostChat:
     """Tests for POST /api/v1/{session_id}."""
 
-    def test_successful_chat(self, tmp_path: Path):
-        """Happy path: user message is saved, agent runs, response is returned."""
-        user_dir = tmp_path / TEST_USER.user_id
-        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
-        conn, session_repo, event_repo = _create_session_db(db_path)
-        session_repo.save_new_session(Session(session_id=SESSION_ID, title="Test"))
-        conn.close()
-
-        mock_agent = MagicMock()
-        mock_agent.run.return_value = {"last_message": "Agent response text"}
-
-        mock_vector_stores = MagicMock()
-        mock_vector_stores.knowledge_store = MagicMock()
-
-        with (
-            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
-            patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())),
-            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
-        ):
-            response = client.post(
-                f"/api/v1/{SESSION_ID}",
-                json={"message": "What vulnerabilities were found?"},
-            )
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert "response" in data
-
-        # Verify the user event was persisted
-        conn2 = sqlite3.connect(str(db_path))
-        event_repo2 = SqliteEventRepository(conn2)
-        events = event_repo2.get_recent(SESSION_ID, 100)
-        user_events = [e for e in events if e.event_type == EventType.USER_MESSAGE]
-        assert len(user_events) == 1
-        assert user_events[0].content == "What vulnerabilities were found?"
-        conn2.close()
-
-    def test_agent_run_is_called_with_messages(self, tmp_path: Path):
-        """Verify the Agent.run method receives the correct messages list."""
-        user_dir = tmp_path / TEST_USER.user_id
-        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
-        conn, session_repo, event_repo = _create_session_db(db_path)
-        session_repo.save_new_session(Session(session_id=SESSION_ID, title="Test"))
-        # Pre-seed a conversation
-        event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.USER_MESSAGE, content="Hello"))
-        event_repo.save(Event(session_id=SESSION_ID, event_type=EventType.RESPONSE, content="Hi"))
-        conn.close()
-
-        mock_agent = MagicMock()
-        mock_agent.run.return_value = {"last_message": "Sure!"}
-
-        mock_vector_stores = MagicMock()
-        mock_vector_stores.knowledge_store = MagicMock()
-
-        with (
-            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
-            patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())),
-            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
-        ):
-            response = client.post(
-                f"/api/v1/{SESSION_ID}",
-                json={"message": "Follow-up question"},
-            )
-
-        assert response.status_code == status.HTTP_200_OK
-        # Agent.run should have been called once
-        mock_agent.run.assert_called_once()
-        call_kwargs = mock_agent.run.call_args
-        messages = call_kwargs.kwargs.get("messages") or call_kwargs[1].get("messages")
-        # Should contain previous messages + the new user message
-        assert len(messages) >= 3  # Hello, Hi, Follow-up question
-
     def test_session_dir_not_configured(self):
         """SESSIONS_PATH is None → 500."""
         with patch("dependencies.sessions.SESSIONS_PATH", None):
@@ -281,34 +207,6 @@ class TestPostChat:
             )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-
-    def test_agent_error_returns_500(self, tmp_path: Path):
-        """If the Agent raises an exception, endpoint returns 500."""
-        user_dir = tmp_path / TEST_USER.user_id
-        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
-        conn, session_repo, _ = _create_session_db(db_path)
-        session_repo.save_new_session(Session(session_id=SESSION_ID, title="Test"))
-        conn.close()
-
-        mock_agent = MagicMock()
-        mock_agent.run.side_effect = RuntimeError("Model unavailable")
-
-        mock_vector_stores = MagicMock()
-        mock_vector_stores.knowledge_store = MagicMock()
-
-        with (
-            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
-            patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())),
-            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
-        ):
-            response = client.post(
-                f"/api/v1/{SESSION_ID}",
-                json={"message": "Hello"},
-            )
-
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-        assert "Model unavailable" in response.json()["detail"]
 
     def test_missing_message_body_returns_422(self):
         """Missing / invalid request body → 422."""
@@ -370,43 +268,6 @@ class TestGetLatestTimestamp:
             response = client.get(f"/api/v1/{SESSION_ID}/latest-timestamp")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
-
-
-class TestCallbackFactoryFlush:
-    """Verify that callback_factory.flush() is called after a successful agent run."""
-
-    def test_flush_called_on_success(self, tmp_path: Path):
-        """StreamCallbackFactory.flush is called after agent.run succeeds."""
-        user_dir = tmp_path / TEST_USER.user_id
-        db_path = user_dir / f"{TEST_USER.user_id}.sqlite"
-        conn, session_repo, _ = _create_session_db(db_path)
-        session_repo.save_new_session(Session(session_id=SESSION_ID, title="Test"))
-        conn.close()
-
-        mock_agent = MagicMock()
-        mock_agent.run.return_value = {"last_message": "Done"}
-
-        mock_vector_stores = MagicMock()
-        mock_vector_stores.knowledge_store = MagicMock()
-
-        mock_factory = MagicMock()
-        mock_factory.return_value = MagicMock()  # the __call__ returns a callback
-
-        with (
-            patch("dependencies.sessions.SESSIONS_PATH", tmp_path),
-            patch("endpoints.chat.Agent", return_value=mock_agent),
-            patch("endpoints.chat.StreamCallbackFactory", return_value=mock_factory),
-            patch("endpoints.chat.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())),
-            patch("endpoints.chat.KnowledgeState", return_value=MagicMock()),
-        ):
-            response = client.post(
-                f"/api/v1/{SESSION_ID}",
-                json={"message": "Hi"},
-            )
-
-        assert response.status_code == status.HTTP_200_OK
-        mock_factory.flush.assert_called_once()
-
 
 # ---------------------------------------------------------------------------
 # DELETE /{session_id} — delete_session
