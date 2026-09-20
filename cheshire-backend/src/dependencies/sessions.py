@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Annotated
 from fastapi import Depends, HTTPException, status
@@ -16,6 +17,7 @@ async def get_user_path(
         )
     
     user_path = SESSIONS_PATH / current_user.user_id
+    os.makedirs(user_path, exist_ok=True)
     return user_path
 
 async def get_user_db_path(
