@@ -20,10 +20,11 @@ interface AccountProps {
   setProfileImage: (image: string) => void
   user: AuthUser
   chats: Chat[]
+  onSelectChat: (chat: Chat) => void
   onClose: () => void 
 }
 
-export default function Account({ setProfileImage, user, chats, onClose }: AccountProps) {
+export default function Account({ setProfileImage, user, chats, onSelectChat, onClose }: AccountProps) {
   const [avatarSrc, setAvatarSrc] = useState(
     user.avatar_uri && user.avatar_uri !== "avatars/default.png"
       ? `/api/v1/${user.avatar_uri}`
@@ -201,14 +202,16 @@ export default function Account({ setProfileImage, user, chats, onClose }: Accou
             <p className="text-muted-foreground text-sm">No reviews yet</p>
           ) : (
             chats.slice(0, 5).map((chat) => (
-              <div
+              <button
                 key={chat.session_id}
-                className="p-3 border border-border rounded-md text-sm flex items-center justify-between bg-card text-card-foreground"
+                type="button"
+                onClick={() => onSelectChat(chat)}
+                className="w-full p-3 border border-border rounded-md text-sm flex items-center justify-between bg-card text-card-foreground text-left hover:bg-muted transition-colors cursor-pointer"
               >
                 <span className="text-foreground">{chat.title}</span>
 
                 <span
-                  className="text-xs text-muted-foreground tabular-nums hover:text-foreground transition-colors"
+                  className="text-xs text-muted-foreground tabular-nums"
                   title={chatTimestamps[chat.session_id] ?? ""}
                 >
                   Last Activity:{" "}
@@ -218,7 +221,7 @@ export default function Account({ setProfileImage, user, chats, onClose }: Accou
                       : "No activity yet"
                     : "Loading..."}
                 </span>
-              </div>
+              </button>
             ))
           )}
         </div>
