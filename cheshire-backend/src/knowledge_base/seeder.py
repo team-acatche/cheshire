@@ -41,6 +41,7 @@ def extract_standards_from(file_path: Path) -> List[str]:
 def seed_knowledge_base(
     knowledge_repo: KnowledgeRepository,
     standards: list[str],
+    source: str = "checklist",
 ):
     """
     Seeds the Qdrant knowledge base with company standards / checklist items
@@ -56,14 +57,14 @@ def seed_knowledge_base(
         # Deterministic UUID based on item content to prevent duplication on restarts
         standard_id = str(uuid5(NAMESPACE_OID, f"standard:{standard}"))
         standard_documents.append(
-                Document(
-                    id=standard_id,
-                    content=standard,
-                    meta={
-                        "source": file_path.name,
-                        "is_global": True,
-                    }
-                )
+            Document(
+                id=standard_id,
+                content=standard,
+                meta={
+                    "source": source,
+                    "is_global": True,
+                },
+            )
         )
 
     try:

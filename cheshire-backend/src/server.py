@@ -15,7 +15,7 @@ from endpoints.user_auth import auth_router
 from endpoints.user import user_router
 
 from globals import DATA_PATH, SESSIONS_PATH, STANDARDS_DIR
-from knowledge_base.seeder import seed_knowledge_base
+from knowledge_base.seeder import seed_knowledge_base, extract_standards_from
 from knowledge_base.qdrant import QdrantRepositoryManager
 
 @asynccontextmanager
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH)
     for file_path in STANDARDS_DIR.glob("*.json"):
         standards = extract_standards_from(file_path)
-        seed_knowledge_base(knowledge_repo, standards)
+        seed_knowledge_base(knowledge_repo, standards, source=file_path.name)
     yield
 
 api = FastAPI(dependencies=[Depends(configs)], lifespan=lifespan)
