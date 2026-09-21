@@ -1,25 +1,45 @@
-from haystack_integrations.components.websearch.exa import ExaAnswer
+from haystack_integrations.components.websearch.exa import ExaWebSearch
 from haystack.tools.component_tool import ComponentTool
-
-from tools.helpers.document_to_string import document_to_string
+from haystack.dataclasses import Document
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _format_search_results(documents: list[Document]) -> str:
+    if not documents:
+        return "No relevant web results found."
+    formatted = []
+    for i, doc in enumerate(documents, start=1):
+        title = doc.meta.get("title") or "Untitled"
+        url = doc.meta.get("url") or ""
+        highlights = doc.meta.get("highlights")
+        if highlights and isinstance(highlights, list):
+            snippet = " ... ".join(str(h) for h in highlights)
+        else:
+            snippet = (doc.content or "")[:350].strip()
+        formatted.append(f"[{i}] {title}\nURL: {url}\nExcerpt: {snippet}")
+    return "\n\n".join(formatted)
+
+
 web_search = ComponentTool(
-	component=ExaAnswer(system_prompt="Provide a concise, factual answer to the query (strictly under 500 tokens). Prioritize results from 2025 or later. Always explicitly cite specific sources from the provided search results to support your claims."),
-	name="web_search",
-	description="Answer questions through the web using Exa search.",
-	parameters={
-		"type": "object",
-		"properties": {
-			"query": {
-				"type": "string",
-				"description": "The question to answer.",
-			},
-		},
-		"required": ["query"],
-	},
-	outputs_to_string={"source": "answer", "handler": str}
+    component=ExaWebSearch(
+        num_results=3,
+        highlights=True,
+        type="auto",
+    ),
+    name="web_search",
+    description="Search the web using Exa for software deprecation status, release dates, and official documentation.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The search query to verify software deprecation or documentation.",
+            },
+        },
+        "required": ["query"],
+    },
+    outputs_to_string={"source": "documents", "handler": _format_search_results},
 )
