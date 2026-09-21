@@ -108,7 +108,12 @@ class QdrantRepositoryManager:
         qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
         
         if qdrant_host:
-            connection_params = {"host": qdrant_host, "port": qdrant_port}
+            connection_params = {
+                "host": qdrant_host, 
+                "port": qdrant_port,
+                "api_key": os.getenv("QDRANT_API_KEY"),
+                "https": os.getenv("QDRANT_HTTPS", "false").lower() == "true",
+            }
         else:
             # Qdrant in embedded mode uses a path
             qdrant_path = str(storage_path / "qdrant")
