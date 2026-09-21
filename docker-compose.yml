@@ -4,9 +4,6 @@ services:
     container_name: cheshire-qdrant
     restart: unless-stopped
     environment:
-      - QDRANT__SERVICE__ENABLE_TLS=true
-      - QDRANT__TLS__CERT=/qdrant/tls/cert.pem
-      - QDRANT__TLS__KEY=/qdrant/tls/key.pem
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
       - QDRANT__SERVICE__READ_ONLY_API_KEY=${QDRANT_READONLY_KEY}
     volumes:
@@ -32,7 +29,6 @@ services:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - QDRANT_API_KEY=${QDRANT_API_KEY}
-      - QDRANT_HTTPS=true
     env_file:
       - path: ./cheshire-backend/.env
         required: true
