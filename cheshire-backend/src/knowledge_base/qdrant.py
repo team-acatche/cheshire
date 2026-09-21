@@ -111,9 +111,13 @@ class QdrantRepositoryManager:
             connection_params = {
                 "host": qdrant_host, 
                 "port": qdrant_port,
-                "api_key": os.getenv("QDRANT_API_KEY"),
                 "https": os.getenv("QDRANT_HTTPS", "false").lower() == "true",
             }
+
+            qdrant_api_key = os.getenv("QDRANT_API_KEY")
+            if qdrant_api_key:
+                from haystack.utils import Secret
+                connection_params["api_key"] = Secret.from_token(qdrant_api_key)
         else:
             # Qdrant in embedded mode uses a path
             qdrant_path = str(storage_path / "qdrant")
