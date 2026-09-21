@@ -86,3 +86,4 @@ User-Agent:
 
 # Nginx Config
 nginx.conf
+qdrant-tls/
