@@ -8,6 +8,7 @@ services:
       - QDRANT__TLS__CERT=/qdrant/tls/cert.pem
       - QDRANT__TLS__KEY=/qdrant/tls/key.pem
       - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+      - QDRANT__SERVICE__READ_ONLY_API_KEY=${QDRANT_READONLY_KEY}
     volumes:
       - ./qdrant-tls:/qdrant/tls:ro
       - ~/.cheshire/qdrant:/qdrant/storage
@@ -30,7 +31,7 @@ services:
       - CHESHIRE_DATA_PATH=/data
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
       - QDRANT_HTTPS=true
     env_file:
       - path: ./cheshire-backend/.env
