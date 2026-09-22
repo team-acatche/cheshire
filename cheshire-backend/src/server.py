@@ -67,5 +67,6 @@ def healthcheck() -> str:
 
 if __name__ == "__main__":
     import uvicorn
+    from globals import LOGGING_CONFIG
 
     uvicorn.run(api, port=8000)

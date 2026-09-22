@@ -22,7 +22,7 @@ from auth.models import User
 from cheshire_configs.core import PipelineConfig
 from cheshire_configs.resolver import resolve_config
 from dependencies.sessions import get_user_db_path, get_user_path
-from globals import DATA_PATH
+from globals import DATA_PATH, LOGGING_CONFIG
 from knowledge_base.history import Event, EventType, SqliteEventRepository
 from knowledge_base.repository import KnowledgeRepositoryFactory, RepositoryType
 from knowledge_base.session_manager import Session, SqliteSessionRepository
