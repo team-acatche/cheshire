@@ -1,10 +1,11 @@
+import ast
 import base64
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Optional, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 from docling_core.types.doc import BoundingBox
@@ -82,6 +83,21 @@ class LocalFinding(BaseModel):
     title: Optional[str] = Field(None, description="An optional short, descriptive title for the finding.")
     web_references: Optional[List[str]] = Field(default_factory=list, description="Optional list of web reference URLs.")
     recommendations: Optional[List[str]] = Field(default_factory=list, description="Optional list of recommendation strings.")
+
+    @field_validator("recommendations", "web_references", mode="before")
+    @classmethod
+    def coerce_to_list(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    parsed = ast.literal_eval(v)
+                    if isinstance(parsed, list):
+                        return [str(x) for x in parsed]
+                except Exception:
+                    pass
+            return [v] if v else []
+        return v or []
 
 
 @dataclass
@@ -508,6 +524,7 @@ def build_document_index(doc: DoclingDocument) -> dict:
     sections: list[dict] = []
     figures: list[dict] = []
     tables: list[dict] = []
+    current_section: str = ""
 
     for item, _level in doc.iterate_items():
         item: Any
@@ -523,21 +540,24 @@ def build_document_index(doc: DoclingDocument) -> dict:
         prov: ProvenanceItem = item.prov[0]
 
         if label == "section_heading":
+            current_section = getattr(item, "text", "")
             sections.append({
                 "id": item.self_ref,
-                "title": getattr(item, "text", ""),
+                "title": current_section,
                 "page": prov.page_no
             })
         elif label == "picture":
             figures.append({
                 "id": item.self_ref,
                 "page": prov.page_no,
-                "caption": None  # filled by _attach_captions
+                "caption": None,  # filled by _attach_captions
+                "section": current_section
             })
         elif label == "table":
             tables.append({
                 "id": item.self_ref,
-                "page": prov.page_no
+                "page": prov.page_no,
+                "section": current_section
             })
 
     _attach_captions(doc, figures)

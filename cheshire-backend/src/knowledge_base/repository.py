@@ -37,7 +37,7 @@ class KnowledgeRepositoryFactory:
             return LanceDbRepositoryManager.get_repositories(storage_path, username)
         elif repo_type == RepositoryType.QDRANT:
             from knowledge_base.qdrant import QdrantRepositoryManager
-            return QdrantRepositoryManager.get_repositories(storage_path, username)
+            return QdrantRepositoryManager.get_repositories(storage_path)
         raise ValueError(f"Unsupported repository type: {repo_type}")
 
     @staticmethod

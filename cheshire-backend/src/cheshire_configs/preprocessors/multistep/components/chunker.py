@@ -5,7 +5,19 @@ from docling_core.types.doc import DoclingDocument
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.chunking import HierarchicalChunker
+from docling_core.transforms.chunker.hierarchical_chunker import ChunkingSerializerProvider, ChunkingDocSerializer
+from docling_core.transforms.serializer.markdown import MarkdownParams
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, build_chunks, build_document_index
+
+
+class ImagePlaceholderSerializerProvider(ChunkingSerializerProvider):
+    def get_serializer(self, doc) -> ChunkingDocSerializer:
+        return ChunkingDocSerializer(
+            doc=doc,
+            params=MarkdownParams(
+                image_placeholder="[## IMAGE ##]"
+            )
+        )
 
 
 @component
@@ -27,7 +39,9 @@ class MultistepDoclingConverter:
                 )
             }
         )
-        self._chunker = HierarchicalChunker()
+        self._chunker = HierarchicalChunker(
+            serializer_provider=ImagePlaceholderSerializerProvider()
+        )
 
     @component.output_types(
         chunks=list, 

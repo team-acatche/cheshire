@@ -43,7 +43,7 @@ from model import evaluate_file
 from tools.helpers.output_schema import VulnerabilityDetails
 from cheshire_configs.core import PipelineConfig
 from cheshire_configs.resolver import resolve_config
-from globals import DATA_PATH
+from globals import DATA_PATH, LOGGING_CONFIG
 from knowledge_base.session_manager import Session, SessionStatus, SqliteSessionRepository
 from knowledge_base.history import Event, EventType, SqliteEventRepository
 from knowledge_base.repository import RepositoryType, KnowledgeRepositoryFactory

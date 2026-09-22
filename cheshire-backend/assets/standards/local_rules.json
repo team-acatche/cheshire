@@ -1,0 +1,14 @@
+[
+    "Technical specifications should not contain outdated/deprecated components",
+    "Technical specifications should not contain empty fields",
+    "Reports table should have the following fields: Report, New/Existing, Description, Attachment, Class/Module",
+    "Reports table should not contain any missing fields",
+    "The Estimates section must include the estimated amount of time that the writing of Technical Specifications phase should take",
+    "The Estimates section must include the estimated amount of time that the Requirements Definition phase should take",
+    "The Estimates section must include the estimated amount of time that the Implementation phase should take",
+    "The Estimates section must include the estimated amount of time that the Coding and Unit Testing phase should take",
+    "The Estimates section must include the estimated amount of time that the System Testing phase should take",
+    "The Estimates section must include the estimated amount of time that the User Acceptance Testing (UAT) phase should take",
+    "Any diagrams in the document should use the proper symbols and should be related to the project being defined",
+    "Flowcharts and sequence diagrams must follow standard architectural drafting conventions: use orthogonal routing (no curved lines/splines), standard flowchart shapes (rectangles for steps, diamonds for decisions), and distinct trust boundaries"
+]
