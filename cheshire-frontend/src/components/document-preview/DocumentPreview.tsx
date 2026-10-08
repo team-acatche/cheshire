@@ -26,6 +26,8 @@ import { SearchBar } from "./SearchBar";
 import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
 import { PdfPageSkeleton } from "./PdfPageSkeleton";
+import { isUnanchored } from "./helpers";
+import { DocumentLevelFindings } from "./DocumentLevelFindings";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -263,6 +265,21 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
   const handlePageClick = useCallback(() => setActive(null), []);
 
+    // state/refs
+  const docBtnRef = useRef<HTMLButtonElement>(null);
+
+  // split once
+  const { anchored, documentLevel } = useMemo(() => ({
+    anchored: findings.filter((f) => !isUnanchored(f)),
+    documentLevel: findings.filter(isUnanchored),
+  }), [findings]);
+
+  // open the popover anchored to the stable toolbar pill (not the list item, which unmounts)
+  const handleDocLevelSelect = useCallback((f: VulnerabilityFinding) => {
+    if (!docBtnRef.current) return;
+    setActive({ findings: [f], bboxKey: `doc|${f.title}`, anchorEl: docBtnRef.current });
+  }, []);
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -305,7 +322,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
 
           {/* Left — findings badge OR loading indicator */}
-          <div className="justify-self-start">
+          <div className="justify-self-start flex items-center gap-2">
             {findingsLoading ? (
               <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -332,7 +349,9 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         {pf.map((finding, idx) => (
                           <button
                             key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
-                            onClick={() => scrollToPageNumber(finding.page_no)}
+                            onClick={() => 
+                              isUnanchored(finding) ? handleDocLevelSelect(finding) :scrollToPageNumber(finding.page_no)
+                            }
                             className="w-full px-3 py-2 text-left hover:bg-amber-100/60 transition-colors"
                           >
                             <div className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</div>
@@ -343,6 +362,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                   </div>
                 </PopoverContent>
               </Popover>
+            )}
+            {!findingsLoading && (
+              <DocumentLevelFindings
+                ref={docBtnRef}
+                findings={documentLevel}
+                onSelect={handleDocLevelSelect}
+              />
             )}
           </div>
 
@@ -467,7 +493,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                       <HighlightLayer
                         pageNumber={pageNumber}
                         pageMeta={pageMetaMap[pageNumber]}
-                        findings={findings}
+                        findings={anchored}
                         activeBboxKey={active?.bboxKey ?? null}
                         onClick={handleClick}
                       />
