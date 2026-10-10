@@ -115,8 +115,77 @@ class EvaluationChunk:
     figures: list[FigureRef] = field(default_factory=list)
 
 
+def _table_has_empty_cells(markdown: str) -> bool:
+    """
+    Returns True if any data row in the markdown table has at least one
+    empty cell.  Empty means the cell contains only whitespace.
+    Header and separator rows are excluded from the check.
+    """
+    lines: list[str] = markdown.strip().split('\n')
+
+    # Find the separator row (e.g. |---|---|) to skip header lines
+    data_start: int = 0
+    for i, line in enumerate(lines[:4]):
+        if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+            data_start = i + 1
+            break
+
+    for line in lines[data_start:]:
+        # Split on pipe, ignore first/last empty strings from leading/trailing pipes
+        cells: list[str] = line.split('|')
+        for cell in cells[1:-1]:           # skip outer empty splits
+            if cell.strip() == '':
+                return True
+    return False
+
+
+def _crop_table_as_figure(
+    result: ConversionResult,
+    prov: ProvenanceItem,
+    self_ref: str,
+    scale: float,
+    figure_lookup: dict[str, "FigureRef"]
+) -> str | None:
+    """
+    Renders the page region containing the table and stores a FigureRef
+    in *figure_lookup*.  Returns the synthetic figure_id, or None on
+    failure.
+    """
+    # result.pages is 0-indexed; prov.page_no is 1-indexed
+    page_idx: int = prov.page_no - 1
+    if page_idx < 0 or page_idx >= len(result.pages):
+        return None
+
+    conv_page = result.pages[page_idx]
+    try:
+        img = conv_page.get_image(scale=scale, cropbox=prov.bbox)
+        if img is None:
+            return None
+        buf: BytesIO = BytesIO()
+        img.save(buf, format="PNG")
+        b64: str = base64.standard_b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
+
+    fig_id: str = f"table_crop_{self_ref}"
+    figure_lookup[fig_id] = FigureRef(
+        figure_id=fig_id,
+        page_number=prov.page_no,
+        bbox_image_px=ImageBoundingBox.from_docling_bbox(
+            prov.bbox,
+            conv_page.size.height if conv_page.size else 0,
+            scale
+        ),
+        bbox_pdf=prov.bbox,
+        base64_png=b64
+    )
+    return fig_id
+
+
 def _build_element_lookup(
     doc: DoclingDocument,
+    result: ConversionResult,
+    figure_lookup: dict[str, FigureRef],
     scale: float
 ) -> dict[str, ElementRef]:
     """
@@ -124,9 +193,21 @@ def _build_element_lookup(
     self_ref. Pictures are excluded — they go into the figure lookup.
     Tables use their markdown export as the text excerpt so the model
     sees structured table content rather than a raw string.
+
+    Tables whose markdown contains empty cells (a signal that embedded
+    images were lost during extraction) are additionally cropped from the
+    rendered page and inserted into *figure_lookup* so the model receives
+    both the structured text and a visual of the table.
+
+    Continuation tables (tables that span a page break and lose their
+    header row) are detected by section + page proximity and have the
+    previous table's header prepended.
     """
     lookup: dict[str, ElementRef] = {}
+    # --- continuation-header tracking (scoped by section + page) ---
     _last_table_header: str | None = None
+    _last_table_page: int = -1
+    _current_section: str = ""
 
     for item, _level in doc.iterate_items():
         item: Any
@@ -143,6 +224,11 @@ def _build_element_lookup(
         # Skip decorative page elements (headers, footers)
         if label in ("picture", "page_header", "page_footer"):
             continue
+
+        # Track section boundaries to scope continuation headers
+        if label == "section_heading":
+            _current_section = getattr(item, "text", "")
+            _last_table_header = None
 
         prov: ProvenanceItem = item.prov[0]
         page: Any = doc.pages.get(prov.page_no)
@@ -168,9 +254,23 @@ def _build_element_lookup(
             if sep_idx is not None and sep_idx >= 1:
                 # Store header rows + separator for continuation tables
                 _last_table_header = '\n'.join(lines[:sep_idx + 1])
+                _last_table_page = prov.page_no
             elif sep_idx is None and _last_table_header:
-                # Continuation table without headers: prepend last seen header
-                text = _last_table_header + '\n' + text
+                # Only treat as continuation if same section + adjacent page
+                is_adjacent: bool = (
+                    0 <= (prov.page_no - _last_table_page) <= 1
+                )
+                if is_adjacent:
+                    text = _last_table_header + '\n' + text
+                _last_table_page = prov.page_no
+
+            # --- selective table cropping for tables with empty cells ---
+            if _table_has_empty_cells(text):
+                fig_id: str | None = _crop_table_as_figure(
+                    result, prov, item.self_ref, scale, figure_lookup
+                )
+                if fig_id:
+                    text += f"\n[Table Image: {fig_id}]"
 
         elif hasattr(item, "text") and item.text:
             text = item.text
@@ -378,8 +478,8 @@ def build_chunks(
     reference it by ID in its findings output. Figure crops are collected
     separately and attached to the chunk they appear in.
     """
-    element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, scale)
     figure_lookup: dict[str, FigureRef] = _build_figure_lookup(doc, result, scale)
+    element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, result, figure_lookup, scale)
 
     chunks: list[EvaluationChunk] = []
 
