@@ -11,7 +11,7 @@ from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, Lo
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
-from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder
+
 from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
 
 from typing import cast
@@ -194,23 +194,66 @@ def build_evaluation_pipeline() -> Pipeline:
     return pipeline
 
 
-def build_pass2_system_prompt() -> str:
-    global_rules = _load_standards_as_list("global_rules.json")
-    return f"""\
-Role: Technical reviewer & document-level compliance synthesizer.
+def build_dedup_system_prompt() -> str:
+    return """\
+Role: Technical reviewer — finding deduplication & contradiction resolution.
 
 OBJECTIVE
-Synthesize local findings from Pass 1 (deduplicate and resolve contradictions) and execute the global company standards checklist audit against the entire document structure.
+Review all local findings from Pass 1, deduplicate them, discard irrelevant entries, and flag contradictions.
+
+INPUT
+All Findings: Array of local findings from Pass 1.
+
+TOOLS
+- accept_local_finding(finding): Accept a local finding as valid and non-duplicate. The `finding` dictionary must match the schema:
+  {
+    "title": "str",
+    "element_id": "str (MUST NOT be null)",
+    "figure_id": "str|null",
+    "sub_bbox": [x1, y1, x2, y2]|null,
+    "element_type": "str",
+    "finding": "str",
+    "standard_ref": "str",
+    "severity": "str",
+    "confidence": float,
+    "recommendations": ["str"],
+    "web_references": ["str"]
+  }
+- flag_contradiction(finding_a_title, finding_b_title, description): Flag two findings that contradict each other across sections.
+
+TASKS
+1. Review all input findings from Pass 1.
+2. Deduplicate: if multiple findings describe the same issue across different sections, keep only the most detailed version.
+3. Discard any finding from Pass 1 that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
+4. If two findings contradict each other, call flag_contradiction.
+5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
+
+CONSTRAINTS
+- You MUST call accept_local_finding for every valid, non-duplicate finding. This is the only way findings are recorded.
+- Preserve ALL original fields exactly as given when accepting valid findings.
+- Do NOT accept duplicate findings.
+- "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
+- After processing all findings, output a brief text summary of what you did.
+"""
+
+
+def build_global_audit_system_prompt() -> str:
+    global_rules = _load_standards_as_list("global_rules.json")
+    return f"""\
+Role: Technical reviewer — document-level compliance auditor.
+
+OBJECTIVE
+Audit the document's structure against the global company standards checklist. You receive the full document index and a summary of accepted findings from deduplication.
 
 MANDATORY GLOBAL STANDARDS CHECKLIST:
 {global_rules}
 
 INPUT
 1. Document Index: Full inventory of sections, tables, figures, and page gaps across the PDF.
-2. All Findings: Array of local findings from Pass 1.
+2. Accepted Finding Titles: Summary of findings already recorded in Pass 1 (for context only — do NOT re-record these).
 
 TOOLS
-- accept_local_finding(finding): Accept a local finding as valid, or record a new document-level finding. The `finding` dictionary must match the schema:
+- accept_local_finding(finding): Record a NEW document-level finding. The `finding` dictionary must match the schema:
   {{
     "title": "str (clean, concise summary, e.g. 'Missing Section: Sonar Scan Result')",
     "element_id": "str (MUST NOT be null; anchor to existing section ID from document index)",
@@ -224,19 +267,11 @@ TOOLS
     "recommendations": ["Actionable remediation step 1"],
     "web_references": ["https://example.com/reference-url"]
   }}
-- flag_contradiction(finding_a_title, finding_b_title, description): Flag two findings that contradict each other across sections.
 
 TASKS
 
-TASK 1: DEDUPLICATION & CONTRADICTION RESOLUTION
-1. Review all input findings from Pass 1.
-2. Deduplicate: if multiple findings describe the same issue across different sections, keep only the most detailed version.
-3. Discard any finding from Pass 1 that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
-4. If two findings contradict each other, call flag_contradiction.
-5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
-
-TASK 2: GLOBAL STANDARDS CHECKLIST AUDIT
-Audit the document index and Pass 1 findings against the mandatory global checklist above:
+TASK 1: GLOBAL STANDARDS CHECKLIST AUDIT
+Audit the document index against the mandatory global checklist above:
 
 1. Required Sections (SEMANTIC MATCHING):
    - Check `document_index["sections"]` by semantic topic and intent, NOT by exact letter prefixes (A, B, C...) or numbering:
@@ -254,22 +289,22 @@ Audit the document index and Pass 1 findings against the mandatory global checkl
    - CRITICAL: Only flag a required section as missing if there is GENUINELY NO corresponding section in `document_index["sections"]`. Do NOT flag sections as missing simply because they omit letter prefixes like "A." or "B.".
 
 2. Required Reference Documents (ALIAS RECOGNITION):
-   - Check Reference Documents / References in `document_index["sections"]` and Pass 1 findings.
+   - Check Reference Documents / References in `document_index["sections"]` and the accepted finding titles.
    - Recognize that standard industry titles satisfy the "Requirements Document" requirement:
      * "System Requirements Specification" (SRS), "Software Requirements Specification", "Business Requirements Document" (BRD), or "Requirements Specification" ALL satisfy the Requirements Document standard. Do NOT flag the Requirements Document as missing if any of these are referenced.
      * "Solutions Document", "Solutions Architecture Document", or "Solution Design" satisfies the Solutions Document standard.
 
 3. Required Diagrams:
-   - Verify the document contains all 4 mandatory diagram types (inspect `document_index["figures"]` captions, sections, and Pass 1 findings):
+   - Verify the document contains all 4 mandatory diagram types (inspect `document_index["figures"]` captions, sections, and accepted finding titles):
      1. Data Flow Diagram, 2. Network Diagram, 3. Sequence Diagram, 4. Process Flow Diagram.
 
 4. Required Tables (Reports Table):
-   - Check `document_index["tables"]`: if any table has `"section"` indicating "Reports" (e.g. section title contains "Reports"), or if Pass 1 evaluated a table under the Reports section, the Reports table exists. Only flag missing if no table exists under the Reports section.
+   - Check `document_index["tables"]`: if any table has `"section"` indicating "Reports" (e.g. section title contains "Reports"), or if accepted findings reference a table under the Reports section, the Reports table exists. Only flag missing if no table exists under the Reports section.
 
 5. Third-Party Contract:
    - Verify reference to third-party contract if applicable.
 
-TASK 3: EXTERNAL REFERENCES & DELEGATED CONTENT
+TASK 2: EXTERNAL REFERENCES & DELEGATED CONTENT
 - Do NOT flag details as missing if the document index indicates they are covered in companion documents listed under Reference Documents.
 
 RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
@@ -281,33 +316,33 @@ RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
 - Set severity to "high" or "critical", confidence to 1.0, and provide actionable remediation in "recommendations".
 
 CONSTRAINTS
-- You MUST call accept_local_finding for every valid, non-duplicate finding. This is the only way findings are recorded.
-- Preserve ALL original fields exactly as given when accepting valid Pass 1 findings.
-- Do NOT accept duplicate findings.
+- Only record NEW document-level findings. Do NOT re-record findings from the accepted list.
 - "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
-- After processing all findings, output a brief text summary of what you did.
+- After processing, output a brief text summary of what you did.
 """
 
 
-PASS2_SYSTEM_PROMPT = build_pass2_system_prompt()
-
-
-def build_synthesis_pipeline() -> Pipeline:
-    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
+def _make_generator() -> OpenRouterChatGenerator:
+    return OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
+
+def build_dedup_pipeline() -> Pipeline:
+    """Pipeline for TASK 1: deduplication & contradiction resolution.
+    Receives only the findings list — no document index needed."""
+    from cheshire_configs.preprocessors.multistep.components.dedup_message_builder import DedupMessageBuilder
     from tools.base import flag_contradiction_tool
     from tools.helpers.output_schema import Contradiction
 
     agent: Agent = Agent(
-        chat_generator=generator,
+        chat_generator=_make_generator(),
         tools=[
             accept_local_finding_tool("accepted_findings"),
             flag_contradiction_tool("contradictions"),
         ],
-        system_prompt=build_pass2_system_prompt(),
+        system_prompt=build_dedup_system_prompt(),
         max_agent_steps=200,
         exit_conditions=["text"],
         state_schema={
@@ -317,9 +352,37 @@ def build_synthesis_pipeline() -> Pipeline:
     )
 
     pipeline: Pipeline = Pipeline()
-    pipeline.add_component("synthesis_message_builder", SynthesisMessageBuilder())
+    pipeline.add_component("dedup_message_builder", DedupMessageBuilder())
     pipeline.add_component("agent", agent)
 
-    pipeline.connect("synthesis_message_builder.messages", "agent.messages")
+    pipeline.connect("dedup_message_builder.messages", "agent.messages")
+
+    return pipeline
+
+
+def build_global_audit_pipeline() -> Pipeline:
+    """Pipeline for TASK 2: global standards checklist audit.
+    Receives the document index + compact accepted-findings summary
+    in a fresh context with no prior tool-call history."""
+    from cheshire_configs.preprocessors.multistep.components.global_audit_message_builder import GlobalAuditMessageBuilder
+
+    agent: Agent = Agent(
+        chat_generator=_make_generator(),
+        tools=[
+            accept_local_finding_tool("audit_findings"),
+        ],
+        system_prompt=build_global_audit_system_prompt(),
+        max_agent_steps=30,
+        exit_conditions=["text"],
+        state_schema={
+            "audit_findings": {"type": list[LocalFinding]},
+        }
+    )
+
+    pipeline: Pipeline = Pipeline()
+    pipeline.add_component("global_audit_message_builder", GlobalAuditMessageBuilder())
+    pipeline.add_component("agent", agent)
+
+    pipeline.connect("global_audit_message_builder.messages", "agent.messages")
 
     return pipeline
