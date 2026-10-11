@@ -128,10 +128,11 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         for f in all_findings:
             f: LocalFinding | dict
             # support both dataclass and dict
-            element_id: str | None = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+            elem_val = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+            elem_key = tuple(elem_val) if isinstance(elem_val, list) else elem_val
             figure_id: str | None = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
             finding: str = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
-            key: tuple[str | None, str | None, str] = (element_id, figure_id, finding)
+            key: tuple[Any, str | None, str] = (elem_key, figure_id, finding)
             if key not in seen:
                 deduped.append(f)
                 seen.add(key)
@@ -172,9 +173,9 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
     final_vulnerabilities: list[VulnerabilityDetails] = []
     for f in accepted_local:
         f: LocalFinding | dict
-        element_id: str | None = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+        element_id = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
         figure_id: str | None = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
-        sub_bbox: list[float] | None = getattr(f, "sub_bbox", None) or (f.get("sub_bbox") if isinstance(f, dict) else None)
+        sub_bbox = getattr(f, "sub_bbox", None) or (f.get("sub_bbox") if isinstance(f, dict) else None)
         finding: str = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
         title: str | None = getattr(f, "title", None) or (f.get("title") if isinstance(f, dict) else None)
         web_refs: list[str] = getattr(f, "web_references", None) or (f.get("web_references") if isinstance(f, dict) else None) or []
@@ -182,41 +183,63 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
 
         page_no: int = 1
         bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
+        bboxes: list[BoundingBox] = []
 
         if figure_id and (figure_id in figure_by_id):
             fig: FigureRef = figure_by_id[figure_id]
             page_no = fig.page_number
 
-            if sub_bbox and len(sub_bbox) == 4:
-                sx1: float
-                sy1: float
-                sx2: float
-                sy2: float
-                sx1, sy1, sx2, sy2 = sub_bbox
-                max_coord: float = max(sx1, sy1, sx2, sy2)
-                scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+            if sub_bbox:
+                if isinstance(sub_bbox, list):
+                    if len(sub_bbox) == 4 and all(isinstance(x, (int, float)) for x in sub_bbox):
+                        raw_boxes = [sub_bbox]
+                    else:
+                        raw_boxes = [b for b in sub_bbox if isinstance(b, list) and len(b) == 4 and all(isinstance(x, (int, float)) for x in b)]
+                else:
+                    raw_boxes = []
 
-                frac_x1: float = clamp(0.0, sx1 / scale_factor, 1.0)
-                frac_y1: float = clamp(0.0, sy1 / scale_factor, 1.0)
-                frac_x2: float = clamp(0.0, sx2 / scale_factor, 1.0)
-                frac_y2: float = clamp(0.0, sy2 / scale_factor, 1.0)
+                for sb in raw_boxes:
+                    sx1: float
+                    sy1: float
+                    sx2: float
+                    sy2: float
+                    sx1, sy1, sx2, sy2 = sb
+                    max_coord: float = max(sx1, sy1, sx2, sy2)
+                    scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
 
-                fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
-                fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
+                    frac_x1: float = clamp(0.0, sx1 / scale_factor, 1.0)
+                    frac_y1: float = clamp(0.0, sy1 / scale_factor, 1.0)
+                    frac_x2: float = clamp(0.0, sx2 / scale_factor, 1.0)
+                    frac_y2: float = clamp(0.0, sy2 / scale_factor, 1.0)
 
-                bbox = BoundingBox(
-                    l=fig.bbox_pdf.l + frac_x1 * fig_w,
-                    t=fig.bbox_pdf.t - frac_y1 * fig_h,
-                    r=fig.bbox_pdf.l + frac_x2 * fig_w,
-                    b=fig.bbox_pdf.t - frac_y2 * fig_h
-                )
+                    fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+                    fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
+
+                    bboxes.append(BoundingBox(
+                        l=fig.bbox_pdf.l + frac_x1 * fig_w,
+                        t=fig.bbox_pdf.t - frac_y1 * fig_h,
+                        r=fig.bbox_pdf.l + frac_x2 * fig_w,
+                        b=fig.bbox_pdf.t - frac_y2 * fig_h
+                    ))
+
+                if bboxes:
+                    bbox = bboxes[0]
+                else:
+                    bbox = fig.bbox_pdf
+                    bboxes = [bbox]
             else:
                 bbox = fig.bbox_pdf
+                bboxes = [bbox]
 
-        elif element_id and element_id in element_by_id:
-            elem: ElementRef = element_by_id[element_id]
-            page_no = elem.page_number
-            bbox = elem.bbox_pdf
+        elif element_id:
+            elem_ids = [element_id] if isinstance(element_id, str) else element_id
+            for eid in elem_ids:
+                if eid in element_by_id:
+                    elem: ElementRef = element_by_id[eid]
+                    page_no = elem.page_number
+                    bboxes.append(elem.bbox_pdf)
+            if bboxes:
+                bbox = bboxes[0]
 
         final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         final_vulnerabilities.append(
@@ -225,6 +248,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 description=finding,
                 page_no=page_no,
                 bbox=bbox,
+                bboxes=bboxes,
                 web_references=web_refs,
                 recommendations=recs
             )

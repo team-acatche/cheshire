@@ -74,46 +74,67 @@ class FindingsParser:
             finding: Any
             if not isinstance(finding, dict):
                 continue
-            element_id: str | None = finding.get("element_id")
+            element_id = finding.get("element_id")
             figure_id: str | None = finding.get("figure_id")
-            sub_bbox: list[float] | None = finding.get("sub_bbox")
+            sub_bbox = finding.get("sub_bbox")
             page_no: int = finding.get("page_no", 0)
             bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
+            bboxes: list[BoundingBox] = []
 
             if figure_id in figure_by_id and figure_id is not None:
                 fig: FigureRef = figure_by_id[figure_id]
                 page_no = fig.page_number
 
-                if sub_bbox and len(sub_bbox) == 4:
-                    scaled_x1: float
-                    scaled_y1: float
-                    scaled_x2: float
-                    scaled_y2: float
-                    scaled_x1, scaled_y1, scaled_x2, scaled_y2 = sub_bbox
-                    max_coord: float = max(scaled_x1, scaled_y1, scaled_x2, scaled_y2)
-                    scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
-                    
-                    normalized_x1: float = clamp(0.0, scaled_x1 / scale_factor, 1.0)
-                    normalized_y1: float = clamp(0.0, scaled_y1 / scale_factor, 1.0)
-                    normalized_x2: float = clamp(0.0, scaled_x2 / scale_factor, 1.0)
-                    normalized_y2: float = clamp(0.0, scaled_y2 / scale_factor, 1.0)
-                    
-                    fig_width: float = fig.bbox_pdf.r - fig.bbox_pdf.l
-                    fig_height: float = fig.bbox_pdf.t - fig.bbox_pdf.b
-                    
-                    bbox = BoundingBox(
-                        l=fig.bbox_pdf.l + normalized_x1 * fig_width,
-                        t=fig.bbox_pdf.t - normalized_y1 * fig_height,
-                        r=fig.bbox_pdf.l + normalized_x2 * fig_width,
-                        b=fig.bbox_pdf.t - normalized_y2 * fig_height
-                    )
+                if sub_bbox:
+                    if isinstance(sub_bbox, list):
+                        if len(sub_bbox) == 4 and all(isinstance(x, (int, float)) for x in sub_bbox):
+                            raw_boxes = [sub_bbox]
+                        else:
+                            raw_boxes = [b for b in sub_bbox if isinstance(b, list) and len(b) == 4 and all(isinstance(x, (int, float)) for x in b)]
+                    else:
+                        raw_boxes = []
+
+                    for sb in raw_boxes:
+                        scaled_x1: float
+                        scaled_y1: float
+                        scaled_x2: float
+                        scaled_y2: float
+                        scaled_x1, scaled_y1, scaled_x2, scaled_y2 = sb
+                        max_coord: float = max(scaled_x1, scaled_y1, scaled_x2, scaled_y2)
+                        scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+
+                        normalized_x1: float = clamp(0.0, scaled_x1 / scale_factor, 1.0)
+                        normalized_y1: float = clamp(0.0, scaled_y1 / scale_factor, 1.0)
+                        normalized_x2: float = clamp(0.0, scaled_x2 / scale_factor, 1.0)
+                        normalized_y2: float = clamp(0.0, scaled_y2 / scale_factor, 1.0)
+
+                        fig_width: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+                        fig_height: float = fig.bbox_pdf.t - fig.bbox_pdf.b
+
+                        bboxes.append(BoundingBox(
+                            l=fig.bbox_pdf.l + normalized_x1 * fig_width,
+                            t=fig.bbox_pdf.t - normalized_y1 * fig_height,
+                            r=fig.bbox_pdf.l + normalized_x2 * fig_width,
+                            b=fig.bbox_pdf.t - normalized_y2 * fig_height
+                        ))
+
+                    if bboxes:
+                        bbox = bboxes[0]
+                    else:
+                        bbox = fig.bbox_pdf
+                        bboxes = [bbox]
                 else:
                     bbox = fig.bbox_pdf
+                    bboxes = [bbox]
 
-            # if finding references an element, 
-            elif element_id in element_by_id is not None:
-                elem: ElementRef = element_by_id[element_id]
-                bbox = elem.bbox_pdf
+            elif element_id:
+                elem_ids = [element_id] if isinstance(element_id, str) else element_id
+                for eid in elem_ids:
+                    if eid in element_by_id:
+                        elem: ElementRef = element_by_id[eid]
+                        bboxes.append(elem.bbox_pdf)
+                if bboxes:
+                    bbox = bboxes[0]
 
             try:
                 vulnerabilities.append(
@@ -122,6 +143,7 @@ class FindingsParser:
                         description=finding["description"],
                         page_no=page_no,
                         bbox=bbox,
+                        bboxes=bboxes,
                         web_references=finding.get("web_references", []),
                         recommendations=finding.get("recommendations", [])
                     )

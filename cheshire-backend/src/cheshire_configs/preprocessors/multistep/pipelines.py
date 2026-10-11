@@ -12,7 +12,7 @@ from cheshire_configs.preprocessors.multistep.components.chunker import Multiste
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
 
-from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
+from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding, merge_findings
 
 from typing import cast
 from tools.exa import web_search
@@ -176,6 +176,15 @@ def accept_local_finding_tool(state_key: str) -> Tool:
     _tool.warm_up()
     return _tool
 
+def merge_findings_tool(state_key: str) -> Tool:
+    _tool: Tool = create_tool_from_function(
+        function=merge_findings,
+        description="Combine multiple same-topic findings into one, aggregating unique fields (element_id, sub_bbox, etc.) into a list, and summarizing their titles and descriptions into a single finding.",
+        outputs_to_state={state_key: {"source": "finding"}}
+    )
+    _tool.warm_up()
+    return _tool
+
 
 
 def build_evaluation_pipeline() -> Pipeline:
@@ -218,12 +227,12 @@ INPUT
 All Findings: Array of local findings from Pass 1.
 
 TOOLS
-- accept_local_finding(finding): Accept a local finding as valid and non-duplicate. The `finding` dictionary must match the schema:
+- accept_local_finding(finding): Accept a unique, non-duplicate local finding as valid. The `finding` dictionary must match the schema:
   {
     "title": "str",
-    "element_id": "str (MUST NOT be null)",
+    "element_id": "str (MUST NOT be null)" or ["str"],
     "figure_id": "str|null",
-    "sub_bbox": [x1, y1, x2, y2]|null,
+    "sub_bbox": [x1, y1, x2, y2]|[[x1, y1, x2, y2], ...]|null,
     "element_type": "str",
     "finding": "str",
     "standard_ref": "str",
@@ -232,11 +241,21 @@ TOOLS
     "recommendations": ["str"],
     "web_references": ["str"]
   }
+- merge_findings(findings, title, finding): Combine multiple same-topic duplicate findings into one single finding.
+  * `findings`: Array of the duplicate finding objects (from the input findings list) that describe the exact same issue on the exact same object.
+  * `title`: A single concise, summarized title for the merged finding.
+  * `finding`: A single synthesized description summarizing the noncompliant portions into one coherent finding.
+  The tool automatically aggregates unique fields (element_id into a list, sub_bbox into a list of highlights, web_references, recommendations) and selects the highest severity and confidence.
 - flag_contradiction(finding_a_title, finding_b_title, description): Flag two findings that contradict each other across sections.
 
 TASKS
 1. Review all input findings from Pass 1.
-2. Deduplicate: if multiple findings describe the same issue across different sections, keep only the most detailed version.
+2. Deduplicate and merge same-topic findings:
+   - STRICT SIMILARITY DEFINITION:
+     All findings to be merged MUST talk about the EXACT SAME OBJECT (e.g. the exact same diagram / figure_id, or the exact same paragraph / element_id) with the EXACT SAME ISSUE / TOPIC.
+     * DISSIMILAR (DO NOT MERGE): If a finding talks about a deprecated GitHub Actions version and another talks about a deprecated Kubernetes version, they are DIFFERENT — keep them separate and call accept_local_finding for each.
+     * SAME ISSUE & SAME OBJECT (MERGE): If two findings talk about a single diagram being incomplete (e.g. finding A points out a "TBD" in the diagram while finding B points out a "???" field), they are the SAME finding. Merge them by calling `merge_findings(findings=[finding_A, finding_B], title="...", finding="...")` so that multiple sub_bbox highlights mark each noncompliant portion in the merged finding.
+   - If multiple findings describe the exact same issue across different sections or elements, merge them using merge_findings if they target the same underlying object/topic.
 3. Discard false positives and non-technical findings:
    - Discard any finding that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
    - Discard any finding claiming that the "Format" column in Attachments tables is empty when it is annotated with `[Embedded Icon]` or visually displays format badges/icons (e.g. Word, Excel icons).
@@ -244,12 +263,12 @@ TASKS
    - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
    - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
 4. If two findings contradict each other, call flag_contradiction.
-5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
+5. For each unique, valid finding without duplicates, call accept_local_finding with the original fields preserved. For groups of duplicate same-topic findings, call merge_findings.
 
 CONSTRAINTS
-- You MUST call accept_local_finding for every valid, non-duplicate finding. This is the only way findings are recorded.
+- You MUST call accept_local_finding for every unique, non-duplicate finding, or merge_findings for groups of duplicate same-topic findings. This is the only way findings are recorded.
 - Preserve ALL original fields exactly as given when accepting valid findings.
-- Do NOT accept duplicate findings.
+- Do NOT accept duplicate findings individually.
 - "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
 - After processing all findings, output a brief text summary of what you did.
 """
@@ -358,6 +377,7 @@ def build_dedup_pipeline() -> Pipeline:
         chat_generator=_make_generator(),
         tools=[
             accept_local_finding_tool("accepted_findings"),
+            merge_findings_tool("accepted_findings"),
             flag_contradiction_tool("contradictions"),
         ],
         system_prompt=build_dedup_system_prompt(),
