@@ -226,7 +226,7 @@ def _build_element_lookup(
             continue
 
         # Track section boundaries to scope continuation headers
-        if label == "section_heading":
+        if label in ("section_header", "section_heading"):
             _current_section = getattr(item, "text", "")
             _last_table_header = None
 
@@ -395,7 +395,7 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
             if hasattr(item.label, "value")
             else str(item.label)
         )
-        if label == "section_heading" and hasattr(item, "prov") and item.prov:
+        if label in ("section_header", "section_heading") and hasattr(item, "prov") and item.prov:
             section_pages.add(item.prov[0].page_no)
 
     all_pages: list[int] = sorted(doc.pages.keys())
@@ -419,6 +419,21 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     return gaps
 
 
+def _extract_section_key(heading: str) -> str | None:
+    """
+    Extracts the major section identifier (e.g. 'F' from 'F. System Considerations'
+    or 'F.1 Availability', '1' from '1. Overview' or '1.1 Modules').
+    """
+    h: str = heading.strip()
+    m = re.match(r'^([A-Z]|\d+)\b(?:\.|\s|$)', h)
+    if m:
+        return m.group(1)
+    m2 = re.match(r'^Section\s+([A-Z]|\d+)\b', h, re.IGNORECASE)
+    if m2:
+        return m2.group(1)
+    return None
+
+
 def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> list[EvaluationChunk]:
     merged_chunks: list[EvaluationChunk] = []
     if not raw_chunks:
@@ -428,13 +443,25 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
     current_chunk: EvaluationChunk = copy.copy(raw_chunks[0])
     current_chunk.element_refs = list(current_chunk.element_refs)
     current_chunk.figures = list(current_chunk.figures)
+    current_key: str | None = _extract_section_key(current_chunk.heading)
 
     for next_chunk in raw_chunks[1:]:
         next_chunk: EvaluationChunk
-        same_section: bool = current_chunk.heading == next_chunk.heading
+        next_key: str | None = _extract_section_key(next_chunk.heading)
+
+        same_section: bool = (
+            current_chunk.heading == next_chunk.heading or
+            (current_key is not None and next_key is not None and current_key == next_key)
+        )
         len_combined: int = len(current_chunk.structured_text) + len(next_chunk.structured_text)
         
         if same_section and len_combined <= max_chars:
+            if current_key is not None and current_chunk.heading != next_chunk.heading:
+                # If current heading is a parent heading (e.g. "F. System Considerations"), preserve it.
+                is_parent: bool = bool(re.match(rf'^{current_key}\.\s+[A-Za-z]', current_chunk.heading))
+                if not is_parent:
+                    current_chunk.heading = f"Section {current_key} Subsections"
+
             current_chunk.structured_text = (
                 current_chunk.structured_text + "\n\n" + next_chunk.structured_text
             ).strip()
@@ -445,6 +472,7 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
                 fig: FigureRef
                 if fig.figure_id not in seen_figs:
                     current_chunk.figures.append(fig)
+                    seen_figs.add(fig.figure_id)
             
             min_page: int = min(current_chunk.page_range[0], next_chunk.page_range[0])
             max_page: int = max(current_chunk.page_range[1], next_chunk.page_range[1])
@@ -454,6 +482,7 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
             current_chunk = copy.copy(next_chunk)
             current_chunk.element_refs = list(current_chunk.element_refs)
             current_chunk.figures = list(current_chunk.figures)
+            current_key = next_key
 
     merged_chunks.append(current_chunk)
     
@@ -502,6 +531,14 @@ def build_chunks(
                 )
                 text_lines.append(elem.text_excerpt)
                 text_lines.append("") # forces an extra newline when joined @ line 406
+
+                # If this element was a table with an image crop, attach the crop figure directly
+                table_fig_id: str = f"table_crop_{ref_id}"
+                if table_fig_id in figure_lookup:
+                    crop_fig: FigureRef = figure_lookup[table_fig_id]
+                    if crop_fig.base64_png:
+                        chunk_figures.append(crop_fig)
+
                 continue
 
             fig: FigureRef | None = figure_lookup.get(ref_id)
@@ -535,13 +572,13 @@ def _attach_figures_by_page(
     figure_lookup: dict[str, FigureRef]
 ) -> None:
     """
-    Assigns figures to chunks by page proximity.
+    Assigns figures to chunks by explicit text mention or page proximity.
 
     HierarchicalChunker is text-based and typically doesn't include
     picture items in chunk.meta.doc_items, so the ref_id match in
     build_chunks never fires. This function assigns each unattached
-    figure to the chunk whose page range contains the figure's page,
-    falling back to the nearest chunk by page distance.
+    figure to the chunk whose text references it, or whose page range
+    contains the figure's page, falling back to nearest page distance.
     """
     attached_ids: set[str] = {
         figure.figure_id
@@ -554,25 +591,34 @@ def _attach_figures_by_page(
         if not figure.base64_png or figure.figure_id in attached_ids:
             continue
 
-        # Prefer a chunk whose page range includes the figure's page
         best_chunk: EvaluationChunk | None = None
-        best_dist: float = float('inf')
 
+        # 1. Prefer a chunk whose structured_text explicitly references this figure ID
         for chunk in chunks:
             chunk: EvaluationChunk
-            if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
+            if figure.figure_id in chunk.structured_text:
                 best_chunk = chunk
                 break
-            dist: float = min(
-                abs(figure.page_number - chunk.page_range[0]),
-                abs(figure.page_number - chunk.page_range[1])
-            )
-            if dist < best_dist:
-                best_dist = dist
-                best_chunk = chunk
+
+        # 2. If not explicitly referenced, find a chunk by page range proximity
+        if best_chunk is None:
+            best_dist: float = float('inf')
+            for chunk in chunks:
+                chunk: EvaluationChunk
+                if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
+                    best_chunk = chunk
+                    break
+                dist: float = min(
+                    abs(figure.page_number - chunk.page_range[0]),
+                    abs(figure.page_number - chunk.page_range[1])
+                )
+                if dist < best_dist:
+                    best_dist = dist
+                    best_chunk = chunk
 
         if best_chunk is not None:
             best_chunk.figures.append(figure)
+            attached_ids.add(figure.figure_id)
 
 
 def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
@@ -586,7 +632,8 @@ def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
     for i, chunk in enumerate(chunks):
         i: int
         chunk: EvaluationChunk
-        heading_groups[chunk.heading].append(i)
+        key: str = _extract_section_key(chunk.heading) or chunk.heading
+        heading_groups[key].append(i)
 
     for _heading, indices in heading_groups.items():
         _heading: str
@@ -639,7 +686,7 @@ def build_document_index(doc: DoclingDocument) -> dict:
         )
         prov: ProvenanceItem = item.prov[0]
 
-        if label == "section_heading":
+        if label in ("section_header", "section_heading"):
             current_section = getattr(item, "text", "")
             sections.append({
                 "id": item.self_ref,

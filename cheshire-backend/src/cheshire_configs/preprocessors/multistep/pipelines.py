@@ -88,15 +88,20 @@ AUDIT RULES & CONSTRAINTS
 - REPORTS TABLE SCOPING:
   * You MUST only evaluate a table against the Reports schema (`Report`, `New/Existing`, `Description`, `Attachment`, `Class/Module`) if the current section heading explicitly indicates it is the Reports section (e.g. `Reports`, `4. Reports`, `E.4 Reports`, `Processing Specifications - Reports`).
   * Other tables (such as `Lookup Files`, `Parameters`, `Modules`, `Files and Records`, `Compatibility`, `Estimates`, `Attachments`) are NOT Reports tables. NEVER evaluate them against Reports table columns.
-- EMPTY CELLS VS. VALID MEDIA/LINKS:
+- EMPTY CELLS VS. VALID MEDIA/LINKS & FORMAT ICONS:
   * Table cells containing hyperlinks, URLs, attachment paths/references, icons, or embedded images/diagrams are VALIDLY POPULATED. NEVER mark them as empty.
-  * Table cells containing placeholders such as "---", "--", "-", "N/A", "n/a", "None", "null", "TBD", "TODO", "[ ]", or blank whitespace are EMPTY/UNPOPULATED. If a required field in the Reports table or technical specifications contains one of these placeholders, flag it as a missing/empty field.
+  * FORMAT & ATTACHMENT COLUMNS VISUALLY POPULATED: In Attachments tables, Reference tables, or specification tables where file format or attachment columns appear empty or whitespace-only in markdown text: ALWAYS check the attached table image crop (`[Table Image: ...]`). If the table image visually displays file format icons (e.g. Microsoft Word, Excel, PDF icons/badges) or visual document badges, the field is VALIDLY POPULATED visually. NEVER mark it as an empty field or missing format. Furthermore, if the file extension in the file name clearly conveys the file format (e.g. .docx, .xlsx, .pdf, .yaml) and format icons are displayed, this is compliant and MUST NOT be flagged as missing.
+  * Table cells containing placeholders such as "---", "--", "-", "N/A", "n/a", "None", "null", "TBD", "TODO", "[ ]", or blank whitespace without any visual icons in the table image are EMPTY/UNPOPULATED. If a required field in the Reports table or technical specifications contains one of these placeholders, flag it as a missing/empty field.
 - EMPTY VS. NON-COMPLIANT:
   * Distinguish between "empty/missing" (when a field, cell, value, or estimate phase is absent or filled with a placeholder like "---") and "non-compliant/outdated" (when content is present but deprecated, obsolete, invalid, or violates architectural standards). Do not label non-compliant specifications as "empty".
 
 3. LOCAL CHECKLIST COMPLIANCE:
 - Evaluate the present section against the mandatory local standards checklist above.
 - Verify technical specifications contain no empty fields and no outdated or deprecated components.
+- LEAD-IN PARAGRAPHS & SUBSECTION RELATIONSHIPS:
+  * High-level section headings (e.g., "System Considerations", "Processing Specifications", "Security Considerations") frequently begin with introductory or lead-in framing paragraphs, with detailed specifications following in subsequent subsections or chunks.
+  * NEVER flag a section as empty, unpopulated, or missing content if it contains introductory or lead-in framing text whose detailed specifications are elaborated in its succeeding subsections or elsewhere in the document.
+  * Always check the document index and sibling subsections before declaring any specifications missing.
 - If evaluating the Estimates section: confirm it includes time estimates for all 6 required phases (Technical Specifications, Requirements Definition, Implementation, Coding & Unit Testing, System Testing, UAT). Flag any phase missing from this section.
 - Do NOT flag whole missing sections or whole missing diagrams—global document inventory is audited in Pass 2.
 
@@ -224,7 +229,10 @@ TOOLS
 TASKS
 1. Review all input findings from Pass 1.
 2. Deduplicate: if multiple findings describe the same issue across different sections, keep only the most detailed version.
-3. Discard any finding from Pass 1 that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
+3. Discard false positives and non-technical findings:
+   - Discard any finding that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
+   - Discard any finding claiming that the "Format" column or attachment field in Attachments or Reference tables is empty when the table visually displays format badges/icons (e.g. Word, Excel icons) or when valid file extensions (.docx, .xlsx, .pdf) are present.
+   - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
 4. If two findings contradict each other, call flag_contradiction.
 5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
 
