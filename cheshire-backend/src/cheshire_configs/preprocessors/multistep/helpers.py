@@ -8,7 +8,8 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field, field_validator
 
 
-from docling_core.types.doc import BoundingBox
+from docling_core.types.doc import BoundingBox, CoordOrigin
+from tabulate import tabulate
 from docling.chunking import HierarchicalChunker
 from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
@@ -182,6 +183,186 @@ def _crop_table_as_figure(
     return fig_id
 
 
+def _to_topleft_dict(bbox: BoundingBox, page_h: float) -> dict[str, float]:
+    if bbox.coord_origin == CoordOrigin.BOTTOMLEFT:
+        return {"l": bbox.l, "t": page_h - bbox.t, "r": bbox.r, "b": page_h - bbox.b}
+    return {"l": bbox.l, "t": bbox.t, "r": bbox.r, "b": bbox.b}
+
+
+def _get_table_cell_bounds(table_item: Any, page_h: float) -> dict[tuple[int, int], dict[str, float]]:
+    grid = getattr(getattr(table_item, "data", None), "grid", None)
+    if not grid or len(grid) == 0:
+        return {}
+    num_rows = len(grid)
+    num_cols = len(grid[0]) if num_rows > 0 else 0
+    if num_rows == 0 or num_cols == 0:
+        return {}
+
+    try:
+        row_bboxes = table_item.data.get_row_bounding_boxes()
+        col_bboxes = table_item.data.get_column_bounding_boxes()
+    except Exception:
+        return {}
+
+    row_bounds: dict[int, list[float | None]] = {}
+    for r in range(num_rows):
+        if r in row_bboxes and row_bboxes[r] is not None:
+            rb = _to_topleft_dict(row_bboxes[r], page_h)
+            row_bounds[r] = [rb["t"], rb["b"]]
+        else:
+            row_bounds[r] = [None, None]
+
+    for r in range(num_rows):
+        curr_t, curr_b = row_bounds[r]
+        if curr_t is None:
+            prev_b = row_bounds[r - 1][1] if r > 0 and row_bounds[r - 1][1] is not None else 0.0
+            curr_t = prev_b
+            curr_b = prev_b + 40.0
+            row_bounds[r] = [curr_t, curr_b]
+
+    extended_row_bounds: dict[int, tuple[float, float]] = {}
+    for r in range(num_rows):
+        t = row_bounds[r][0] or 0.0
+        b = row_bounds[r][1] or 0.0
+        if r > 0 and row_bounds[r - 1][1] is not None:
+            t = (row_bounds[r - 1][1] + t) / 2.0
+        if r < num_rows - 1 and row_bounds[r + 1][0] is not None:
+            b = (b + row_bounds[r + 1][0]) / 2.0
+        else:
+            b = b + 15.0
+        extended_row_bounds[r] = (t, b)
+
+    col_bounds: dict[int, list[float | None]] = {}
+    for c in range(num_cols):
+        if c in col_bboxes and col_bboxes[c] is not None:
+            cb = _to_topleft_dict(col_bboxes[c], page_h)
+            col_bounds[c] = [cb["l"], cb["r"]]
+        else:
+            col_bounds[c] = [None, None]
+
+    extended_col_bounds: dict[int, tuple[float, float]] = {}
+    for c in range(num_cols):
+        l = col_bounds[c][0]
+        r = col_bounds[c][1]
+        if l is None or r is None:
+            prev_r = extended_col_bounds[c - 1][1] if c > 0 else 0.0
+            l = prev_r
+            r = prev_r + 50.0
+        else:
+            if c > 0 and col_bounds[c - 1][1] is not None:
+                l = (col_bounds[c - 1][1] + l) / 2.0
+            if c < num_cols - 1 and col_bounds[c + 1][0] is not None:
+                r = (r + col_bounds[c + 1][0]) / 2.0
+            else:
+                r = r + 20.0
+        extended_col_bounds[c] = (l, r)
+
+    cell_bounds: dict[tuple[int, int], dict[str, float]] = {}
+    for r in range(num_rows):
+        for c in range(num_cols):
+            cell_bounds[(r, c)] = {
+                "l": extended_col_bounds[c][0],
+                "r": extended_col_bounds[c][1],
+                "t": extended_row_bounds[r][0],
+                "b": extended_row_bounds[r][1],
+            }
+    return cell_bounds
+
+
+def _format_table_markdown(
+    table_item: Any,
+    doc: DoclingDocument,
+    last_header: str | None,
+    is_continuation: bool,
+) -> tuple[str, str | None]:
+    """
+    Formats a Docling table into markdown.
+    Detects embedded format/attachment icons from doc.pictures on the page and
+    populates/annotates the corresponding cell text with '[Embedded Icon]',
+    allowing the evaluator to distinguish between visual icons and genuinely empty cells.
+    Also handles continuation tables lacking repeated headers.
+    Returns (table_markdown, new_last_header).
+    """
+    grid = getattr(getattr(table_item, "data", None), "grid", None)
+    if not grid or len(grid) == 0:
+        try:
+            return table_item.export_to_markdown(doc=doc), last_header
+        except Exception:
+            return getattr(table_item, "export_to_markdown", lambda: "")(), last_header
+
+    prov = table_item.prov[0] if hasattr(table_item, "prov") and table_item.prov else None
+    page_no = prov.page_no if prov else -1
+    page = doc.pages.get(page_no) if page_no != -1 else None
+    page_h = page.size.height if page and page.size else 0.0
+    pics = [p for p in doc.pictures if p.prov and p.prov[0].page_no == page_no] if page_no != -1 else []
+
+    has_col_headers = any(getattr(cell, "column_header", False) for cell in grid[0])
+    cell_bounds = _get_table_cell_bounds(table_item, page_h) if pics and page_h > 0 else {}
+
+    # Format continuation table lacking headers
+    if is_continuation and not has_col_headers and last_header:
+        data_rows: list[str] = []
+        for r_idx, row in enumerate(grid):
+            cells: list[str] = []
+            for c_idx, cell in enumerate(row):
+                txt = cell.text.replace("\n", " ").strip()
+                if (r_idx, c_idx) in cell_bounds:
+                    cb = cell_bounds[(r_idx, c_idx)]
+                    for p in pics:
+                        pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+                        x_ov = max(0, min(cb["r"], pb["r"]) - max(cb["l"], pb["l"]))
+                        y_ov = max(0, min(cb["b"], pb["b"]) - max(cb["t"], pb["t"]))
+                        if x_ov > 10 and y_ov > 10:
+                            txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
+                            break
+                cells.append(txt)
+            data_rows.append("| " + " | ".join(cells) + " |")
+        text = last_header + "\n" + "\n".join(data_rows)
+        return text, last_header
+
+    # Standard table (or continuation with headers)
+    table_rows: list[list[str]] = []
+    for r_idx, row in enumerate(grid):
+        is_header_row = (r_idx == 0) or all(getattr(cell, "column_header", False) for cell in row)
+        row_cells: list[str] = []
+        for c_idx, cell in enumerate(row):
+            txt = cell.text.replace("\n", " ").strip()
+            if not is_header_row and (r_idx, c_idx) in cell_bounds:
+                cb = cell_bounds[(r_idx, c_idx)]
+                for p in pics:
+                    pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+                    x_ov = max(0, min(cb["r"], pb["r"]) - max(cb["l"], pb["l"]))
+                    y_ov = max(0, min(cb["b"], pb["b"]) - max(cb["t"], pb["t"]))
+                    if x_ov > 10 and y_ov > 10:
+                        txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
+                        break
+            row_cells.append(txt)
+        table_rows.append(row_cells)
+
+    if len(table_rows) > 1 and len(table_rows[0]) > 0:
+        text = tabulate(table_rows[1:], headers=table_rows[0], tablefmt="github", disable_numparse=True)
+    elif len(table_rows) == 1:
+        text = tabulate([], headers=table_rows[0], tablefmt="github")
+    else:
+        text = ""
+
+    # Extract header rows + separator for continuation tracking
+    lines = text.strip().split("\n")
+    sep_idx = None
+    for i, line in enumerate(lines[:4]):
+        if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+            sep_idx = i
+            break
+
+    new_last_header = last_header
+    if sep_idx is not None and sep_idx >= 1:
+        new_last_header = "\n".join(lines[:sep_idx + 1])
+    elif sep_idx is None and is_continuation and last_header:
+        text = last_header + "\n" + text
+
+    return text, new_last_header
+
+
 def _build_element_lookup(
     doc: DoclingDocument,
     result: ConversionResult,
@@ -243,42 +424,10 @@ def _build_element_lookup(
             is_adjacent_page: bool = (
                 _last_table_header is not None and 0 <= (prov.page_no - _last_table_page) <= 1
             )
-
-            # Check if this table has explicit column headers in its grid
-            has_col_headers: bool = False
-            if hasattr(item, "data") and hasattr(item.data, "grid") and item.data.grid:
-                has_col_headers = any(getattr(cell, "column_header", False) for cell in item.data.grid[0])
-
-            # If continuation table without explicit headers on this page, format rows from grid and attach header
-            if is_adjacent_page and not has_col_headers and hasattr(item, "data") and hasattr(item.data, "grid") and item.data.grid:
-                data_rows: list[str] = []
-                for row in item.data.grid:
-                    cells = [cell.text.replace("\n", " ").strip() for cell in row]
-                    data_rows.append("| " + " | ".join(cells) + " |")
-                text = _last_table_header + "\n" + "\n".join(data_rows)
-                _last_table_page = prov.page_no
-            else:
-                try:
-                    text = item.export_to_markdown(doc=doc)
-                except Exception:
-                    text = item.export_to_markdown() if hasattr(item, "export_to_markdown") else ""
-
-                lines: list[str] = text.strip().split('\n')
-                sep_idx: int | None = None
-                for i, line in enumerate(lines[:4]):
-                    i: int
-                    line: str
-                    if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
-                        sep_idx = i
-                        break
-
-                if sep_idx is not None and sep_idx >= 1:
-                    # Store header rows + separator for continuation tables
-                    _last_table_header = '\n'.join(lines[:sep_idx + 1])
-                    _last_table_page = prov.page_no
-                elif sep_idx is None and is_adjacent_page and _last_table_header:
-                    text = _last_table_header + '\n' + text
-                    _last_table_page = prov.page_no
+            text, _last_table_header = _format_table_markdown(
+                item, doc, _last_table_header, is_adjacent_page
+            )
+            _last_table_page = prov.page_no
 
             # --- selective table cropping for tables with empty cells ---
             if _table_has_empty_cells(text):
