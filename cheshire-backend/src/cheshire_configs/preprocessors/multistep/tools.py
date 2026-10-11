@@ -167,11 +167,13 @@ def accept_local_finding(
     return {"finding": _finding}
 
 SEVERITY_ORDER = {
-    "critical": 5,
-    "high": 4,
-    "medium": 3,
-    "low": 2,
+    "major": 3,
+    "minor": 2,
     "observation": 1,
+    "critical": 3,
+    "high": 3,
+    "medium": 2,
+    "low": 2,
 }
 
 def merge_findings(
@@ -316,7 +318,6 @@ def merge_findings(
     # 6. severity
     chosen_severity = (severity or "").lower()
     best_rank = SEVERITY_ORDER.get(chosen_severity, 0)
-    best_sev_name = chosen_severity if best_rank > 0 else "observation"
     for item in normalized_findings:
         s = getattr(item, "severity", None) or (item.get("severity") if isinstance(item, dict) else None)
         if s and isinstance(s, str):
@@ -324,7 +325,13 @@ def merge_findings(
             rank = SEVERITY_ORDER.get(s_lower, 0)
             if rank > best_rank:
                 best_rank = rank
-                best_sev_name = s_lower
+
+    if best_rank >= 3:
+        best_sev_name = "major"
+    elif best_rank == 2:
+        best_sev_name = "minor"
+    else:
+        best_sev_name = "observation"
 
     # 7. confidence
     max_confidence = confidence if confidence is not None else 0.0

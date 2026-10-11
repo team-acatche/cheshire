@@ -43,6 +43,8 @@ def test_local_finding_sub_bbox_coercion():
     )
     assert lf1.sub_bbox == [[100.0, 200.0, 300.0, 400.0]]
     assert lf1.element_id == ["elem_1"]
+    assert lf1.severity == "minor"
+    assert lf1.confidence == 0.8
 
     # Multiple sub_bboxes should be preserved
     lf2 = LocalFinding(
@@ -56,6 +58,8 @@ def test_local_finding_sub_bbox_coercion():
     )
     assert lf2.sub_bbox == [[10.0, 20.0, 30.0, 40.0], [50.0, 60.0, 70.0, 80.0]]
     assert lf2.element_id == ["elem_1", "elem_2"]
+    assert lf2.severity == "major"
+    assert lf2.confidence == 0.9
 
     # None and empty
     lf3 = LocalFinding(
@@ -69,6 +73,8 @@ def test_local_finding_sub_bbox_coercion():
     )
     assert lf3.sub_bbox is None
     assert lf3.element_id is None
+    assert lf3.severity == "minor"
+    assert lf3.confidence == 1.0
 
     # Stringified JSON
     lf4 = LocalFinding(
@@ -76,12 +82,34 @@ def test_local_finding_sub_bbox_coercion():
         element_type="paragraph",
         finding="Test",
         standard_ref="Standard",
-        severity="low",
-        confidence=1.0,
+        severity="observation",
+        confidence=0.6,
         sub_bbox="[[1.0, 2.0, 3.0, 4.0]]",
     )
     assert lf4.sub_bbox == [[1.0, 2.0, 3.0, 4.0]]
     assert lf4.element_id == ["id_a", "id_b"]
+    assert lf4.severity == "observation"
+    assert lf4.confidence == 0.6
+
+
+def test_local_finding_severity_and_confidence_rubric():
+    # Severity 3-tier mapping
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="major", confidence=1.0).severity == "major"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="critical", confidence=1.0).severity == "major"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="high", confidence=1.0).severity == "major"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="minor", confidence=0.8).severity == "minor"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="medium", confidence=0.8).severity == "minor"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="low", confidence=0.8).severity == "minor"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="observation", confidence=0.6).severity == "observation"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="advisory", confidence=0.6).severity == "observation"
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="unknown_value", confidence=0.6).severity == "observation"
+
+    # Confidence clamping and defaulting
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="major", confidence=1.0).confidence == 1.0
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="major", confidence=0.8).confidence == 0.8
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="major", confidence=0.6).confidence == 0.6
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="major", confidence=1.5).confidence == 1.0
+    assert LocalFinding(element_type="p", finding="f", standard_ref="s", severity="major", confidence=-0.5).confidence == 0.0
 
 
 # ===========================================================================
@@ -98,7 +126,7 @@ def test_merge_findings_diagram_duplicates():
         "element_type": "diagram_node",
         "finding": "Node contains placeholder 'TBD'",
         "standard_ref": "Architecture completeness standard",
-        "severity": "medium",
+        "severity": "minor",
         "confidence": 0.85,
         "recommendations": ["Replace TBD with concrete service name"],
         "web_references": ["https://standard.internal/arch"],
@@ -112,7 +140,7 @@ def test_merge_findings_diagram_duplicates():
         "element_type": "diagram_node",
         "finding": "Field marked as '???' in diagram",
         "standard_ref": "Architecture completeness standard",
-        "severity": "high",
+        "severity": "major",
         "confidence": 0.95,
         "recommendations": ["Clarify ??? component specifications"],
         "web_references": ["https://standard.internal/arch"],
@@ -135,8 +163,8 @@ def test_merge_findings_diagram_duplicates():
     ]
     # Both element_ids aggregated
     assert merged.element_id == ["fig_arch_node_1", "fig_arch_node_2"]
-    # Highest severity selected (high > medium)
-    assert merged.severity == "high"
+    # Highest severity selected (major > minor)
+    assert merged.severity == "major"
     # Max confidence selected (0.95 > 0.85)
     assert merged.confidence == 0.95
     # Unique recommendations & web references combined
@@ -151,8 +179,8 @@ def test_merge_findings_text_paragraphs():
         title="Unencrypted transport in section 2.1",
         finding="HTTP protocol used for data transmission",
         standard_ref="Encryption standard",
-        severity="low",
-        confidence=0.7,
+        severity="minor",
+        confidence=0.6,
         recommendations=["Use HTTPS"],
     )
     f2 = LocalFinding(
@@ -161,8 +189,8 @@ def test_merge_findings_text_paragraphs():
         title="Unencrypted transport in section 2.2",
         finding="Plaintext socket connection described",
         standard_ref="Encryption standard",
-        severity="critical",
-        confidence=0.9,
+        severity="major",
+        confidence=0.8,
         recommendations=["Enforce TLS 1.3"],
     )
 
@@ -174,8 +202,8 @@ def test_merge_findings_text_paragraphs():
 
     merged: LocalFinding = result["finding"]
     assert merged.element_id == ["para_1", "para_2"]
-    assert merged.severity == "critical"
-    assert merged.confidence == 0.9
+    assert merged.severity == "major"
+    assert merged.confidence == 0.8
     assert "Use HTTPS" in merged.recommendations
     assert "Enforce TLS 1.3" in merged.recommendations
 

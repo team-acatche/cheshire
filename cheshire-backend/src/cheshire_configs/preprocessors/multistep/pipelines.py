@@ -61,12 +61,12 @@ TOOLS
     "title": "str (concise, direct summary of the issue, e.g. 'Reports Table: Missing Class/Module Field' or 'Compatibility: Deprecated Runtime Version')",
     "element_id": "str (MUST NOT be null; anchor to element tag or closest section heading tag)",
     "figure_id": "str|null",
-    "sub_bbox": [x1, y1, x2, y2]|null (0-1000 scale in figure crop coordinates),
+    "sub_bbox": [x1, y1, x2, y2]|[[x1, y1, x2, y2], ...]|null (0-1000 scale in figure crop coordinates),
     "element_type": "section_heading|paragraph|diagram_node|diagram_edge|table_cell|table_header|caption|code_block|list_item",
     "finding": "str (detailed description explaining why the element violates the company standard)",
     "standard_ref": "str (exact quoted standard text from the checklist)",
-    "severity": "critical|high|medium|low|observation",
-    "confidence": float (0.0 to 1.0),
+    "severity": "major|minor|observation",
+    "confidence": 1.0|0.8|0.6,
     "recommendations": ["Actionable recommendation 1", "Actionable recommendation 2"],
     "web_references": ["https://example.com/reference-url"]
   }}
@@ -123,7 +123,7 @@ AUDIT RULES & CONSTRAINTS
   * Appropriateness: Matches the defined project and section text.
   * Clarity: Legible labels, clear directionality, clean layout.
   * Drafting Norms: Flowcharts and sequence diagrams MUST follow standard architectural drafting conventions: use orthogonal routing (flag curved lines or splines) and standard symbols (rectangles for processes, diamonds for decisions).
-- For diagram findings: specify figure_id, localized sub_bbox ([x1, y1, x2, y2] in 0-1000 scale), and element_type ("diagram_node", "diagram_edge", or "caption").
+- For diagram findings: specify figure_id, localized sub_bbox ([x1, y1, x2, y2] in 0-1000 scale, or [[x1, y1, x2, y2], ...] if multiple highlights), and element_type ("diagram_node", "diagram_edge", or "caption").
 
 6. PROVENANCE & FRONTEND ANCHORING:
 - MANDATORY FRONTEND ANCHORING: Never leave element_id null. When flagging a missing item or gap, anchor it to the relevant section_heading or parent paragraph ID so the UI can render a visible, clickable highlight on the PDF canvas.
@@ -136,6 +136,18 @@ AUDIT RULES & CONSTRAINTS
 
 7. JSON ARRAY FORMAT:
 - "recommendations" and "web_references" MUST be native JSON arrays of strings like ["item1", "item2"]. NEVER format them as a single string containing brackets or single quotes like "['item']". If there are no web references, pass an empty array [].
+
+8. SEVERITY & CONFIDENCE SCORING RUBRIC:
+- SEVERITY TIERS:
+  * "major": Critical or substantial compliance gap blocking release or document approval. Violations that compromise core architectural integrity, security posture, or system operations (e.g. Sonar Quality Gate FAIL, critical scan issues, end-of-life/deprecated runtime or framework, missing required technical specifications or estimates).
+  * "minor": Secondary compliance deficiency or specification incompleteness that does not break core architectural viability. Visual drafting defects (e.g. non-orthogonal curved lines in flowcharts, missing standard symbols), unpopulated non-critical metadata, formatting discrepancies, or omitted non-blocking parameters.
+  * "observation": Advisory note, best practice suggestion, stylistic inconsistency, or minor documentation drafting note that does not violate a hard mandatory standard.
+- CONFIDENCE SCORING:
+  Score confidence using calibrated discrete levels based on evidence firmness:
+  * 1.0 (Deterministic / Direct Factual Evidence): Factual, verifiable gap directly observed in text or structure (e.g. Sonar Quality Gate explicitly FAILED, critical issues count > 0, an explicit required phase missing from the Estimates table, missing table header).
+  * 0.8 (Semantic / Visual Evidence): Explicit textual or visual evidence requiring semantic understanding (e.g. placeholder like "TBD", "???", "TODO", "---" in an architecture diagram or specification field; software version confirmed deprecated via web search).
+  * 0.6 (Contextual / Inferred Evidence): Contextual deduction where evidence is indirect, phrasing is ambiguous, or companion document delegation is possible but unverified.
+  * DISCARD SPECULATIVE FINDINGS (< 0.6): Do NOT create findings with confidence below 0.6. If a potential issue is speculative, unevidenced, or likely delegated to a companion document, omit it entirely.
 """
 
 
@@ -236,8 +248,8 @@ TOOLS
     "element_type": "str",
     "finding": "str",
     "standard_ref": "str",
-    "severity": "str",
-    "confidence": float,
+    "severity": "major|minor|observation",
+    "confidence": 1.0|0.8|0.6,
     "recommendations": ["str"],
     "web_references": ["str"]
   }
@@ -245,7 +257,7 @@ TOOLS
   * `findings`: Array of the duplicate finding objects (from the input findings list) that describe the exact same issue on the exact same object.
   * `title`: A single concise, summarized title for the merged finding.
   * `finding`: A single synthesized description summarizing the noncompliant portions into one coherent finding.
-  The tool automatically aggregates unique fields (element_id into a list, sub_bbox into a list of highlights, web_references, recommendations) and selects the highest severity and confidence.
+  The tool automatically aggregates unique fields (element_id into a list, sub_bbox into a list of highlights, web_references, recommendations) and selects the highest severity (major > minor > observation) and confidence (max score).
 - flag_contradiction(finding_a_title, finding_b_title, description): Flag two findings that contradict each other across sections.
 
 TASKS
@@ -256,14 +268,15 @@ TASKS
      * DISSIMILAR (DO NOT MERGE): If a finding talks about a deprecated GitHub Actions version and another talks about a deprecated Kubernetes version, they are DIFFERENT — keep them separate and call accept_local_finding for each.
      * SAME ISSUE & SAME OBJECT (MERGE): If two findings talk about a single diagram being incomplete (e.g. finding A points out a "TBD" in the diagram while finding B points out a "???" field), they are the SAME finding. Merge them by calling `merge_findings(findings=[finding_A, finding_B], title="...", finding="...")` so that multiple sub_bbox highlights mark each noncompliant portion in the merged finding.
    - If multiple findings describe the exact same issue across different sections or elements, merge them using merge_findings if they target the same underlying object/topic.
-3. Discard false positives and non-technical findings:
+3. Discard false positives, low-confidence findings, and non-technical findings:
+   - Discard any finding with confidence < 0.6, speculative gaps, or findings where compliance is delegated to an external companion document.
    - Discard any finding that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
    - Discard any finding claiming that the "Format" column in Attachments tables is empty when it is annotated with `[Embedded Icon]` or visually displays format badges/icons (e.g. Word, Excel icons).
    - Do NOT discard findings for genuinely empty attachment cells in specification tables (such as empty Attachment cells in "Files and Records" or "Reports" tables where rows lack attachments).
    - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
    - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
 4. If two findings contradict each other, call flag_contradiction.
-5. For each unique, valid finding without duplicates, call accept_local_finding with the original fields preserved. For groups of duplicate same-topic findings, call merge_findings.
+5. For each unique, valid finding without duplicates, call accept_local_finding with the original fields preserved, ensuring severity is "major", "minor", or "observation" and confidence is calibrated (1.0, 0.8, or 0.6). For groups of duplicate same-topic findings, call merge_findings.
 
 CONSTRAINTS
 - You MUST call accept_local_finding for every unique, non-duplicate finding, or merge_findings for groups of duplicate same-topic findings. This is the only way findings are recorded.
@@ -299,8 +312,8 @@ TOOLS
     "element_type": "str",
     "finding": "str (detailed description of the compliance gap)",
     "standard_ref": "str (exact quoted standard text from global checklist)",
-    "severity": "str",
-    "confidence": float,
+    "severity": "major|minor|observation",
+    "confidence": 1.0|0.8|0.6,
     "recommendations": ["Actionable remediation step 1"],
     "web_references": ["https://example.com/reference-url"]
   }}
@@ -350,7 +363,8 @@ RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
 - In "title": Provide a clean, concise title (e.g. 'Missing Section: Sonar Scan Result'). Do NOT wrap in "[Company Standard: '...']".
 - In "standard_ref": Quote the exact requirement from the global checklist above.
 - In "finding": Document the non-compliance clearly: "<exact requirement> is missing: <details>."
-- Set severity to "high" or "critical", confidence to 1.0, and provide actionable remediation in "recommendations".
+- Set severity to "major" (for missing required sections like Overview, Tech Stack, Security Considerations, Sonar Scan Result, or missing required diagrams like DFD/Network/Sequence/Process Flow, or missing Reports tables) or "minor" (for missing reference documents or optional companion contracts).
+- Set confidence to 1.0 (deterministic structural absence directly verified against the complete document index). Provide actionable remediation in "recommendations".
 
 CONSTRAINTS
 - Only record NEW document-level findings. Do NOT re-record findings from the accepted list.

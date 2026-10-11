@@ -77,13 +77,40 @@ class LocalFinding(BaseModel):
     figure_id: Optional[str] = Field(None, description="The unique identifier of the figure (if the vulnerability is in a figure).")
     sub_bbox: Optional[List[List[float]]] = Field(None, description="Bounding boxes within the figure crop space [[x1, y1, x2, y2], ...] (0-1000 scale).")
     element_type: str = Field(..., description="The type of the element, e.g. section_heading, paragraph, diagram_node, diagram_edge, table_cell, table_header, caption, code_block, list_item.")
-    finding: str = Field(..., description="Description of the vulnerability finding.")
-    standard_ref: str = Field(..., description="Security standard reference cited for this vulnerability finding.")
-    severity: str = Field(..., description="Severity classification (critical, high, medium, low, observation).")
-    confidence: float = Field(..., description="Confidence score between 0.0 and 1.0.")
+    severity: str = Field(..., description="Severity classification (major, minor, observation).")
+    confidence: float = Field(..., description="Confidence score (1.0 for deterministic, 0.8 for semantic, 0.6 for inferred/ambiguous).")
     title: Optional[str] = Field(None, description="An optional short, descriptive title for the finding.")
     web_references: Optional[List[str]] = Field(default_factory=list, description="Optional list of web reference URLs.")
     recommendations: Optional[List[str]] = Field(default_factory=list, description="Optional list of recommendation strings.")
+
+    @field_validator("severity", mode="before")
+    @classmethod
+    def coerce_severity(cls, v):
+        if not v or not isinstance(v, str):
+            return "observation"
+        v_clean = v.strip().lower()
+        mapping = {
+            "critical": "major",
+            "high": "major",
+            "major": "major",
+            "medium": "minor",
+            "low": "minor",
+            "minor": "minor",
+            "observation": "observation",
+            "advisory": "observation",
+        }
+        return mapping.get(v_clean, "observation")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def coerce_confidence(cls, v):
+        if v is None:
+            return 1.0
+        try:
+            val = float(v)
+            return min(1.0, max(0.0, val))
+        except (ValueError, TypeError):
+            return 1.0
 
     @field_validator("element_id", mode="before")
     @classmethod
