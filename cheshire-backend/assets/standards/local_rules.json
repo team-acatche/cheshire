@@ -10,8 +10,5 @@
     "The Estimates section must include the estimated amount of time that the System Testing phase should take",
     "The Estimates section must include the estimated amount of time that the User Acceptance Testing (UAT) phase should take",
     "Any diagrams in the document should use the proper symbols and should be related to the project being defined",
-    "Flowcharts and sequence diagrams must follow standard architectural drafting conventions: use orthogonal routing (no curved lines/splines), standard flowchart shapes (rectangles for steps, diamonds for decisions), and distinct trust boundaries",
-    "The Sonar Scan Results should specify a Quality Gate",
-    "The Sonar Scan Results should pass the specified Quality Gate",
-    "The Sonar Scan Results should contain no specified critical issues"
+    "Flowcharts and sequence diagrams must follow standard architectural drafting conventions: use orthogonal routing (no curved lines/splines), standard flowchart shapes (rectangles for steps, diamonds for decisions), and distinct trust boundaries"
 ]

@@ -6,7 +6,7 @@ from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessi
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding, ElementRef, FigureRef
 from cheshire_configs.preprocessors.multistep.components.findings_parser import clamp
 
-from cheshire_configs.preprocessors.multistep.pipelines import build_dedup_pipeline, build_global_audit_pipeline
+from cheshire_configs.preprocessors.multistep.pipelines import build_synthesis_pipeline
 from tools.helpers.output_schema import VulnerabilityDetails, Contradiction
 from docling_core.types.doc import BoundingBox
 
@@ -90,25 +90,25 @@ def run_pass1(pdf_path: str) -> PreprocessingPassResults:
     )
 
 def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
+    logger.info("[Pass 2] Deduplicating and synthesising...")
+
     all_findings: list[LocalFinding] = results.findings
     document_index: dict = results.document_index
 
-    # ---- Step 1: Deduplication & contradiction resolution ----
-    logger.info("[Pass 2a] Deduplicating findings...")
-    dedup_pipeline: Pipeline = build_dedup_pipeline()
+    pipeline: Pipeline = build_synthesis_pipeline()
 
-    dedup_result: dict = dedup_pipeline.run({
-        "dedup_message_builder": {
+    result: dict = pipeline.run({
+        "synthesis_message_builder": {
             "all_findings": all_findings,
+            "document_index": document_index
         }
     })
 
+    # Read accepted findings from Agent state
     accepted_local: list[LocalFinding] = (
-        dedup_result.get("agent", {}).get("accepted_findings") or []
+        result.get("agent", {}).get("accepted_findings") or []
     )
-    contradictions: list[Contradiction] = (
-        dedup_result.get("agent", {}).get("contradictions") or []
-    )
+    contradictions: list[Contradiction] = result.get("agent", {}).get("contradictions") or []
 
     logger.info(f"  {len(all_findings)} to {len(accepted_local)} after deduplication.")
     if contradictions:
@@ -117,10 +117,10 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
             c: Contradiction
             logger.info(f"    - \"{c.finding_a_title}\" vs \"{c.finding_b_title}\": {c.description}")
 
-    # Safeguard: if dedup dropped all findings, fall back to programmatic dedup
+    # Safeguard: if synthesis dropped all findings, fall back to programmatic dedup
     if len(accepted_local) == 0 and len(all_findings) > 0:
         logger.warning(
-            f"Dedup returned 0 findings from {len(all_findings)} inputs. "
+            f"Synthesis returned 0 findings from {len(all_findings)} inputs. "
             f"Falling back to programmatic deduplication."
         )
         seen: set[tuple[Any, Any, Any]] = set()
@@ -138,24 +138,6 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         accepted_local = deduped
         logger.info(f"  Programmatic dedup: {len(all_findings)} to {len(accepted_local)}.")
 
-    # ---- Step 2: Global standards checklist audit (fresh context) ----
-    logger.info("[Pass 2b] Global standards audit...")
-    audit_pipeline: Pipeline = build_global_audit_pipeline()
-
-    audit_result: dict = audit_pipeline.run({
-        "global_audit_message_builder": {
-            "document_index": document_index,
-            "accepted_findings": accepted_local
-        }
-    })
-
-    audit_findings: list[LocalFinding] = (
-        audit_result.get("agent", {}).get("audit_findings") or []
-    )
-    logger.info(f"  {len(audit_findings)} global finding(s) recorded.")
-
-    # Merge dedup-accepted findings with new global audit findings
-    accepted_local = list(accepted_local) + audit_findings
     # reconstruct element and figure lookup for findings parsing
     element_by_id: dict[str, ElementRef] = {}
     figure_by_id: dict[str, FigureRef] = {}

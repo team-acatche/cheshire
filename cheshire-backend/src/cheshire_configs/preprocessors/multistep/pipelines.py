@@ -11,7 +11,7 @@ from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, Lo
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
-
+from cheshire_configs.preprocessors.multistep.components.synthesis_message_builder import SynthesisMessageBuilder
 from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding
 
 from typing import cast
@@ -88,29 +88,16 @@ AUDIT RULES & CONSTRAINTS
 - REPORTS TABLE SCOPING:
   * You MUST only evaluate a table against the Reports schema (`Report`, `New/Existing`, `Description`, `Attachment`, `Class/Module`) if the current section heading explicitly indicates it is the Reports section (e.g. `Reports`, `4. Reports`, `E.4 Reports`, `Processing Specifications - Reports`).
   * Other tables (such as `Lookup Files`, `Parameters`, `Modules`, `Files and Records`, `Compatibility`, `Estimates`, `Attachments`) are NOT Reports tables. NEVER evaluate them against Reports table columns.
-- EMPTY CELLS VS. VALID MEDIA/LINKS & FORMAT ICONS:
-  * Table cells containing hyperlinks, URLs, attachment paths/references, icons, `[Embedded Icon]` annotations, or embedded images/diagrams are VALIDLY POPULATED. NEVER mark them as empty.
-  * FORMAT COLUMNS WITH EMBEDDED ICONS: In Attachments tables or specification tables where format or attachment columns display visual format badges/icons (e.g. Word, Excel, PDF icons) and are annotated with `[Embedded Icon]` or visible in the table crop: the format field is VALIDLY POPULATED. NEVER mark it as an empty field or missing format.
-  * GENUINELY EMPTY ATTACHMENT OR SPECIFICATION CELLS: Table cells containing placeholders such as "---", "--", "-", "N/A", "n/a", "None", "null", "TBD", "TODO", "[ ]", or blank whitespace without any embedded icon or link (e.g. genuinely empty Attachment cells in "Files and Records" table for items like LoanApplication.cs, CreditScore.cs, DocumentStore.cs, etc.) are GENUINELY EMPTY/UNPOPULATED. You MUST flag genuinely empty attachment or specification fields as missing/empty required fields. Do NOT excuse blank cells in a row simply because file names have extensions or other rows have attachments.
+- EMPTY CELLS VS. VALID MEDIA/LINKS:
+  * Table cells containing hyperlinks, URLs, attachment paths/references, icons, or embedded images/diagrams are VALIDLY POPULATED. NEVER mark them as empty.
+  * Table cells containing placeholders such as "---", "--", "-", "N/A", "n/a", "None", "null", "TBD", "TODO", "[ ]", or blank whitespace are EMPTY/UNPOPULATED. If a required field in the Reports table or technical specifications contains one of these placeholders, flag it as a missing/empty field.
 - EMPTY VS. NON-COMPLIANT:
   * Distinguish between "empty/missing" (when a field, cell, value, or estimate phase is absent or filled with a placeholder like "---") and "non-compliant/outdated" (when content is present but deprecated, obsolete, invalid, or violates architectural standards). Do not label non-compliant specifications as "empty".
-- CONTINUATION TABLES ACROSS PAGE BREAKS:
-  * Tables that span multiple pages frequently continue on the following page without repeating headers (though occasionally they may repeat headers).
-  * If a table on the following page continues the rows of a table from the preceding page (such as the Look-Up Files continuation table on page 13), it is a VALID continuation table.
-  * NEVER flag continuation tables as empty, missing headers, or having an unpopulated/blank body when their continuation rows are present.
 
 3. LOCAL CHECKLIST COMPLIANCE:
 - Evaluate the present section against the mandatory local standards checklist above.
 - Verify technical specifications contain no empty fields and no outdated or deprecated components.
-- LEAD-IN PARAGRAPHS & SUBSECTION RELATIONSHIPS:
-  * High-level section headings (e.g., "System Considerations", "Processing Specifications", "Security Considerations") frequently begin with introductory or lead-in framing paragraphs, with detailed specifications following in subsequent subsections or chunks.
-  * NEVER flag a section as empty, unpopulated, or missing content if it contains introductory or lead-in framing text whose detailed specifications are elaborated in its succeeding subsections or elsewhere in the document.
-  * Always check the document index and sibling subsections before declaring any specifications missing.
 - If evaluating the Estimates section: confirm it includes time estimates for all 6 required phases (Technical Specifications, Requirements Definition, Implementation, Coding & Unit Testing, System Testing, UAT). Flag any phase missing from this section.
-- SONAR SCAN RESULTS AUDITING:
-  * When evaluating the Sonar Scan Results section: verify that a Quality Gate is specified.
-  * Check that the scan results PASS the specified Quality Gate overall. If Quality Gate Overall is "FAIL" (or fails to meet the target), flag this as non-compliant.
-  * Confirm that the scan contains NO specified critical issues (Critical Issues target = 0). If any critical issues are present (e.g., 2 critical issues), flag this as a critical violation of company standards.
 - Do NOT flag whole missing sections or whole missing diagrams—global document inventory is audited in Pass 2.
 
 4. EXTERNAL REFERENCES & DELEGATED CONTENT:
@@ -207,71 +194,23 @@ def build_evaluation_pipeline() -> Pipeline:
     return pipeline
 
 
-def build_dedup_system_prompt() -> str:
-    return """\
-Role: Technical reviewer — finding deduplication & contradiction resolution.
-
-OBJECTIVE
-Review all local findings from Pass 1, deduplicate them, discard irrelevant entries, and flag contradictions.
-
-INPUT
-All Findings: Array of local findings from Pass 1.
-
-TOOLS
-- accept_local_finding(finding): Accept a local finding as valid and non-duplicate. The `finding` dictionary must match the schema:
-  {
-    "title": "str",
-    "element_id": "str (MUST NOT be null)",
-    "figure_id": "str|null",
-    "sub_bbox": [x1, y1, x2, y2]|null,
-    "element_type": "str",
-    "finding": "str",
-    "standard_ref": "str",
-    "severity": "str",
-    "confidence": float,
-    "recommendations": ["str"],
-    "web_references": ["str"]
-  }
-- flag_contradiction(finding_a_title, finding_b_title, description): Flag two findings that contradict each other across sections.
-
-TASKS
-1. Review all input findings from Pass 1.
-2. Deduplicate: if multiple findings describe the same issue across different sections, keep only the most detailed version.
-3. Discard false positives and non-technical findings:
-   - Discard any finding that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
-   - Discard any finding claiming that the "Format" column in Attachments tables is empty when it is annotated with `[Embedded Icon]` or visually displays format badges/icons (e.g. Word, Excel icons).
-   - Do NOT discard findings for genuinely empty attachment cells in specification tables (such as empty Attachment cells in "Files and Records" or "Reports" tables where rows lack attachments).
-   - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
-   - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
-4. If two findings contradict each other, call flag_contradiction.
-5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
-
-CONSTRAINTS
-- You MUST call accept_local_finding for every valid, non-duplicate finding. This is the only way findings are recorded.
-- Preserve ALL original fields exactly as given when accepting valid findings.
-- Do NOT accept duplicate findings.
-- "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
-- After processing all findings, output a brief text summary of what you did.
-"""
-
-
-def build_global_audit_system_prompt() -> str:
+def build_pass2_system_prompt() -> str:
     global_rules = _load_standards_as_list("global_rules.json")
     return f"""\
-Role: Technical reviewer — document-level compliance auditor.
+Role: Technical reviewer & document-level compliance synthesizer.
 
 OBJECTIVE
-Audit the document's structure against the global company standards checklist. You receive the full document index and a summary of accepted findings from deduplication.
+Synthesize local findings from Pass 1 (deduplicate and resolve contradictions) and execute the global company standards checklist audit against the entire document structure.
 
 MANDATORY GLOBAL STANDARDS CHECKLIST:
 {global_rules}
 
 INPUT
 1. Document Index: Full inventory of sections, tables, figures, and page gaps across the PDF.
-2. Accepted Finding Titles: Summary of findings already recorded in Pass 1 (for context only — do NOT re-record these).
+2. All Findings: Array of local findings from Pass 1.
 
 TOOLS
-- accept_local_finding(finding): Record a NEW document-level finding. The `finding` dictionary must match the schema:
+- accept_local_finding(finding): Accept a local finding as valid, or record a new document-level finding. The `finding` dictionary must match the schema:
   {{
     "title": "str (clean, concise summary, e.g. 'Missing Section: Sonar Scan Result')",
     "element_id": "str (MUST NOT be null; anchor to existing section ID from document index)",
@@ -285,11 +224,19 @@ TOOLS
     "recommendations": ["Actionable remediation step 1"],
     "web_references": ["https://example.com/reference-url"]
   }}
+- flag_contradiction(finding_a_title, finding_b_title, description): Flag two findings that contradict each other across sections.
 
 TASKS
 
-TASK 1: GLOBAL STANDARDS CHECKLIST AUDIT
-Audit the document index against the mandatory global checklist above:
+TASK 1: DEDUPLICATION & CONTRADICTION RESOLUTION
+1. Review all input findings from Pass 1.
+2. Deduplicate: if multiple findings describe the same issue across different sections, keep only the most detailed version.
+3. Discard any finding from Pass 1 that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
+4. If two findings contradict each other, call flag_contradiction.
+5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
+
+TASK 2: GLOBAL STANDARDS CHECKLIST AUDIT
+Audit the document index and Pass 1 findings against the mandatory global checklist above:
 
 1. Required Sections (SEMANTIC MATCHING):
    - Check `document_index["sections"]` by semantic topic and intent, NOT by exact letter prefixes (A, B, C...) or numbering:
@@ -307,22 +254,22 @@ Audit the document index against the mandatory global checklist above:
    - CRITICAL: Only flag a required section as missing if there is GENUINELY NO corresponding section in `document_index["sections"]`. Do NOT flag sections as missing simply because they omit letter prefixes like "A." or "B.".
 
 2. Required Reference Documents (ALIAS RECOGNITION):
-   - Check Reference Documents / References in `document_index["sections"]` and the accepted finding titles.
+   - Check Reference Documents / References in `document_index["sections"]` and Pass 1 findings.
    - Recognize that standard industry titles satisfy the "Requirements Document" requirement:
      * "System Requirements Specification" (SRS), "Software Requirements Specification", "Business Requirements Document" (BRD), or "Requirements Specification" ALL satisfy the Requirements Document standard. Do NOT flag the Requirements Document as missing if any of these are referenced.
      * "Solutions Document", "Solutions Architecture Document", or "Solution Design" satisfies the Solutions Document standard.
 
 3. Required Diagrams:
-   - Verify the document contains all 4 mandatory diagram types (inspect `document_index["figures"]` captions, sections, and accepted finding titles):
+   - Verify the document contains all 4 mandatory diagram types (inspect `document_index["figures"]` captions, sections, and Pass 1 findings):
      1. Data Flow Diagram, 2. Network Diagram, 3. Sequence Diagram, 4. Process Flow Diagram.
 
 4. Required Tables (Reports Table):
-   - Check `document_index["tables"]`: if any table has `"section"` indicating "Reports" (e.g. section title contains "Reports"), or if accepted findings reference a table under the Reports section, the Reports table exists. Only flag missing if no table exists under the Reports section.
+   - Check `document_index["tables"]`: if any table has `"section"` indicating "Reports" (e.g. section title contains "Reports"), or if Pass 1 evaluated a table under the Reports section, the Reports table exists. Only flag missing if no table exists under the Reports section.
 
 5. Third-Party Contract:
    - Verify reference to third-party contract if applicable.
 
-TASK 2: EXTERNAL REFERENCES & DELEGATED CONTENT
+TASK 3: EXTERNAL REFERENCES & DELEGATED CONTENT
 - Do NOT flag details as missing if the document index indicates they are covered in companion documents listed under Reference Documents.
 
 RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
@@ -334,33 +281,33 @@ RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
 - Set severity to "high" or "critical", confidence to 1.0, and provide actionable remediation in "recommendations".
 
 CONSTRAINTS
-- Only record NEW document-level findings. Do NOT re-record findings from the accepted list.
+- You MUST call accept_local_finding for every valid, non-duplicate finding. This is the only way findings are recorded.
+- Preserve ALL original fields exactly as given when accepting valid Pass 1 findings.
+- Do NOT accept duplicate findings.
 - "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
-- After processing, output a brief text summary of what you did.
+- After processing all findings, output a brief text summary of what you did.
 """
 
 
-def _make_generator() -> OpenRouterChatGenerator:
-    return OpenRouterChatGenerator(
+PASS2_SYSTEM_PROMPT = build_pass2_system_prompt()
+
+
+def build_synthesis_pipeline() -> Pipeline:
+    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
     )
 
-
-def build_dedup_pipeline() -> Pipeline:
-    """Pipeline for TASK 1: deduplication & contradiction resolution.
-    Receives only the findings list — no document index needed."""
-    from cheshire_configs.preprocessors.multistep.components.dedup_message_builder import DedupMessageBuilder
     from tools.base import flag_contradiction_tool
     from tools.helpers.output_schema import Contradiction
 
     agent: Agent = Agent(
-        chat_generator=_make_generator(),
+        chat_generator=generator,
         tools=[
             accept_local_finding_tool("accepted_findings"),
             flag_contradiction_tool("contradictions"),
         ],
-        system_prompt=build_dedup_system_prompt(),
+        system_prompt=build_pass2_system_prompt(),
         max_agent_steps=200,
         exit_conditions=["text"],
         state_schema={
@@ -370,37 +317,9 @@ def build_dedup_pipeline() -> Pipeline:
     )
 
     pipeline: Pipeline = Pipeline()
-    pipeline.add_component("dedup_message_builder", DedupMessageBuilder())
+    pipeline.add_component("synthesis_message_builder", SynthesisMessageBuilder())
     pipeline.add_component("agent", agent)
 
-    pipeline.connect("dedup_message_builder.messages", "agent.messages")
-
-    return pipeline
-
-
-def build_global_audit_pipeline() -> Pipeline:
-    """Pipeline for TASK 2: global standards checklist audit.
-    Receives the document index + compact accepted-findings summary
-    in a fresh context with no prior tool-call history."""
-    from cheshire_configs.preprocessors.multistep.components.global_audit_message_builder import GlobalAuditMessageBuilder
-
-    agent: Agent = Agent(
-        chat_generator=_make_generator(),
-        tools=[
-            accept_local_finding_tool("audit_findings"),
-        ],
-        system_prompt=build_global_audit_system_prompt(),
-        max_agent_steps=30,
-        exit_conditions=["text"],
-        state_schema={
-            "audit_findings": {"type": list[LocalFinding]},
-        }
-    )
-
-    pipeline: Pipeline = Pipeline()
-    pipeline.add_component("global_audit_message_builder", GlobalAuditMessageBuilder())
-    pipeline.add_component("agent", agent)
-
-    pipeline.connect("global_audit_message_builder.messages", "agent.messages")
+    pipeline.connect("synthesis_message_builder.messages", "agent.messages")
 
     return pipeline
