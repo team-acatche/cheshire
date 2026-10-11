@@ -8,7 +8,8 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field, field_validator
 
 
-from docling_core.types.doc import BoundingBox
+from docling_core.types.doc import BoundingBox, CoordOrigin
+from tabulate import tabulate
 from docling.chunking import HierarchicalChunker
 from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
@@ -115,8 +116,257 @@ class EvaluationChunk:
     figures: list[FigureRef] = field(default_factory=list)
 
 
+def _table_has_empty_cells(markdown: str) -> bool:
+    """
+    Returns True if any data row in the markdown table has at least one
+    empty cell.  Empty means the cell contains only whitespace.
+    Header and separator rows are excluded from the check.
+    """
+    lines: list[str] = markdown.strip().split('\n')
+
+    # Find the separator row (e.g. |---|---|) to skip header lines
+    data_start: int = 0
+    for i, line in enumerate(lines[:4]):
+        if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+            data_start = i + 1
+            break
+
+    for line in lines[data_start:]:
+        # Split on pipe, ignore first/last empty strings from leading/trailing pipes
+        cells: list[str] = line.split('|')
+        for cell in cells[1:-1]:           # skip outer empty splits
+            if cell.strip() == '':
+                return True
+    return False
+
+
+def _crop_table_as_figure(
+    result: ConversionResult,
+    prov: ProvenanceItem,
+    self_ref: str,
+    scale: float,
+    figure_lookup: dict[str, "FigureRef"]
+) -> str | None:
+    """
+    Renders the page region containing the table and stores a FigureRef
+    in *figure_lookup*.  Returns the synthetic figure_id, or None on
+    failure.
+    """
+    # result.pages is 0-indexed; prov.page_no is 1-indexed
+    page_idx: int = prov.page_no - 1
+    if page_idx < 0 or page_idx >= len(result.pages):
+        return None
+
+    conv_page = result.pages[page_idx]
+    try:
+        img = conv_page.get_image(scale=scale, cropbox=prov.bbox)
+        if img is None:
+            return None
+        buf: BytesIO = BytesIO()
+        img.save(buf, format="PNG")
+        b64: str = base64.standard_b64encode(buf.getvalue()).decode()
+    except Exception:
+        return None
+
+    fig_id: str = f"table_crop_{self_ref}"
+    figure_lookup[fig_id] = FigureRef(
+        figure_id=fig_id,
+        page_number=prov.page_no,
+        bbox_image_px=ImageBoundingBox.from_docling_bbox(
+            prov.bbox,
+            conv_page.size.height if conv_page.size else 0,
+            scale
+        ),
+        bbox_pdf=prov.bbox,
+        base64_png=b64
+    )
+    return fig_id
+
+
+def _to_topleft_dict(bbox: BoundingBox, page_h: float) -> dict[str, float]:
+    if bbox.coord_origin == CoordOrigin.BOTTOMLEFT:
+        return {"l": bbox.l, "t": page_h - bbox.t, "r": bbox.r, "b": page_h - bbox.b}
+    return {"l": bbox.l, "t": bbox.t, "r": bbox.r, "b": bbox.b}
+
+
+def _get_table_cell_bounds(table_item: Any, page_h: float) -> dict[tuple[int, int], dict[str, float]]:
+    grid = getattr(getattr(table_item, "data", None), "grid", None)
+    if not grid or len(grid) == 0:
+        return {}
+    num_rows = len(grid)
+    num_cols = len(grid[0]) if num_rows > 0 else 0
+    if num_rows == 0 or num_cols == 0:
+        return {}
+
+    try:
+        row_bboxes = table_item.data.get_row_bounding_boxes()
+        col_bboxes = table_item.data.get_column_bounding_boxes()
+    except Exception:
+        return {}
+
+    row_bounds: dict[int, list[float | None]] = {}
+    for r in range(num_rows):
+        if r in row_bboxes and row_bboxes[r] is not None:
+            rb = _to_topleft_dict(row_bboxes[r], page_h)
+            row_bounds[r] = [rb["t"], rb["b"]]
+        else:
+            row_bounds[r] = [None, None]
+
+    for r in range(num_rows):
+        curr_t, curr_b = row_bounds[r]
+        if curr_t is None:
+            prev_b = row_bounds[r - 1][1] if r > 0 and row_bounds[r - 1][1] is not None else 0.0
+            curr_t = prev_b
+            curr_b = prev_b + 40.0
+            row_bounds[r] = [curr_t, curr_b]
+
+    extended_row_bounds: dict[int, tuple[float, float]] = {}
+    for r in range(num_rows):
+        t = row_bounds[r][0] or 0.0
+        b = row_bounds[r][1] or 0.0
+        if r > 0 and row_bounds[r - 1][1] is not None:
+            t = (row_bounds[r - 1][1] + t) / 2.0
+        if r < num_rows - 1 and row_bounds[r + 1][0] is not None:
+            b = (b + row_bounds[r + 1][0]) / 2.0
+        else:
+            b = b + 15.0
+        extended_row_bounds[r] = (t, b)
+
+    col_bounds: dict[int, list[float | None]] = {}
+    for c in range(num_cols):
+        if c in col_bboxes and col_bboxes[c] is not None:
+            cb = _to_topleft_dict(col_bboxes[c], page_h)
+            col_bounds[c] = [cb["l"], cb["r"]]
+        else:
+            col_bounds[c] = [None, None]
+
+    extended_col_bounds: dict[int, tuple[float, float]] = {}
+    for c in range(num_cols):
+        l = col_bounds[c][0]
+        r = col_bounds[c][1]
+        if l is None or r is None:
+            prev_r = extended_col_bounds[c - 1][1] if c > 0 else 0.0
+            l = prev_r
+            r = prev_r + 50.0
+        else:
+            if c > 0 and col_bounds[c - 1][1] is not None:
+                l = (col_bounds[c - 1][1] + l) / 2.0
+            if c < num_cols - 1 and col_bounds[c + 1][0] is not None:
+                r = (r + col_bounds[c + 1][0]) / 2.0
+            else:
+                r = r + 20.0
+        extended_col_bounds[c] = (l, r)
+
+    cell_bounds: dict[tuple[int, int], dict[str, float]] = {}
+    for r in range(num_rows):
+        for c in range(num_cols):
+            cell_bounds[(r, c)] = {
+                "l": extended_col_bounds[c][0],
+                "r": extended_col_bounds[c][1],
+                "t": extended_row_bounds[r][0],
+                "b": extended_row_bounds[r][1],
+            }
+    return cell_bounds
+
+
+def _format_table_markdown(
+    table_item: Any,
+    doc: DoclingDocument,
+    last_header: str | None,
+    is_continuation: bool,
+) -> tuple[str, str | None]:
+    """
+    Formats a Docling table into markdown.
+    Detects embedded format/attachment icons from doc.pictures on the page and
+    populates/annotates the corresponding cell text with '[Embedded Icon]',
+    allowing the evaluator to distinguish between visual icons and genuinely empty cells.
+    Also handles continuation tables lacking repeated headers.
+    Returns (table_markdown, new_last_header).
+    """
+    grid = getattr(getattr(table_item, "data", None), "grid", None)
+    if not grid or len(grid) == 0:
+        try:
+            return table_item.export_to_markdown(doc=doc), last_header
+        except Exception:
+            return getattr(table_item, "export_to_markdown", lambda: "")(), last_header
+
+    prov = table_item.prov[0] if hasattr(table_item, "prov") and table_item.prov else None
+    page_no = prov.page_no if prov else -1
+    page = doc.pages.get(page_no) if page_no != -1 else None
+    page_h = page.size.height if page and page.size else 0.0
+    pics = [p for p in doc.pictures if p.prov and p.prov[0].page_no == page_no] if page_no != -1 else []
+
+    has_col_headers = any(getattr(cell, "column_header", False) for cell in grid[0])
+    cell_bounds = _get_table_cell_bounds(table_item, page_h) if pics and page_h > 0 else {}
+
+    # Format continuation table lacking headers
+    if is_continuation and not has_col_headers and last_header:
+        data_rows: list[str] = []
+        for r_idx, row in enumerate(grid):
+            cells: list[str] = []
+            for c_idx, cell in enumerate(row):
+                txt = cell.text.replace("\n", " ").strip()
+                if (r_idx, c_idx) in cell_bounds:
+                    cb = cell_bounds[(r_idx, c_idx)]
+                    for p in pics:
+                        pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+                        x_ov = max(0, min(cb["r"], pb["r"]) - max(cb["l"], pb["l"]))
+                        y_ov = max(0, min(cb["b"], pb["b"]) - max(cb["t"], pb["t"]))
+                        if x_ov > 10 and y_ov > 10:
+                            txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
+                            break
+                cells.append(txt)
+            data_rows.append("| " + " | ".join(cells) + " |")
+        text = last_header + "\n" + "\n".join(data_rows)
+        return text, last_header
+
+    # Standard table (or continuation with headers)
+    table_rows: list[list[str]] = []
+    for r_idx, row in enumerate(grid):
+        is_header_row = (r_idx == 0) or all(getattr(cell, "column_header", False) for cell in row)
+        row_cells: list[str] = []
+        for c_idx, cell in enumerate(row):
+            txt = cell.text.replace("\n", " ").strip()
+            if not is_header_row and (r_idx, c_idx) in cell_bounds:
+                cb = cell_bounds[(r_idx, c_idx)]
+                for p in pics:
+                    pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+                    x_ov = max(0, min(cb["r"], pb["r"]) - max(cb["l"], pb["l"]))
+                    y_ov = max(0, min(cb["b"], pb["b"]) - max(cb["t"], pb["t"]))
+                    if x_ov > 10 and y_ov > 10:
+                        txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
+                        break
+            row_cells.append(txt)
+        table_rows.append(row_cells)
+
+    if len(table_rows) > 1 and len(table_rows[0]) > 0:
+        text = tabulate(table_rows[1:], headers=table_rows[0], tablefmt="github", disable_numparse=True)
+    elif len(table_rows) == 1:
+        text = tabulate([], headers=table_rows[0], tablefmt="github")
+    else:
+        text = ""
+
+    # Extract header rows + separator for continuation tracking
+    lines = text.strip().split("\n")
+    sep_idx = None
+    for i, line in enumerate(lines[:4]):
+        if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+            sep_idx = i
+            break
+
+    new_last_header = last_header
+    if sep_idx is not None and sep_idx >= 1:
+        new_last_header = "\n".join(lines[:sep_idx + 1])
+    elif sep_idx is None and is_continuation and last_header:
+        text = last_header + "\n" + text
+
+    return text, new_last_header
+
+
 def _build_element_lookup(
     doc: DoclingDocument,
+    result: ConversionResult,
+    figure_lookup: dict[str, FigureRef],
     scale: float
 ) -> dict[str, ElementRef]:
     """
@@ -124,9 +374,21 @@ def _build_element_lookup(
     self_ref. Pictures are excluded — they go into the figure lookup.
     Tables use their markdown export as the text excerpt so the model
     sees structured table content rather than a raw string.
+
+    Tables whose markdown contains empty cells (a signal that embedded
+    images were lost during extraction) are additionally cropped from the
+    rendered page and inserted into *figure_lookup* so the model receives
+    both the structured text and a visual of the table.
+
+    Continuation tables (tables that span a page break and lose their
+    header row) are detected by section + page proximity and have the
+    previous table's header prepended.
     """
     lookup: dict[str, ElementRef] = {}
+    # --- continuation-header tracking (scoped by section + page) ---
     _last_table_header: str | None = None
+    _last_table_page: int = -1
+    _current_section: str = ""
 
     for item, _level in doc.iterate_items():
         item: Any
@@ -144,6 +406,11 @@ def _build_element_lookup(
         if label in ("picture", "page_header", "page_footer"):
             continue
 
+        # Track section boundaries to scope continuation headers
+        if label in ("section_header", "section_heading"):
+            _current_section = getattr(item, "text", "")
+            _last_table_header = None
+
         prov: ProvenanceItem = item.prov[0]
         page: Any = doc.pages.get(prov.page_no)
         if page is None or page.size is None:
@@ -152,25 +419,23 @@ def _build_element_lookup(
         bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
 
         text: str = ""
-        if label == "table" and hasattr(item, "export_to_markdown"):
-            text = item.export_to_markdown()
-            lines: list[str] = text.strip().split('\n')
+        if label == "table":
+            # Detect continuation table status based on adjacent page in same section
+            is_adjacent_page: bool = (
+                _last_table_header is not None and 0 <= (prov.page_no - _last_table_page) <= 1
+            )
+            text, _last_table_header = _format_table_markdown(
+                item, doc, _last_table_header, is_adjacent_page
+            )
+            _last_table_page = prov.page_no
 
-            # Detect if this table has a header separator (e.g. |---|---|)
-            sep_idx: int | None = None
-            for i, line in enumerate(lines[:4]):
-                i: int
-                line: str
-                if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
-                    sep_idx = i
-                    break
-
-            if sep_idx is not None and sep_idx >= 1:
-                # Store header rows + separator for continuation tables
-                _last_table_header = '\n'.join(lines[:sep_idx + 1])
-            elif sep_idx is None and _last_table_header:
-                # Continuation table without headers: prepend last seen header
-                text = _last_table_header + '\n' + text
+            # --- selective table cropping for tables with empty cells ---
+            if _table_has_empty_cells(text):
+                fig_id: str | None = _crop_table_as_figure(
+                    result, prov, item.self_ref, scale, figure_lookup
+                )
+                if fig_id:
+                    text += f"\n[Table Image: {fig_id}]"
 
         elif hasattr(item, "text") and item.text:
             text = item.text
@@ -295,7 +560,7 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
             if hasattr(item.label, "value")
             else str(item.label)
         )
-        if label == "section_heading" and hasattr(item, "prov") and item.prov:
+        if label in ("section_header", "section_heading") and hasattr(item, "prov") and item.prov:
             section_pages.add(item.prov[0].page_no)
 
     all_pages: list[int] = sorted(doc.pages.keys())
@@ -319,6 +584,21 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     return gaps
 
 
+def _extract_section_key(heading: str) -> str | None:
+    """
+    Extracts the major section identifier (e.g. 'F' from 'F. System Considerations'
+    or 'F.1 Availability', '1' from '1. Overview' or '1.1 Modules').
+    """
+    h: str = heading.strip()
+    m = re.match(r'^([A-Z]|\d+)\b(?:\.|\s|$)', h)
+    if m:
+        return m.group(1)
+    m2 = re.match(r'^Section\s+([A-Z]|\d+)\b', h, re.IGNORECASE)
+    if m2:
+        return m2.group(1)
+    return None
+
+
 def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> list[EvaluationChunk]:
     merged_chunks: list[EvaluationChunk] = []
     if not raw_chunks:
@@ -328,13 +608,25 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
     current_chunk: EvaluationChunk = copy.copy(raw_chunks[0])
     current_chunk.element_refs = list(current_chunk.element_refs)
     current_chunk.figures = list(current_chunk.figures)
+    current_key: str | None = _extract_section_key(current_chunk.heading)
 
     for next_chunk in raw_chunks[1:]:
         next_chunk: EvaluationChunk
-        same_section: bool = current_chunk.heading == next_chunk.heading
+        next_key: str | None = _extract_section_key(next_chunk.heading)
+
+        same_section: bool = (
+            current_chunk.heading == next_chunk.heading or
+            (current_key is not None and next_key is not None and current_key == next_key)
+        )
         len_combined: int = len(current_chunk.structured_text) + len(next_chunk.structured_text)
         
         if same_section and len_combined <= max_chars:
+            if current_key is not None and current_chunk.heading != next_chunk.heading:
+                # If current heading is a parent heading (e.g. "F. System Considerations"), preserve it.
+                is_parent: bool = bool(re.match(rf'^{current_key}\.\s+[A-Za-z]', current_chunk.heading))
+                if not is_parent:
+                    current_chunk.heading = f"Section {current_key} Subsections"
+
             current_chunk.structured_text = (
                 current_chunk.structured_text + "\n\n" + next_chunk.structured_text
             ).strip()
@@ -345,6 +637,7 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
                 fig: FigureRef
                 if fig.figure_id not in seen_figs:
                     current_chunk.figures.append(fig)
+                    seen_figs.add(fig.figure_id)
             
             min_page: int = min(current_chunk.page_range[0], next_chunk.page_range[0])
             max_page: int = max(current_chunk.page_range[1], next_chunk.page_range[1])
@@ -354,6 +647,7 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
             current_chunk = copy.copy(next_chunk)
             current_chunk.element_refs = list(current_chunk.element_refs)
             current_chunk.figures = list(current_chunk.figures)
+            current_key = next_key
 
     merged_chunks.append(current_chunk)
     
@@ -378,8 +672,8 @@ def build_chunks(
     reference it by ID in its findings output. Figure crops are collected
     separately and attached to the chunk they appear in.
     """
-    element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, scale)
     figure_lookup: dict[str, FigureRef] = _build_figure_lookup(doc, result, scale)
+    element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, result, figure_lookup, scale)
 
     chunks: list[EvaluationChunk] = []
 
@@ -402,6 +696,14 @@ def build_chunks(
                 )
                 text_lines.append(elem.text_excerpt)
                 text_lines.append("") # forces an extra newline when joined @ line 406
+
+                # If this element was a table with an image crop, attach the crop figure directly
+                table_fig_id: str = f"table_crop_{ref_id}"
+                if table_fig_id in figure_lookup:
+                    crop_fig: FigureRef = figure_lookup[table_fig_id]
+                    if crop_fig.base64_png:
+                        chunk_figures.append(crop_fig)
+
                 continue
 
             fig: FigureRef | None = figure_lookup.get(ref_id)
@@ -435,13 +737,13 @@ def _attach_figures_by_page(
     figure_lookup: dict[str, FigureRef]
 ) -> None:
     """
-    Assigns figures to chunks by page proximity.
+    Assigns figures to chunks by explicit text mention or page proximity.
 
     HierarchicalChunker is text-based and typically doesn't include
     picture items in chunk.meta.doc_items, so the ref_id match in
     build_chunks never fires. This function assigns each unattached
-    figure to the chunk whose page range contains the figure's page,
-    falling back to the nearest chunk by page distance.
+    figure to the chunk whose text references it, or whose page range
+    contains the figure's page, falling back to nearest page distance.
     """
     attached_ids: set[str] = {
         figure.figure_id
@@ -454,25 +756,34 @@ def _attach_figures_by_page(
         if not figure.base64_png or figure.figure_id in attached_ids:
             continue
 
-        # Prefer a chunk whose page range includes the figure's page
         best_chunk: EvaluationChunk | None = None
-        best_dist: float = float('inf')
 
+        # 1. Prefer a chunk whose structured_text explicitly references this figure ID
         for chunk in chunks:
             chunk: EvaluationChunk
-            if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
+            if figure.figure_id in chunk.structured_text:
                 best_chunk = chunk
                 break
-            dist: float = min(
-                abs(figure.page_number - chunk.page_range[0]),
-                abs(figure.page_number - chunk.page_range[1])
-            )
-            if dist < best_dist:
-                best_dist = dist
-                best_chunk = chunk
+
+        # 2. If not explicitly referenced, find a chunk by page range proximity
+        if best_chunk is None:
+            best_dist: float = float('inf')
+            for chunk in chunks:
+                chunk: EvaluationChunk
+                if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
+                    best_chunk = chunk
+                    break
+                dist: float = min(
+                    abs(figure.page_number - chunk.page_range[0]),
+                    abs(figure.page_number - chunk.page_range[1])
+                )
+                if dist < best_dist:
+                    best_dist = dist
+                    best_chunk = chunk
 
         if best_chunk is not None:
             best_chunk.figures.append(figure)
+            attached_ids.add(figure.figure_id)
 
 
 def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
@@ -486,7 +797,8 @@ def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
     for i, chunk in enumerate(chunks):
         i: int
         chunk: EvaluationChunk
-        heading_groups[chunk.heading].append(i)
+        key: str = _extract_section_key(chunk.heading) or chunk.heading
+        heading_groups[key].append(i)
 
     for _heading, indices in heading_groups.items():
         _heading: str
@@ -539,7 +851,7 @@ def build_document_index(doc: DoclingDocument) -> dict:
         )
         prov: ProvenanceItem = item.prov[0]
 
-        if label == "section_heading":
+        if label in ("section_header", "section_heading"):
             current_section = getattr(item, "text", "")
             sections.append({
                 "id": item.self_ref,
