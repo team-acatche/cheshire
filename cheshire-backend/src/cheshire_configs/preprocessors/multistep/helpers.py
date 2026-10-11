@@ -238,31 +238,47 @@ def _build_element_lookup(
         bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
 
         text: str = ""
-        if label == "table" and hasattr(item, "export_to_markdown"):
-            text = item.export_to_markdown()
-            lines: list[str] = text.strip().split('\n')
+        if label == "table":
+            # Detect continuation table status based on adjacent page in same section
+            is_adjacent_page: bool = (
+                _last_table_header is not None and 0 <= (prov.page_no - _last_table_page) <= 1
+            )
 
-            # Detect if this table has a header separator (e.g. |---|---|)
-            sep_idx: int | None = None
-            for i, line in enumerate(lines[:4]):
-                i: int
-                line: str
-                if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
-                    sep_idx = i
-                    break
+            # Check if this table has explicit column headers in its grid
+            has_col_headers: bool = False
+            if hasattr(item, "data") and hasattr(item.data, "grid") and item.data.grid:
+                has_col_headers = any(getattr(cell, "column_header", False) for cell in item.data.grid[0])
 
-            if sep_idx is not None and sep_idx >= 1:
-                # Store header rows + separator for continuation tables
-                _last_table_header = '\n'.join(lines[:sep_idx + 1])
+            # If continuation table without explicit headers on this page, format rows from grid and attach header
+            if is_adjacent_page and not has_col_headers and hasattr(item, "data") and hasattr(item.data, "grid") and item.data.grid:
+                data_rows: list[str] = []
+                for row in item.data.grid:
+                    cells = [cell.text.replace("\n", " ").strip() for cell in row]
+                    data_rows.append("| " + " | ".join(cells) + " |")
+                text = _last_table_header + "\n" + "\n".join(data_rows)
                 _last_table_page = prov.page_no
-            elif sep_idx is None and _last_table_header:
-                # Only treat as continuation if same section + adjacent page
-                is_adjacent: bool = (
-                    0 <= (prov.page_no - _last_table_page) <= 1
-                )
-                if is_adjacent:
+            else:
+                try:
+                    text = item.export_to_markdown(doc=doc)
+                except Exception:
+                    text = item.export_to_markdown() if hasattr(item, "export_to_markdown") else ""
+
+                lines: list[str] = text.strip().split('\n')
+                sep_idx: int | None = None
+                for i, line in enumerate(lines[:4]):
+                    i: int
+                    line: str
+                    if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+                        sep_idx = i
+                        break
+
+                if sep_idx is not None and sep_idx >= 1:
+                    # Store header rows + separator for continuation tables
+                    _last_table_header = '\n'.join(lines[:sep_idx + 1])
+                    _last_table_page = prov.page_no
+                elif sep_idx is None and is_adjacent_page and _last_table_header:
                     text = _last_table_header + '\n' + text
-                _last_table_page = prov.page_no
+                    _last_table_page = prov.page_no
 
             # --- selective table cropping for tables with empty cells ---
             if _table_has_empty_cells(text):

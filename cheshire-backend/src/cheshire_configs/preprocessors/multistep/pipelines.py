@@ -94,6 +94,10 @@ AUDIT RULES & CONSTRAINTS
   * Table cells containing placeholders such as "---", "--", "-", "N/A", "n/a", "None", "null", "TBD", "TODO", "[ ]", or blank whitespace without any visual icons in the table image are EMPTY/UNPOPULATED. If a required field in the Reports table or technical specifications contains one of these placeholders, flag it as a missing/empty field.
 - EMPTY VS. NON-COMPLIANT:
   * Distinguish between "empty/missing" (when a field, cell, value, or estimate phase is absent or filled with a placeholder like "---") and "non-compliant/outdated" (when content is present but deprecated, obsolete, invalid, or violates architectural standards). Do not label non-compliant specifications as "empty".
+- CONTINUATION TABLES ACROSS PAGE BREAKS:
+  * Tables that span multiple pages frequently continue on the following page without repeating headers (though occasionally they may repeat headers).
+  * If a table on the following page continues the rows of a table from the preceding page (such as the Look-Up Files continuation table on page 13), it is a VALID continuation table.
+  * NEVER flag continuation tables as empty, missing headers, or having an unpopulated/blank body when their continuation rows are present.
 
 3. LOCAL CHECKLIST COMPLIANCE:
 - Evaluate the present section against the mandatory local standards checklist above.
@@ -103,6 +107,10 @@ AUDIT RULES & CONSTRAINTS
   * NEVER flag a section as empty, unpopulated, or missing content if it contains introductory or lead-in framing text whose detailed specifications are elaborated in its succeeding subsections or elsewhere in the document.
   * Always check the document index and sibling subsections before declaring any specifications missing.
 - If evaluating the Estimates section: confirm it includes time estimates for all 6 required phases (Technical Specifications, Requirements Definition, Implementation, Coding & Unit Testing, System Testing, UAT). Flag any phase missing from this section.
+- SONAR SCAN RESULTS AUDITING:
+  * When evaluating the Sonar Scan Results section: verify that a Quality Gate is specified.
+  * Check that the scan results PASS the specified Quality Gate overall. If Quality Gate Overall is "FAIL" (or fails to meet the target), flag this as non-compliant.
+  * Confirm that the scan contains NO specified critical issues (Critical Issues target = 0). If any critical issues are present (e.g., 2 critical issues), flag this as a critical violation of company standards.
 - Do NOT flag whole missing sections or whole missing diagrams—global document inventory is audited in Pass 2.
 
 4. EXTERNAL REFERENCES & DELEGATED CONTENT:
@@ -233,6 +241,7 @@ TASKS
    - Discard any finding that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
    - Discard any finding claiming that the "Format" column or attachment field in Attachments or Reference tables is empty when the table visually displays format badges/icons (e.g. Word, Excel icons) or when valid file extensions (.docx, .xlsx, .pdf) are present.
    - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
+   - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
 4. If two findings contradict each other, call flag_contradiction.
 5. For each unique, valid finding, call accept_local_finding with the original fields preserved.
 
