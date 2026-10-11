@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
+import { isUnanchored } from "./helpers";
 
 interface FindingPopoverProps {
   findings: VulnerabilityFinding[];
@@ -100,7 +101,7 @@ export function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverPr
               variant="outline"
               className="shrink-0 text-[10px] border-blue-300 text-blue-700 dark:text-blue-400 dark:border-blue-600"
             >
-              pg. {finding.page_no}
+              {isUnanchored(finding) ? "Document" : `pg. ${finding.page_no}`}
             </Badge>
           </div>
 

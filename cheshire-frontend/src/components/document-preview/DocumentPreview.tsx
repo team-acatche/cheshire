@@ -244,6 +244,12 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     clearAllMarks(); setMatchPages([]); setMatchIdx(0);
     setSearchOpen(false); setSearchQuery("");
   }, []);
+  
+  // split once
+  const { anchored, documentLevel } = useMemo(() => ({
+    anchored: findings.filter((f) => !isUnanchored(f)),
+    documentLevel: findings.filter(isUnanchored),
+  }), [findings]);
 
   // ── Findings grouping (memoised) ───────────────────────────────────────────
   const groupedFindings = useMemo(() => {
@@ -268,11 +274,6 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     // state/refs
   const docBtnRef = useRef<HTMLButtonElement>(null);
 
-  // split once
-  const { anchored, documentLevel } = useMemo(() => ({
-    anchored: findings.filter((f) => !isUnanchored(f)),
-    documentLevel: findings.filter(isUnanchored),
-  }), [findings]);
 
   // open the popover anchored to the stable toolbar pill (not the list item, which unmounts)
   const handleDocLevelSelect = useCallback((f: VulnerabilityFinding) => {

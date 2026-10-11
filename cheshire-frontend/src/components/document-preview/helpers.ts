@@ -1,6 +1,7 @@
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 
 export function isUnanchored(f: VulnerabilityFinding) {
+  if (f.scope === "document") return true;
   const {l, t, r, b} = f.bbox;
   return Math.abs(r - l) === 0 || Math.abs(t - b) === 0;
 }

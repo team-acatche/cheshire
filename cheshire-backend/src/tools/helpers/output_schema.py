@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 from docling_core.types.doc import BoundingBox
@@ -11,6 +11,7 @@ class VulnerabilityDetails(BaseModel):
     bbox: Annotated[BoundingBox, Field(description="Bounding box highlighting the vulnerable source within the document.")]
     web_references: Annotated[list[str], Field(description="List of URL strings of web references for the proposed vulnerability.")]
     recommendations: Annotated[list[str], Field(description="List of recommendations for the proposed vulnerability.")]
+    scope: Annotated[Literal["section", "document"], Field(description="'document' when the finding has no location in the PDF.")] = "section"
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, VulnerabilityDetails):
