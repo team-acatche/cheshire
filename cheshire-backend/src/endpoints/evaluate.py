@@ -37,7 +37,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from model import evaluate_file
 from tools.helpers.output_schema import VulnerabilityDetails
@@ -64,8 +64,16 @@ class SubmitResponse(BaseModel):
 
 
 class StatusResponse(BaseModel):
-    status: str
-    error: Optional[str] = None
+    status: Literal["PENDING", "PROCESSING", "DONE", "FAILED"] = Field(
+        description="Current evaluation status. `DONE` is never returned in a body; it redirects (301) to the result endpoint instead."
+    )
+    error: Optional[str] = Field(
+        default=None,
+        dedescription="Failure reason. Only present when `status` is `FAILED`.",
+    )
+
+class ErrorResponse(BaseModel):
+    detail: str
 
 
 # ── Background worker ──────────────────────────────────────────────────────────
