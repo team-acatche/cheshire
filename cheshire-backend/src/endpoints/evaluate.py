@@ -14,7 +14,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated,Literal, Optional
 import aiofiles
 import logging
 import uuid
@@ -69,7 +69,7 @@ class StatusResponse(BaseModel):
     )
     error: Optional[str] = Field(
         default=None,
-        dedescription="Failure reason. Only present when `status` is `FAILED`.",
+        description="Failure reason. Only present when `status` is `FAILED`.",
     )
 
 class ErrorResponse(BaseModel):
