@@ -1,8 +1,9 @@
-import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
+import type { VulnerabilityFinding, BoundingBox } from "@/types/VulnerabilityFinding";
 import { pdfToPixels } from "./helpers";
 
 interface FindingOverlayProps {
   bboxKey: string;
+  bbox: BoundingBox;
   findings: VulnerabilityFinding[];
   scale: number;
   pageHeightPt: number;
@@ -17,9 +18,9 @@ interface FindingOverlayProps {
 }
 
 export function FindingOverlay({
-  bboxKey, findings, scale, pageHeightPt, isActive, zIndex, onClick,
+  bboxKey, bbox, findings, scale, pageHeightPt, isActive, zIndex, onClick,
 }: FindingOverlayProps) {
-  const rect = pdfToPixels(findings[0].bbox, pageHeightPt, scale);
+  const rect = pdfToPixels(bbox, pageHeightPt, scale);
   const hasMultiple = findings.length > 1;
 
   return (

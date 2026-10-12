@@ -495,7 +495,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         pageNumber={pageNumber}
                         pageMeta={pageMetaMap[pageNumber]}
                         findings={anchored}
-                        activeBboxKey={active?.bboxKey ?? null}
+                        activeFindings={active?.findings ?? null}
                         onClick={handleClick}
                       />
                     )}

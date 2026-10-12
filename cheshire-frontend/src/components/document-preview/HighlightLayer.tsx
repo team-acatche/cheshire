@@ -4,18 +4,16 @@ import type { PageMeta } from "./types";
 import { groupByBbox, pdfToPixels } from "./helpers";
 import { FindingOverlay } from "./FindingOverlay";
 
-const KEY_SEP = "::";
-
 interface HighlightLayerProps {
   pageNumber: number;
   pageMeta: PageMeta;
   findings: VulnerabilityFinding[];
-  activeBboxKey: string | null;
+  activeFindings: VulnerabilityFinding[] | null;
   onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => void;
 }
 
 export function HighlightLayer({
-  pageNumber, pageMeta, findings, activeBboxKey, onClick,
+  pageNumber, pageMeta, findings, activeFindings, onClick,
 }: HighlightLayerProps) {
   const layerRef = useRef<HTMLDivElement>(null);
   const scale = pageMeta.renderedWidth / pageMeta.originalWidth;
@@ -24,16 +22,14 @@ export function HighlightLayer({
   const entries = useMemo(() => {
     const groups = groupByBbox(findings, pageNumber);
     return Array.from(groups.entries())
-      .map(([key, group]) => {
-        const rect = pdfToPixels(group[0].bbox, pageMeta.originalHeight, scale);
-        return { key, group, rect, area: rect.width * rect.height };
+      .map(([key, { bbox, findings: group}]) => {
+        const rect = pdfToPixels(bbox, pageMeta.originalHeight, scale);
+        return { key, bbox, group, rect, area: rect.width * rect.height };
       })
       .sort((a, b) => b.area - a.area);
   }, [findings, pageNumber, pageMeta.originalHeight, scale]);
 
   if (entries.length === 0) return null;
-
-  const activeKeys = activeBboxKey ? activeBboxKey.split(KEY_SEP) : [];
 
   const handleClick = (
     group: VulnerabilityFinding[],
@@ -58,8 +54,8 @@ export function HighlightLayer({
     if (hits.length <= 1) return onClick(group, key, el);
 
     onClick(
-      hits.flatMap((h) => h.group),
-      hits.map((h) => h.key).join(KEY_SEP),
+      [...new Set(hits.flatMap((h) => h.group))],
+      hits.map((h) => h.key).join("::"),
       el
     );
   };
@@ -69,14 +65,15 @@ export function HighlightLayer({
       ref={layerRef}
       style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 5 }}
     >
-      {entries.map(({ key, group }, i) => (
+      {entries.map(({ key, bbox, group }, i) => (
         <FindingOverlay
           key={key}
           bboxKey={key}
+          bbox={bbox}
           findings={group}
           scale={scale}
           pageHeightPt={pageMeta.originalHeight}
-          isActive={activeKeys.includes(key)}
+          isActive={!!activeFindings?.some((f) => group.includes(f))}
           zIndex={20 + i}
           onClick={handleClick}
         />
