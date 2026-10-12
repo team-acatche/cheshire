@@ -77,6 +77,8 @@ class LocalFinding(BaseModel):
     figure_id: Optional[str] = Field(None, description="The unique identifier of the figure (if the vulnerability is in a figure).")
     sub_bbox: Optional[List[List[float]]] = Field(None, description="Bounding boxes within the figure crop space [[x1, y1, x2, y2], ...] (0-1000 scale).")
     element_type: str = Field(..., description="The type of the element, e.g. section_heading, paragraph, diagram_node, diagram_edge, table_cell, table_header, caption, code_block, list_item.")
+    finding: str = Field(..., description="Detailed description of why the element violates the company standard.")
+    standard_ref: str = Field("", description="Exact quoted standard text from the checklist.")
     severity: str = Field(..., description="Severity classification (major, minor, observation).")
     confidence: float = Field(..., description="Confidence score (1.0 for deterministic, 0.8 for semantic, 0.6 for inferred/ambiguous).")
     title: Optional[str] = Field(None, description="An optional short, descriptive title for the finding.")
