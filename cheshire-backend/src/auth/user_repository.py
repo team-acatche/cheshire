@@ -70,7 +70,7 @@ class InMemoryUserRepository(UserRepository):
         ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid username or password for {email}",
+                detail=f"Incorrect email address or password.",
             )
         if user_entity.disabled:
             raise HTTPException(
@@ -174,8 +174,8 @@ class SqliteUserRepository(UserRepository):
             row = cursor.fetchone()
             if row is None:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"User with email `{email}` not found",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect email address or password.",
                 )
 
             user = UserEntity.from_row(row)
@@ -186,7 +186,7 @@ class SqliteUserRepository(UserRepository):
             ):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"Invalid username or password for {email}",
+                    detail="Incorrect email address or password.",
                 )
             if user.disabled:
                 raise HTTPException(
