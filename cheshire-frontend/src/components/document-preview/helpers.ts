@@ -30,10 +30,10 @@ export function groupByBbox(findings: VulnerabilityFinding[], pageNumber: number
   const map = new Map<string, { bbox: Box; findings: VulnerabilityFinding[] }>();
 
   for (const f of findings) {
-    if (f.page_no !== pageNumber) continue;
     for (const b of getBoxes(f)) {
-      if (isEmptyBox(b)) continue;
-      const key = makeBboxKey(f.page_no, b);
+      const page = b.page_no ?? f.page_no;
+      if (page !== pageNumber || isEmptyBox(b)) continue;
+      const key = makeBboxKey(page, b);
       const entry = map.get(key) ?? { bbox: b, findings: [] };
       if (!entry.findings.includes(f)) entry.findings.push(f);
       map.set(key, entry);
