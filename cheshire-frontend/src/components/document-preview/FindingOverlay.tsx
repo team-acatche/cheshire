@@ -1,31 +1,33 @@
-import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
+import type { VulnerabilityFinding, BoundingBox } from "@/types/VulnerabilityFinding";
 import { pdfToPixels } from "./helpers";
 
 interface FindingOverlayProps {
   bboxKey: string;
+  bbox: BoundingBox;
   findings: VulnerabilityFinding[];
   scale: number;
   pageHeightPt: number;
   isActive: boolean;
-  onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => void;
+  zIndex: number;
+  onClick: (
+    group: VulnerabilityFinding[],
+    bboxKey: string,
+    el: HTMLElement,
+    e: React.MouseEvent 
+  ) => void;
 }
 
 export function FindingOverlay({
-  bboxKey,
-  findings,
-  scale,
-  pageHeightPt,
-  isActive,
-  onClick,
+  bboxKey, bbox, findings, scale, pageHeightPt, isActive, zIndex, onClick,
 }: FindingOverlayProps) {
-  const rect = pdfToPixels(findings[0].bbox, pageHeightPt, scale);
+  const rect = pdfToPixels(bbox, pageHeightPt, scale);
   const hasMultiple = findings.length > 1;
 
   return (
     <div
       onClick={(e) => {
         e.stopPropagation();
-        onClick(findings, bboxKey, e.currentTarget);
+        onClick(findings, bboxKey, e.currentTarget, e);
       }}
       style={{
         position: "absolute",
@@ -46,7 +48,7 @@ export function FindingOverlay({
           ? "0 0 0 1.5px rgba(0, 51, 178, 0.35)"
           : "none",
         transition: "all 150ms ease",
-        zIndex: 20,
+        zIndex,
       }}
     >
       {hasMultiple && (

@@ -1,20 +1,9 @@
-"""
-evaluate.py — key changes from original:
-
-1. Session is created with status=PENDING before the background task runs.
-2. _run_evaluation() writes PROCESSING → DONE / FAILED back to the session row.
-3. GET /{session_id}/status now also accepts no job-store entry and falls back
-   to reading session.status from SQLite (handles post-restart polling).
-4. GET / (get_sessions) now includes status so the frontend can reconstruct
-   in-flight sessions without relying on sessionStorage.
-"""
-
 import asyncio
 import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 import aiofiles
 import logging
 import uuid
@@ -37,7 +26,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from model import evaluate_file
 from tools.helpers.output_schema import VulnerabilityDetails
@@ -64,8 +53,17 @@ class SubmitResponse(BaseModel):
 
 
 class StatusResponse(BaseModel):
-    status: str
-    error: Optional[str] = None
+    status: Literal["PENDING", "PROCESSING", "FAILED"] = Field(
+        description="Current evaluation status. `DONE` is never returned in a body; it redirects (301) to the result endpoint instead."
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Failure reason. Only present when `status` is `FAILED`.",
+    )
+
+
+class ErrorResponse(BaseModel):
+    detail: str
 
 
 # ── Background worker ──────────────────────────────────────────────────────────
@@ -221,7 +219,28 @@ async def evaluate_document(
 
 # ── GET /{session_id}/status ───────────────────────────────────────────────────
 
-@evaluate_router.get("/{session_id}/status")
+@evaluate_router.get(
+    "/{session_id}/status",
+    responses={
+        status.HTTP_200_OK: {
+            "model": StatusResponse,
+            "description": "Evaluation is pending, in progress, or failed.",
+        },
+        status.HTTP_301_MOVED_PERMANENTLY: {
+            "description": "Evaluation is done. Redirects to `/api/v1/{session_id}/result`.",
+            "headers": {
+                "Location": {
+                    "description": "URL of the evaluation results.",
+                    "schema": {"type": "string", "example": "/api/v1/{session_id}/result"},
+                }
+            },
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "No session found for the given ID.",
+        },
+    },
+)
 def get_evaluation_status(
     session_id: Annotated[str, PathParam()],
     current_user: Annotated[User, Depends(get_current_user)],
@@ -234,9 +253,11 @@ def get_evaluation_status(
     reading session.status from SQLite so that post-restart polling works.
 
     HTTP semantics:
-        pending / processing → 200 {"status": "PENDING"|"PROCESSING"}
-        failed               → 200 {"status": "FAILED", "error": "..."}
-        done                 → 301 → /{session_id}/result
+        pending    → 200 {"status": "PENDING"}
+        processing → 200 {"status": "PROCESSING"}
+        failed     → 200 {"status": "FAILED", "error": "..."}
+        done       → 301 → /{session_id}/result
+        unknown    → 404
     """
     job = job_store.get(session_id)
 
@@ -247,8 +268,9 @@ def get_evaluation_status(
                 url=f"/api/v1/{session_id}/result",
                 status_code=status.HTTP_301_MOVED_PERMANENTLY,
             )
+        api_status = "PROCESSING" if job.status == JobStatus.RUNNING else job.status.upper()
         body = StatusResponse(
-            status=job.status.upper(),
+            status=api_status,
             error=job.error if job.status == JobStatus.FAILED else None,
         )
         return Response(content=body.model_dump_json(), media_type="application/json")

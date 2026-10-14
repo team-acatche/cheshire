@@ -256,9 +256,10 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     return [...findings]
       .sort((a, b) => a.page_no - b.page_no)
       .reduce((acc, f) => {
-        (acc[f.page_no] ??= []).push(f);
+        const key = isUnanchored(f) ? "Document-wide" : String(f.page_no);
+        (acc[key] ??= []).push(f);
         return acc;
-      }, {} as Record<number, VulnerabilityFinding[]>);
+      }, {} as Record<string, VulnerabilityFinding[]>);
   }, [findings]);
 
   const handleClick = useCallback(
@@ -346,7 +347,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                   <div className="max-h-72 overflow-y-auto">
                     {Object.entries(groupedFindings).map(([page, pf]) => (
                       <div key={page} className="mb-2">
-                        <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">Page {page}</div>
+                        <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">{page === "Document-wide" ? page : `Page ${page}`}</div>
                         {pf.map((finding, idx) => (
                           <button
                             key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
@@ -495,7 +496,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         pageNumber={pageNumber}
                         pageMeta={pageMetaMap[pageNumber]}
                         findings={anchored}
-                        activeBboxKey={active?.bboxKey ?? null}
+                        activeFindings={active?.findings ?? null}
                         onClick={handleClick}
                       />
                     )}

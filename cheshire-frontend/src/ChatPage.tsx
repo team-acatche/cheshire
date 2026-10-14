@@ -103,7 +103,7 @@ export default function ChatPage({
 
   return (
     <Sidebar>
-      <SidebarContent className="p-4 space-y-4">
+      <SidebarContent className="flex flex-col overflow-hidden p-4">
 
         {/* ACCOUNT */}
         <div
@@ -129,131 +129,132 @@ export default function ChatPage({
         </div>
 
         {/* CHAT HISTORY */}
-        <div className="text-xs text-muted-foreground mt-4 px-1 uppercase tracking-wide">
+        <div className="mt-4 shrink-0 text-xs text-muted-foreground px-1 uppercase tracking-wide">
           Your Documents
         </div>
+        <div className="documents-scroll mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+          <div className="flex flex-col gap-1">
+            {safeChats.length === 0 && (
+              <div className="text-xs text-muted-foreground px-1">No chats yet</div>
+            )}
 
-        <div className="flex flex-col gap-1">
-          {safeChats.length === 0 && (
-            <div className="text-xs text-muted-foreground px-1">No chats yet</div>
-          )}
+            {safeChats.map((chat) => {
+              const isProcessing = chat.status === "processing"
+              const isFailed     = chat.status === "failed"
 
-          {safeChats.map((chat) => {
-            const isProcessing = chat.status === "processing"
-            const isFailed     = chat.status === "failed"
+              return (
+                <div
+                  key={chat.session_id}
+                  className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
+                    ${isFailed
+                      ? "opacity-60 cursor-default"
+                      : "hover:bg-muted cursor-pointer"
+                    }`}
+                  onClick={() => {
+                    if (!isFailed && renamingId !== chat.session_id) {
+                      onSelectChat(chat)
+                    }
+                  }}
+                >
+                  {/* Icon */}
+                  {isProcessing ? (
+                    <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin" />
+                  ) : (
+                    <FileText className={`h-4 w-4 shrink-0 ${isFailed ? "text-destructive" : "text-muted-foreground"}`} />
+                  )}
 
-            return (
-              <div
-                key={chat.session_id}
-                className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
-                  ${isFailed
-                    ? "opacity-60 cursor-default"
-                    : "hover:bg-muted cursor-pointer"
-                  }`}
-                onClick={() => {
-                  if (!isFailed && renamingId !== chat.session_id) {
-                    onSelectChat(chat)
-                  }
-                }}
-              >
-                {/* Icon */}
-                {isProcessing ? (
-                  <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin" />
-                ) : (
-                  <FileText className={`h-4 w-4 shrink-0 ${isFailed ? "text-destructive" : "text-muted-foreground"}`} />
-                )}
-
-                {/* Title / rename input */}
-                {renamingId === chat.session_id ? (
-                  <input
-                    autoFocus
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter")  commitRename(chat.session_id)
-                      if (e.key === "Escape") cancelRename()
-                    }}
-                    onBlur={() => commitRename(chat.session_id)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
-                  />
-                ) : (
-                  <div className="flex-1 min-w-0">
-                    <span className={`block truncate leading-none ${isFailed ? "text-destructive" : "text-foreground"}`}>
-                      {chat.title}
-                    </span>
-                    {isProcessing && (
-                      <span className="block text-[10px] text-muted-foreground mt-0.5">
-                        Analyzing…
+                  {/* Title / rename input */}
+                  {renamingId === chat.session_id ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter")  commitRename(chat.session_id)
+                        if (e.key === "Escape") cancelRename()
+                      }}
+                      onBlur={() => commitRename(chat.session_id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  ) : (
+                    <div className="flex-1 min-w-0">
+                      <span className={`block truncate leading-none ${isFailed ? "text-destructive" : "text-foreground"}`}>
+                        {chat.title}
                       </span>
-                    )}
-                    {isFailed && (
-                      <span className="block text-[10px] text-destructive mt-0.5">
-                        Evaluation failed
-                      </span>
-                    )}
-                  </div>
-                )}
+                      {isProcessing && (
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">
+                          Analyzing…
+                        </span>
+                      )}
+                      {isFailed && (
+                        <span className="block text-[10px] text-destructive mt-0.5">
+                          Evaluation failed
+                        </span>
+                      )}
+                    </div>
+                  )}
 
-                {/* Actions — hidden while processing */}
-                {!isProcessing && renamingId !== chat.session_id && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={(e) => e.stopPropagation()}
-                        className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
-                        aria-label="Chat options"
-                      >
-                        <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    </DropdownMenuTrigger>
-
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuGroup>
-                        <div className="px-2 py-2">
-                          <p className="truncate text-sm font-medium text-foreground">
-                            {chat.title}
-                          </p>
-                            {chat.latestTimestamp && (
-                              <span className="mt-1 truncate text-[10px] text-gray-400">
-                                Last Activity: {formatTimestamp(chat.latestTimestamp)}
-                              </span>
-                            )}
-                        </div>
-
-                        <DropdownMenuSeparator />
-
-                        <DropdownMenuItem
-                          onClick={(e) => { e.stopPropagation(); startRename(chat) }}
-                          className="cursor-pointer"
+                  {/* Actions — hidden while processing */}
+                  {!isProcessing && renamingId !== chat.session_id && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
+                          aria-label="Chat options"
                         >
-                          <PenLine className="mr-2 h-4 w-4" />
-                          Rename
-                        </DropdownMenuItem>
+                          <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
 
-                        <DropdownMenuSeparator />
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuGroup>
+                          <div className="px-2 py-2">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {chat.title}
+                            </p>
+                              {chat.latestTimestamp && (
+                                <span className="mt-1 truncate text-[10px] text-gray-400">
+                                  Last Activity: {formatTimestamp(chat.latestTimestamp)}
+                                </span>
+                              )}
+                          </div>
 
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={(e) => { e.stopPropagation(); setChatToDelete(chat) }}
-                          className="cursor-pointer"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </div>
-            )
-          })}
+                          <DropdownMenuSeparator />
+
+                          <DropdownMenuItem
+                            onClick={(e) => { e.stopPropagation(); startRename(chat) }}
+                            className="cursor-pointer"
+                          >
+                            <PenLine className="mr-2 h-4 w-4" />
+                            Rename
+                          </DropdownMenuItem>
+
+                          <DropdownMenuSeparator />
+
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={(e) => { e.stopPropagation(); setChatToDelete(chat) }}
+                            className="cursor-pointer"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-border p-4">
+      <SidebarFooter className="shrink-0 border-t border-border p-4">
         <div className="flex flex-col gap-1 text-sm text-muted-foreground">
           <button
             onClick={onOpenSettings}
