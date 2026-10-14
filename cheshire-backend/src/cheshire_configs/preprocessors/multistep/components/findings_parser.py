@@ -1,11 +1,10 @@
 import json
 from typing import Any
 
-from docling_core.types.doc import BoundingBox
 from haystack import component
 from haystack.dataclasses import ChatMessage
 
-from tools.helpers.output_schema import VulnerabilityDetails
+from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails
 from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, ElementRef, FigureRef
 
 def clamp(min_val: float, value: float, max_val: float) -> float:
@@ -78,63 +77,52 @@ class FindingsParser:
             figure_id: str | None = finding.get("figure_id")
             sub_bbox = finding.get("sub_bbox")
             page_no: int = finding.get("page_no", 0)
-            bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
-            bboxes: list[BoundingBox] = []
+            bboxes: list[PageBoundingBox] = []
 
-            if figure_id in figure_by_id and figure_id is not None:
+            if figure_id is not None and figure_id in figure_by_id:
                 fig: FigureRef = figure_by_id[figure_id]
                 page_no = fig.page_number
 
-                if sub_bbox:
-                    if isinstance(sub_bbox, list):
-                        if len(sub_bbox) == 4 and all(isinstance(x, (int, float)) for x in sub_bbox):
-                            raw_boxes = [sub_bbox]
-                        else:
-                            raw_boxes = [b for b in sub_bbox if isinstance(b, list) and len(b) == 4 and all(isinstance(x, (int, float)) for x in b)]
+                raw_boxes: list[list[float]] = []
+                if isinstance(sub_bbox, list):
+                    if len(sub_bbox) == 4 and all(isinstance(x, (int, float)) for x in sub_bbox):
+                        raw_boxes = [sub_bbox]
                     else:
-                        raw_boxes = []
+                        raw_boxes = [b for b in sub_bbox if isinstance(b, list) and len(b) == 4 and all(isinstance(x, (int, float)) for x in b)]
 
-                    for sb in raw_boxes:
-                        scaled_x1: float
-                        scaled_y1: float
-                        scaled_x2: float
-                        scaled_y2: float
-                        scaled_x1, scaled_y1, scaled_x2, scaled_y2 = sb
-                        max_coord: float = max(scaled_x1, scaled_y1, scaled_x2, scaled_y2)
-                        scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
+                fig_width: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+                fig_height: float = fig.bbox_pdf.t - fig.bbox_pdf.b
 
-                        normalized_x1: float = clamp(0.0, scaled_x1 / scale_factor, 1.0)
-                        normalized_y1: float = clamp(0.0, scaled_y1 / scale_factor, 1.0)
-                        normalized_x2: float = clamp(0.0, scaled_x2 / scale_factor, 1.0)
-                        normalized_y2: float = clamp(0.0, scaled_y2 / scale_factor, 1.0)
+                for sb in raw_boxes:
+                    sx1, sy1, sx2, sy2 = sb
+                    max_coord: float = max(sx1, sy1, sx2, sy2)
+                    scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
 
-                        fig_width: float = fig.bbox_pdf.r - fig.bbox_pdf.l
-                        fig_height: float = fig.bbox_pdf.t - fig.bbox_pdf.b
+                    nx1: float = clamp(0.0, sx1 / scale_factor, 1.0)
+                    ny1: float = clamp(0.0, sy1 / scale_factor, 1.0)
+                    nx2: float = clamp(0.0, sx2 / scale_factor, 1.0)
+                    ny2: float = clamp(0.0, sy2 / scale_factor, 1.0)
 
-                        bboxes.append(BoundingBox(
-                            l=fig.bbox_pdf.l + normalized_x1 * fig_width,
-                            t=fig.bbox_pdf.t - normalized_y1 * fig_height,
-                            r=fig.bbox_pdf.l + normalized_x2 * fig_width,
-                            b=fig.bbox_pdf.t - normalized_y2 * fig_height
-                        ))
+                    bboxes.append(PageBoundingBox(
+                        l=fig.bbox_pdf.l + nx1 * fig_width,
+                        t=fig.bbox_pdf.t - ny1 * fig_height,
+                        r=fig.bbox_pdf.l + nx2 * fig_width,
+                        b=fig.bbox_pdf.t - ny2 * fig_height,
+                        coord_origin=fig.bbox_pdf.coord_origin,
+                        page_no=fig.page_number,
+                    ))
 
-                    if bboxes:
-                        bbox = bboxes[0]
-                    else:
-                        bbox = fig.bbox_pdf
-                        bboxes = [bbox]
-                else:
-                    bbox = fig.bbox_pdf
-                    bboxes = [bbox]
+                if not bboxes:  # no usable sub_bbox: highlight the whole figure
+                    bboxes = [PageBoundingBox(**fig.bbox_pdf.model_dump(), page_no=fig.page_number)]
 
             elif element_id:
                 elem_ids = [element_id] if isinstance(element_id, str) else element_id
                 for eid in elem_ids:
-                    if eid in element_by_id:
-                        elem: ElementRef = element_by_id[eid]
-                        bboxes.append(elem.bbox_pdf)
+                    elem: ElementRef | None = element_by_id.get(eid)
+                    if elem:
+                        bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
                 if bboxes:
-                    bbox = bboxes[0]
+                    page_no = bboxes[0].page_no or page_no
 
             try:
                 vulnerabilities.append(
@@ -142,10 +130,10 @@ class FindingsParser:
                         title=finding["title"],
                         description=finding["description"],
                         page_no=page_no,
-                        bbox=bbox,
-                        bboxes=bboxes,
+                        bboxes=bboxes,   # bbox is derived from bboxes[0] by the validator
                         web_references=finding.get("web_references", []),
-                        recommendations=finding.get("recommendations", [])
+                        recommendations=finding.get("recommendations", []),
+                        scope="section" if bboxes else "document",
                     )
                 )
             except Exception:
