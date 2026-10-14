@@ -7,7 +7,7 @@ from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, Lo
 from cheshire_configs.preprocessors.multistep.components.findings_parser import clamp
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_dedup_pipeline, build_global_audit_pipeline
-from tools.helpers.output_schema import VulnerabilityDetails, Contradiction
+from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails, Contradiction
 from docling_core.types.doc import BoundingBox
 
 import logging
@@ -128,10 +128,11 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         for f in all_findings:
             f: LocalFinding | dict
             # support both dataclass and dict
-            element_id: str | None = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+            elem_val = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+            elem_key = tuple(elem_val) if isinstance(elem_val, list) else elem_val
             figure_id: str | None = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
             finding: str = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
-            key: tuple[str | None, str | None, str] = (element_id, figure_id, finding)
+            key: tuple[Any, str | None, str] = (elem_key, figure_id, finding)
             if key not in seen:
                 deduped.append(f)
                 seen.add(key)
@@ -155,6 +156,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
     logger.info(f"  {len(audit_findings)} global finding(s) recorded.")
 
     # Merge dedup-accepted findings with new global audit findings
+    audit_ids = {id(f) for f in audit_findings}
     accepted_local = list(accepted_local) + audit_findings
     # reconstruct element and figure lookup for findings parsing
     element_by_id: dict[str, ElementRef] = {}
@@ -168,31 +170,42 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
             fig: FigureRef
             figure_by_id[fig.figure_id] = fig
 
-    # parsing the final set of findings
     final_vulnerabilities: list[VulnerabilityDetails] = []
     for f in accepted_local:
         f: LocalFinding | dict
-        element_id: str | None = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+        is_document: bool = id(f) in audit_ids
+
+        element_id = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
         figure_id: str | None = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
-        sub_bbox: list[float] | None = getattr(f, "sub_bbox", None) or (f.get("sub_bbox") if isinstance(f, dict) else None)
+        sub_bbox = getattr(f, "sub_bbox", None) or (f.get("sub_bbox") if isinstance(f, dict) else None)
         finding: str = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
         title: str | None = getattr(f, "title", None) or (f.get("title") if isinstance(f, dict) else None)
         web_refs: list[str] = getattr(f, "web_references", None) or (f.get("web_references") if isinstance(f, dict) else None) or []
         recs: list[str] = getattr(f, "recommendations", None) or (f.get("recommendations") if isinstance(f, dict) else None) or []
 
         page_no: int = 1
-        bbox: BoundingBox = BoundingBox(l=0, t=0, r=0, b=0)
+        bboxes: list[PageBoundingBox] = []
 
-        if figure_id and (figure_id in figure_by_id):
+        if is_document:
+            pass
+
+        elif figure_id and figure_id in figure_by_id:
             fig: FigureRef = figure_by_id[figure_id]
             page_no = fig.page_number
+            origin = fig.bbox_pdf.coord_origin
 
-            if sub_bbox and len(sub_bbox) == 4:
-                sx1: float
-                sy1: float
-                sx2: float
-                sy2: float
-                sx1, sy1, sx2, sy2 = sub_bbox
+            raw_boxes: list[list[float]] = []
+            if isinstance(sub_bbox, list):
+                if len(sub_bbox) == 4 and all(isinstance(x, (int, float)) for x in sub_bbox):
+                    raw_boxes = [sub_bbox]
+                else:
+                    raw_boxes = [b for b in sub_bbox if isinstance(b, list) and len(b) == 4 and all(isinstance(x, (int, float)) for x in b)]
+
+            fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
+            fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
+
+            for sb in raw_boxes:
+                sx1, sy1, sx2, sy2 = sb
                 max_coord: float = max(sx1, sy1, sx2, sy2)
                 scale_factor: float = 1.0 if (0.0 < max_coord <= 1.0) else 1000.0
 
@@ -201,22 +214,26 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 frac_x2: float = clamp(0.0, sx2 / scale_factor, 1.0)
                 frac_y2: float = clamp(0.0, sy2 / scale_factor, 1.0)
 
-                fig_w: float = fig.bbox_pdf.r - fig.bbox_pdf.l
-                fig_h: float = fig.bbox_pdf.t - fig.bbox_pdf.b
-
-                bbox = BoundingBox(
+                bboxes.append(PageBoundingBox(
                     l=fig.bbox_pdf.l + frac_x1 * fig_w,
                     t=fig.bbox_pdf.t - frac_y1 * fig_h,
                     r=fig.bbox_pdf.l + frac_x2 * fig_w,
-                    b=fig.bbox_pdf.t - frac_y2 * fig_h
-                )
-            else:
-                bbox = fig.bbox_pdf
+                    b=fig.bbox_pdf.t - frac_y2 * fig_h,
+                    coord_origin=origin,
+                    page_no=fig.page_number,
+                ))
 
-        elif element_id and element_id in element_by_id:
-            elem: ElementRef = element_by_id[element_id]
-            page_no = elem.page_number
-            bbox = elem.bbox_pdf
+            if not bboxes:  # no usable sub_bbox: highlight the whole figure
+                bboxes = [PageBoundingBox(**fig.bbox_pdf.model_dump(), page_no=fig.page_number)]
+
+        elif element_id:
+            elem_ids = [element_id] if isinstance(element_id, str) else element_id
+            for eid in elem_ids:
+                elem = element_by_id.get(eid)
+                if elem:
+                    bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
+            if bboxes:
+                page_no = bboxes[0].page_no or 1  # finding.page_no = first box's page
 
         final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         final_vulnerabilities.append(
@@ -224,9 +241,10 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 title=final_title,
                 description=finding,
                 page_no=page_no,
-                bbox=bbox,
+                bboxes=bboxes,  # bbox is derived from bboxes[0] by the validator
                 web_references=web_refs,
-                recommendations=recs
+                recommendations=recs,
+                scope="section" if bboxes else "document",
             )
         )
 

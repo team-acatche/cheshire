@@ -26,6 +26,8 @@ import { SearchBar } from "./SearchBar";
 import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
 import { PdfPageSkeleton } from "./PdfPageSkeleton";
+import { isUnanchored } from "./helpers";
+import { DocumentLevelFindings } from "./DocumentLevelFindings";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -242,15 +244,22 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     clearAllMarks(); setMatchPages([]); setMatchIdx(0);
     setSearchOpen(false); setSearchQuery("");
   }, []);
+  
+  // split once
+  const { anchored, documentLevel } = useMemo(() => ({
+    anchored: findings.filter((f) => !isUnanchored(f)),
+    documentLevel: findings.filter(isUnanchored),
+  }), [findings]);
 
   // ── Findings grouping (memoised) ───────────────────────────────────────────
   const groupedFindings = useMemo(() => {
     return [...findings]
       .sort((a, b) => a.page_no - b.page_no)
       .reduce((acc, f) => {
-        (acc[f.page_no] ??= []).push(f);
+        const key = isUnanchored(f) ? "Document-wide" : String(f.page_no);
+        (acc[key] ??= []).push(f);
         return acc;
-      }, {} as Record<number, VulnerabilityFinding[]>);
+      }, {} as Record<string, VulnerabilityFinding[]>);
   }, [findings]);
 
   const handleClick = useCallback(
@@ -262,6 +271,16 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   );
 
   const handlePageClick = useCallback(() => setActive(null), []);
+
+    // state/refs
+  const docBtnRef = useRef<HTMLButtonElement>(null);
+
+
+  // open the popover anchored to the stable toolbar pill (not the list item, which unmounts)
+  const handleDocLevelSelect = useCallback((f: VulnerabilityFinding) => {
+    if (!docBtnRef.current) return;
+    setActive({ findings: [f], bboxKey: `doc|${f.title}`, anchorEl: docBtnRef.current });
+  }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -305,7 +324,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
 
           {/* Left — findings badge OR loading indicator */}
-          <div className="justify-self-start">
+          <div className="justify-self-start flex items-center gap-2">
             {findingsLoading ? (
               <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -328,11 +347,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                   <div className="max-h-72 overflow-y-auto">
                     {Object.entries(groupedFindings).map(([page, pf]) => (
                       <div key={page} className="mb-2">
-                        <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">Page {page}</div>
+                        <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">{page === "Document-wide" ? page : `Page ${page}`}</div>
                         {pf.map((finding, idx) => (
                           <button
                             key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
-                            onClick={() => scrollToPageNumber(finding.page_no)}
+                            onClick={() => 
+                              isUnanchored(finding) ? handleDocLevelSelect(finding) :scrollToPageNumber(finding.page_no)
+                            }
                             className="w-full px-3 py-2 text-left hover:bg-amber-100/60 transition-colors"
                           >
                             <div className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</div>
@@ -343,6 +364,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                   </div>
                 </PopoverContent>
               </Popover>
+            )}
+            {!findingsLoading && (
+              <DocumentLevelFindings
+                ref={docBtnRef}
+                findings={documentLevel}
+                onSelect={handleDocLevelSelect}
+              />
             )}
           </div>
 
@@ -467,8 +495,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                       <HighlightLayer
                         pageNumber={pageNumber}
                         pageMeta={pageMetaMap[pageNumber]}
-                        findings={findings}
-                        activeBboxKey={active?.bboxKey ?? null}
+                        findings={anchored}
+                        activeFindings={active?.findings ?? null}
                         onClick={handleClick}
                       />
                     )}

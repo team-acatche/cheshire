@@ -430,3 +430,68 @@ class TestGetResults:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+# ---------------------------------------------------------------------------
+# Tests — GET /{session_id}/status
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def status_db(tmp_path: Path):
+    """Yields (session_id, db_path) with get_user_db_path overridden to the temp DB."""
+    from dependencies.sessions import get_user_db_path
+
+    session_id = str(uuid.uuid4())
+    db_path = _setup_db(tmp_path, session_id)
+    api.dependency_overrides[get_user_db_path] = lambda: db_path
+    try:
+        yield session_id, db_path
+    finally:
+        api.dependency_overrides.pop(get_user_db_path, None)
+
+
+class TestStatusOpenApi:
+    def test_status_endpoint_documents_responses(self):
+        spec = client.get("/openapi.json").json()
+        op = spec["paths"]["/api/v1/{session_id}/status"]["get"]
+
+        
+        assert "301" in op["responses"]
+        assert "Location" in op["responses"]["301"]["headers"]
+        assert "404" in op["responses"]
+
+        
+        schema_ref = op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+        assert schema_ref.endswith("/StatusResponse")
+        assert "StatusResponse" in spec["components"]["schemas"]
+
+
+class TestGetStatus:
+    """Behavior of GET /api/v1/{session_id}/status (SQLite fallback path)."""
+
+    def test_pending_returns_200(self, status_db):
+        session_id, _ = status_db
+        response = client.get(f"/api/v1/{session_id}/status")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "PENDING"
+
+    def test_failed_returns_200(self, status_db):
+        session_id, db_path = status_db
+        with sqlite3.connect(db_path) as db:
+            SqliteSessionRepository(db).update_status(session_id, SessionStatus.FAILED)
+
+        response = client.get(f"/api/v1/{session_id}/status")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "FAILED"
+
+    def test_done_returns_301_to_result(self, status_db):
+        session_id, db_path = status_db
+        with sqlite3.connect(db_path) as db:
+            SqliteSessionRepository(db).update_status(session_id, SessionStatus.DONE)
+
+        response = client.get(f"/api/v1/{session_id}/status", follow_redirects=False)
+        assert response.status_code == status.HTTP_301_MOVED_PERMANENTLY
+        assert response.headers["location"] == f"/api/v1/{session_id}/result"
+
+    def test_unknown_session_returns_404(self, status_db):
+        response = client.get(f"/api/v1/{uuid.uuid4()}/status")
+        assert response.status_code == status.HTTP_404_NOT_FOUND

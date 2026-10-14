@@ -1,18 +1,43 @@
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 
-export function makeBboxKey(f: VulnerabilityFinding) {
-  return `${f.page_no}|${f.bbox.l}|${f.bbox.t}|${f.bbox.r}|${f.bbox.b}`;
+type Box = VulnerabilityFinding["bbox"];
+
+const isEmptyBox = (b: Box) =>
+  Math.abs(b.r - b.l) === 0 || Math.abs(b.t - b.b) === 0;
+
+export function getBoxes(f: VulnerabilityFinding): Box[] {
+  return f.bboxes?.length ? f.bboxes : [f.bbox];
+}
+export function isUnanchored(f: VulnerabilityFinding) {
+  if (f.scope === "document") return true;
+  return getBoxes(f).every(isEmptyBox);
+}
+
+export function categoryOf(f: VulnerabilityFinding) {
+  // Missing section: Overview -> "Missing Section"
+  return f.title.includes(":") ? f.title.split(":")[0].trim() : "Other";
+}
+
+export function shortTitle(f: VulnerabilityFinding) {
+  return f.title.includes(":") ? f.title.split(":").slice(1).join(":").trim() : f.title;
+}
+
+export function makeBboxKey(page: number, b: Box) {
+  return `${page}|${b.l}|${b.t}|${b.r}|${b.b}`;
 }
 
 export function groupByBbox(findings: VulnerabilityFinding[], pageNumber: number) {
-  const map = new Map<string, VulnerabilityFinding[]>();
+  const map = new Map<string, { bbox: Box; findings: VulnerabilityFinding[] }>();
 
   for (const f of findings) {
-    if (f.page_no !== pageNumber) continue;
-    const key = makeBboxKey(f);
-    const group = map.get(key) ?? [];
-    group.push(f);
-    map.set(key, group);
+    for (const b of getBoxes(f)) {
+      const page = b.page_no ?? f.page_no;
+      if (page !== pageNumber || isEmptyBox(b)) continue;
+      const key = makeBboxKey(page, b);
+      const entry = map.get(key) ?? { bbox: b, findings: [] };
+      if (!entry.findings.includes(f)) entry.findings.push(f);
+      map.set(key, entry);
+    }
   }
 
   return map;
