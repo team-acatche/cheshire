@@ -14,10 +14,10 @@ export interface ToneStyle {
 }
 
 export const TONES: Record<Tone, ToneStyle> = {
-  major:       { label: "Major",       hint: "Blocks approval, fix first",       rank: 3, rgb: "220 38 38",  text: "text-red-600 dark:text-red-400",       onSolid: "#fff",    icon: OctagonAlert },
-  minor:       { label: "Minor",       hint: "Compliance gap, should be fixed",  rank: 2, rgb: "234 179 8",  text: "text-yellow-700 dark:text-yellow-400", onSolid: "#422006", icon: TriangleAlert },
+  major:       { label: "Major Nonconformance",       hint: "Blocks approval, fix first",       rank: 3, rgb: "220 38 38",  text: "text-red-600 dark:text-red-400",       onSolid: "#fff",    icon: OctagonAlert },
+  minor:       { label: "Minor Nonconformance",       hint: "Compliance gap, should be fixed",  rank: 2, rgb: "234 179 8",  text: "text-yellow-700 dark:text-yellow-400", onSolid: "#422006", icon: TriangleAlert },
   missing:     { label: "Missing",     hint: "Required content is absent",       rank: 2, rgb: "234 179 8",  text: "text-yellow-700 dark:text-yellow-400", onSolid: "#422006", icon: FileWarning },
-  observation: { label: "Observation", hint: "Advisory, nice to improve",        rank: 1, rgb: "0 51 178",   text: "text-blue-700 dark:text-blue-400",     onSolid: "#fff",    icon: Info },
+  observation: { label: "Opportunies for Improvement", hint: "Advisory, nice to improve",        rank: 1, rgb: "0 51 178",   text: "text-blue-700 dark:text-blue-400",     onSolid: "#fff",    icon: Info },
 };
 
 export const TONE_ORDER: Tone[] = ["major", "minor", "observation", "missing"];
@@ -50,9 +50,9 @@ export interface ConfidenceLevel { bars: 1 | 2 | 3; label: string; hint: string 
 
 export function confidenceLevel(c?: number | null): ConfidenceLevel | null {
   if (c == null) return null;
-  if (c >= 0.95) return { bars: 3, label: "Verified", hint: "directly observed in the document" };
-  if (c >= 0.75) return { bars: 2, label: "Likely",   hint: "clear textual or visual evidence" };
-  return { bars: 1, label: "Possible", hint: "inferred from context, double-check it" };
+  if (c >= 0.95) return { bars: 3, label: "Verified", hint: "clear noncompliance; evidence for the finding is clear and well-defined" };
+  if (c >= 0.75) return { bars: 2, label: "Likely",   hint: "clear noncompliance, but the evidence requires some interpretation" };
+  return { bars: 1, label: "Possible", hint: "inferred/ambiguous; might be noncompliance, but the evidence is unclear or questionable" };
 }
 
 export const isTentative = (f: VulnerabilityFinding) => f.confidence != null && f.confidence < 0.75;
