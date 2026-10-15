@@ -1,5 +1,7 @@
+import type { CSSProperties } from "react";
 import type { VulnerabilityFinding, BoundingBox } from "@/types/VulnerabilityFinding";
 import { pdfToPixels } from "./helpers";
+import { TONES, dominantTone, isTentative } from "./severity";
 
 interface FindingOverlayProps {
   bboxKey: string;
@@ -9,12 +11,7 @@ interface FindingOverlayProps {
   pageHeightPt: number;
   isActive: boolean;
   zIndex: number;
-  onClick: (
-    group: VulnerabilityFinding[],
-    bboxKey: string,
-    el: HTMLElement,
-    e: React.MouseEvent 
-  ) => void;
+  onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement, e: React.MouseEvent) => void;
 }
 
 export function FindingOverlay({
@@ -23,8 +20,14 @@ export function FindingOverlay({
   const rect = pdfToPixels(bbox, pageHeightPt, scale);
   const hasMultiple = findings.length > 1;
 
+  const tone = dominantTone(findings);
+  const { rgb, onSolid, label } = TONES[tone];
+  const tentative = findings.every(isTentative);
+
   return (
     <div
+      aria-label={`${label} finding`}
+      className={tone === "major" && !isActive ? "sev-pulse" : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onClick(findings, bboxKey, e.currentTarget, e);
@@ -38,18 +41,13 @@ export function FindingOverlay({
         pointerEvents: "all",
         cursor: "pointer",
         borderRadius: 3,
-        background: isActive
-          ? "rgba(0, 51, 178, 0.25)"
-          : "rgba(0, 51, 178, 0.12)",
-        borderBottom: isActive
-          ? "2.5px solid rgba(0, 51, 178, 0.9)"
-          : "2px solid rgba(0, 51, 178, 0.55)",
-        boxShadow: isActive
-          ? "0 0 0 1.5px rgba(0, 51, 178, 0.35)"
-          : "none",
+        background: `rgb(${rgb} / ${isActive ? 0.28 : 0.14})`,
+        borderBottom: `${isActive ? 2.5 : 2}px ${tentative ? "dashed" : "solid"} rgb(${rgb} / ${isActive ? 0.95 : 0.65})`,
+        boxShadow: isActive ? `0 0 0 1.5px rgb(${rgb} / 0.4)` : "none",
         transition: "all 150ms ease",
         zIndex,
-      }}
+        "--sev-rgb": rgb,
+      } as CSSProperties}
     >
       {hasMultiple && (
         <div
@@ -57,8 +55,8 @@ export function FindingOverlay({
             position: "absolute",
             top: -8,
             right: -8,
-            background: isActive ? "rgb(0, 51, 178)" : "rgb(0, 82, 224)",
-            color: "white",
+            background: `rgb(${rgb})`,
+            color: onSolid,
             borderRadius: "9999px",
             fontSize: 10,
             fontWeight: 700,
