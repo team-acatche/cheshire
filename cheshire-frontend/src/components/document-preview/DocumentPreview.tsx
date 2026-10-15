@@ -28,6 +28,8 @@ import { FindingPopover } from "./FindingPopover";
 import { PdfPageSkeleton } from "./PdfPageSkeleton";
 import { isUnanchored } from "./helpers";
 import { DocumentLevelFindings } from "./DocumentLevelFindings";
+import { SeverityLegend } from "./SeverityLegend";
+import { TONES, bySeverity, countByTone, dominantTone, getTone, toneColor, type Tone } from "./severity";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -245,16 +247,31 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     setSearchOpen(false); setSearchQuery("");
   }, []);
   
-  // split once
-  const { anchored, documentLevel } = useMemo(() => ({
-    anchored: findings.filter((f) => !isUnanchored(f)),
-    documentLevel: findings.filter(isUnanchored),
-  }), [findings]);
+  // severity filter (driven by the legend chips)
+  const [hiddenTones, setHiddenTones] = useState<Set<Tone>>(new Set());
+  const toneCounts = useMemo(() => countByTone(findings), [findings]);
+
+  const toggleTone = useCallback((t: Tone) => {
+    setActive(null);
+    setHiddenTones((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  }, []);
+
+  const { anchored, documentLevel } = useMemo(() => {
+    const shown = findings.filter((f) => !hiddenTones.has(getTone(f)));
+    return {
+      anchored: shown.filter((f) => !isUnanchored(f)),
+      documentLevel: shown.filter(isUnanchored),
+    };
+  }, [findings, hiddenTones]);
 
   // ── Findings grouping (memoised) ───────────────────────────────────────────
   const groupedFindings = useMemo(() => {
     return [...findings]
-      .sort((a, b) => a.page_no - b.page_no)
+      .sort((a, b) => a.page_no - b.page_no || bySeverity(a, b))
       .reduce((acc, f) => {
         const key = isUnanchored(f) ? "Document-wide" : String(f.page_no);
         (acc[key] ??= []).push(f);
@@ -322,7 +339,6 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
       {/* Toolbar — only once the PDF has loaded */}
       {isPdf && numPages > 0 && (
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
-
           {/* Left — findings badge OR loading indicator */}
           <div className="justify-self-start flex items-center gap-2">
             {findingsLoading ? (
@@ -334,7 +350,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               <Popover>
                 <PopoverTrigger asChild>
                   <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
-                    <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
+                    <ShieldAlert className={`h-3.5 w-3.5 ${findings.length ? TONES[dominantTone(findings)].text : "text-muted-foreground"}`} />
                     <span className="text-xs text-muted-foreground">Total Findings</span>
                     <span className="text-sm font-semibold text-foreground">{findings.length}</span>
                   </button>
@@ -354,9 +370,12 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                             onClick={() => 
                               isUnanchored(finding) ? handleDocLevelSelect(finding) :scrollToPageNumber(finding.page_no)
                             }
-                            className="w-full px-3 py-2 text-left hover:bg-amber-100/60 transition-colors"
+                            className="w-full px-3 py-2 text-left hover:bg-muted transition-colors"
                           >
-                            <div className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</div>
+                            <div className="flex items-center gap-2">
+                            <span className="size-2 shrink-0 rounded-full" style={{ background: toneColor(getTone(finding)) }} />
+                            <span className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</span>
+                          </div>
                           </button>
                         ))}
                       </div>
@@ -372,7 +391,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                 onSelect={handleDocLevelSelect}
               />
             )}
-          </div>
+          </div>       
+
 
           {/* Center — zoom */}
           <div className="justify-self-center">
@@ -412,6 +432,9 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             </button>
           </div>
         </div>
+      )}
+      {isPdf && numPages > 0 && !findingsLoading && findings.length > 0 && (
+        <SeverityLegend counts={toneCounts} hidden={hiddenTones} onToggle={toggleTone} />
       )}
 
       {displayFileName.toLowerCase().endsWith(".docx") && (

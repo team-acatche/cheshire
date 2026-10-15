@@ -24,14 +24,14 @@ export function SeverityLegend({ counts, hidden, onToggle }: Props) {
             title={`${s.hint}. Click to ${off ? "show" : "hide"}.`}
             onClick={() => onToggle(tone)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all",
-              n === 0 && "cursor-not-allowed opacity-40",
-              off && "opacity-50 line-through"
+            "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs transition-all",
+            n === 0 && "cursor-not-allowed opacity-40",
+            off && "opacity-50 line-through"
             )}
             style={off ? undefined : { background: toneColor(tone, 0.1), borderColor: toneColor(tone, 0.4) }}
           >
             <Icon className={cn("size-3.5", s.text)} />
-            <span>{s.label}</span>
+            <span className="hidden @3xl:inline">{s.label}</span>
             <span className="font-semibold tabular-nums">{n}</span>
           </button>
         );
