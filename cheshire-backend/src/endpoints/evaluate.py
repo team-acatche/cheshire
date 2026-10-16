@@ -158,7 +158,24 @@ def _run_evaluation(
 
 # ── POST /evaluate ─────────────────────────────────────────────────────────────
 
-@evaluate_router.post("/evaluate", status_code=status.HTTP_202_ACCEPTED, response_model=SubmitResponse)
+async def is_true_pdf(file: UploadFile) -> bool:
+    import magic
+
+    header = await file.read(2048)
+    await file.seek(0) # reset file cursor
+    mime_type = magic.from_buffer(header, mime=True)
+    return file.filename.endswith(".pdf") and mime_type == "application/pdf"
+
+
+@evaluate_router.post("/evaluate",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SubmitResponse,
+    responses={
+        status.HTTP_400_BAD_REQUEST: {"model": ErrorResponse, "description": "Invalid file type."},
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Invalid session ID."},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"model": ErrorResponse, "description": "File evaluation unsuccessful."}
+    }
+)
 async def evaluate_document(
     background_tasks: BackgroundTasks,
     config: Annotated[PipelineConfig, Depends(resolve_config)],
@@ -168,6 +185,13 @@ async def evaluate_document(
     uploaded_document: Annotated[UploadFile, File(description="The document to be evaluated")],
     session_id: Annotated[Optional[str], Query(description="The session ID for the document. Only set if the uploaded document is an update from the previous evaluation. If None, a new session will be created.")] = None,
 ) -> SubmitResponse:
+    # filetype validation
+    if not await is_true_pdf(uploaded_document):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type. Only PDF files are supported.",
+        )
+
     user_id = current_user.user_id
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
     _session_id: str = session_id or str(uuid.uuid4())
