@@ -5,6 +5,7 @@ import LandingPage from "./landingpage.tsx"
 import App from "./App.tsx"
 import { getStoredUser, type AuthUser } from "./lib/auth"
 import { ThemeProvider } from "./lib/theme"
+import { Toaster } from "./components/ui/sonner"
 
 function Root() {
   // Restore session from localStorage so a page refresh doesn't log the user out.
@@ -21,6 +22,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
       <Root />
+      <Toaster richColors position="top-right" />
     </ThemeProvider>
   </StrictMode>
 )

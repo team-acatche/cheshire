@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/resizable"
 import Account from "./components/account"
 import SettingsModal from "./components/settings-modal"
+import { toast } from "sonner"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -292,12 +293,14 @@ export default function App({ user, onLogout }: AppProps) {
     //Client-side validation
     const validation = await validatePdf(fileInput)
     if (!validation.ok) {
-      alert(validation.error)
+      toast.error("Invalid file", { description: validation.error })
       return
     }
 
     // 1. Submit immediately
-    const session_id = await submitEvaluation(fileInput, msg => alert(msg))
+    const session_id = await submitEvaluation(fileInput, msg =>
+      toast.error("Upload failed", { description: msg })
+    )
     if (!session_id) return
 
     // 2. Add to sidebar with status: "processing"
