@@ -379,7 +379,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                       </ReactMarkdown>
                     )
                     return msg.role === "user" ? content : (
-                      <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden break-words">
+                      <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden wrap-break-word">
                         {content}
                       </div>
                     )
@@ -423,7 +423,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       </div>
 
       {/* Input area — position relative so the scroll button can be anchored to it */}
-      <div className="relative sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
+      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
 
         {/* Scroll-to-bottom button */}
         {showScrollDown && (
