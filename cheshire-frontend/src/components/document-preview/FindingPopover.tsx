@@ -27,6 +27,8 @@ interface FindingPopoverProps {
 export function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverProps) {
   const [page, setPage] = useState(0);
   const finding = findings[page];
+  const recommendations = finding.recommendations ?? [];
+  const webReferences = finding.web_references ?? [];
   const total = findings.length;
 
   const pages = [...new Set(
@@ -163,13 +165,13 @@ export function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverPr
             {finding.description}
           </p>
 
-          {finding.recommendations.length > 0 && (
+          {recommendations.length > 0 && (
             <div>
               <p className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1.5">
                 Recommendations
               </p>
               <ul className="space-y-1.5">
-                {finding.recommendations.map((rec, i) => (
+                {recommendations.map((rec, i) => (
                   <li
                     key={i}
                     className="flex gap-2 text-xs text-zinc-700 dark:text-zinc-300 leading-snug"
@@ -182,13 +184,14 @@ export function FindingPopover({ findings, anchorEl, onClose }: FindingPopoverPr
             </div>
           )}
 
-          {finding.web_references.length > 0 && (
+
+          {webReferences.length > 0 && (
             <div>
               <p className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1.5">
                 References
               </p>
               <ul className="space-y-1">
-                {finding.web_references.map((url, i) => (
+                {webReferences.map((url, i) => (
                   <li key={i}>
                     <a
                       href={url}

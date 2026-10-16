@@ -14,6 +14,7 @@ import {
   pollEvaluation,
   getSessionResults,
 } from "./lib/helpers/evaluate_document"
+import { validatePdf } from "./lib/helpers/validate_pdf"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import { sortChatsByLatest } from "@/lib/sortChatsByLatest"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/resizable"
 import Account from "./components/account"
 import SettingsModal from "./components/settings-modal"
+import { toast } from "sonner"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -288,17 +290,18 @@ export default function App({ user, onLogout }: AppProps) {
 
   // Upload
   const handleFileUpload = async (fileInput: File) => {
-    if (fileInput.type !== "application/pdf") {
-      alert("Only PDF files are supported.")
+    //Client-side validation
+    const validation = await validatePdf(fileInput)
+    if (!validation.ok) {
+      toast.error("Invalid file", { description: validation.error })
       return
     }
 
     // 1. Submit immediately
-    const session_id = await submitEvaluation(fileInput)
-    if (!session_id) {
-      alert("Failed to submit document for evaluation.")
-      return
-    }
+    const session_id = await submitEvaluation(fileInput, msg =>
+      toast.error("Upload failed", { description: msg })
+    )
+    if (!session_id) return
 
     // 2. Add to sidebar with status: "processing"
     const pendingChat: Chat = {

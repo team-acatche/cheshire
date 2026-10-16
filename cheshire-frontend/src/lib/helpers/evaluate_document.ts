@@ -34,7 +34,10 @@ const POLL_TIMEOUT_MS = 40 * 60 * 1_000
 // ── Submit only ───────────────────────────────────────────────────────────────
 // This will be called first to get the session_id immediately so the sidebar can show it.
 
-export async function submitEvaluation(file: File): Promise<string | null> {
+export async function submitEvaluation(
+  file: File,
+  onError?: (message: string) => void,
+): Promise<string | null> {
   const formData = new FormData()
   formData.append("uploaded_document", file)
 
@@ -44,13 +47,18 @@ export async function submitEvaluation(file: File): Promise<string | null> {
       body: formData,
     })
     if (!res.ok) {
-      console.error("evaluate submit error:", await res.text().catch(() => res.statusText))
+      const err = await res.json().catch(() => null)
+      const message =
+        typeof err?.detail === "string" ? err.detail : res.statusText || "Upload failed."
+      console.error("evaluate submit error:", message)
+      onError?.(message)
       return null
     }
     const data = (await res.json()) as SubmitResponse
     return data.session_id
   } catch (err) {
     console.error("evaluate submit network error:", err)
+    onError?.("Network error. Please check your connection and try again.")
     return null
   }
 }

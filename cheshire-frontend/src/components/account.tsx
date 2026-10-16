@@ -5,6 +5,7 @@ import { updateStoredUser, authFetch } from "@/lib/auth"
 import AvatarCropperModal from "@/components/avatar-cropper-modal"
 import { formatTimestamp } from "@/lib/helpers/format_timestamps"
 import { X } from "lucide-react"
+import { toast } from "sonner"
 
 async function fetchSessionTimestamp(sessionId: string): Promise<string | null> {
   return authFetch(`/api/v1/${sessionId}/latest-timestamp`)
@@ -125,7 +126,7 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
             if (!file) return
 
             if (file.size > 5 * 1024 * 1024) {
-              alert("File size exceeds 5MB limit.")
+              toast.error("File size exceeds 5MB limit.")
               e.target.value = ""
               return
             }
