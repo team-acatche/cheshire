@@ -33,7 +33,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [, setUnreadCount] = useState(0)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const lastEventIdRef = useRef<string | null>(null)
