@@ -9,7 +9,7 @@ export async function validatePdf(file: File): Promise<PdfValidation> {
     }
 
     if (file.size === 0) {
-        return { ok: false, error: "This file is is empty." }
+        return { ok: false, error: "This file is empty." }
     }
 
     if (file.size > MAX_SIZE_BYTES) {
