@@ -10,10 +10,11 @@ interface HighlightLayerProps {
   findings: VulnerabilityFinding[];
   activeFindings: VulnerabilityFinding[] | null;
   onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement) => void;
+  focusedFinding: VulnerabilityFinding | null;
 }
 
 export function HighlightLayer({
-  pageNumber, pageMeta, findings, activeFindings, onClick,
+  pageNumber, pageMeta, findings, activeFindings, onClick, focusedFinding
 }: HighlightLayerProps) {
   const layerRef = useRef<HTMLDivElement>(null);
   const scale = pageMeta.renderedWidth / pageMeta.originalWidth;
@@ -73,7 +74,12 @@ export function HighlightLayer({
           findings={group}
           scale={scale}
           pageHeightPt={pageMeta.originalHeight}
-          isActive={!!activeFindings?.some((f) => group.includes(f))}
+          isActive={
+            focusedFinding
+              ? group.includes(focusedFinding)
+              : !!activeFindings?.some((f) => group.includes(f))
+          }
+          focusedFinding={focusedFinding}
           zIndex={20 + i}
           onClick={handleClick}
         />

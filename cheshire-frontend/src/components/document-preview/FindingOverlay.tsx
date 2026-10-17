@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { VulnerabilityFinding, BoundingBox } from "@/types/VulnerabilityFinding";
 import { pdfToPixels } from "./helpers";
-import { TONES, dominantTone, isTentative } from "./severity";
+import { TONES, dominantTone, getTone, isTentative } from "./severity";
 
 interface FindingOverlayProps {
   bboxKey: string;
@@ -12,17 +12,20 @@ interface FindingOverlayProps {
   isActive: boolean;
   zIndex: number;
   onClick: (group: VulnerabilityFinding[], bboxKey: string, el: HTMLElement, e: React.MouseEvent) => void;
+  focusedFinding?: VulnerabilityFinding | null;
 }
 
 export function FindingOverlay({
-  bboxKey, bbox, findings, scale, pageHeightPt, isActive, zIndex, onClick,
+  bboxKey, bbox, findings, scale, pageHeightPt, isActive, zIndex, onClick, focusedFinding
 }: FindingOverlayProps) {
   const rect = pdfToPixels(bbox, pageHeightPt, scale);
   const hasMultiple = findings.length > 1;
 
-  const tone = dominantTone(findings);
+  const tone = isActive && focusedFinding ? getTone(focusedFinding) : dominantTone(findings);
   const { rgb, onSolid, label } = TONES[tone];
-  const tentative = findings.every(isTentative);
+  const tentative = isActive && focusedFinding
+    ? isTentative(focusedFinding)
+    : findings.every(isTentative);
 
   return (
     <div

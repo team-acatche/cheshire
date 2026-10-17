@@ -25,7 +25,7 @@ export function ConfidenceMeter({ value, className }: {value?: number | null; cl
     if (!lvl || value == null) return null;
     return (
         <span
-        title={`${Math.round(value * 100)} confidence: ${lvl.hint}`}
+        title={`${Math.abs(value)}: ${lvl.hint}`}
         className={cn("inline-flex items-center gap-1.5 text-[10px] font-medium text-zinc-400", className)}
         >
             <span aria-hidden className="flex-items-end gap-px">

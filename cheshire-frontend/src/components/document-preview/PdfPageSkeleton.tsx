@@ -4,7 +4,7 @@ export function PdfPageSkeleton({ zoomLevel = 1 }: { zoomLevel?: number }) {
   return (
     <div className="flex justify-center py-6">
       <div
-        className="w-full max-w-[700px] rounded-md border bg-white p-6 shadow-lg overflow-hidden"
+        className="w-full max-w-175 rounded-md border bg-white p-6 shadow-lg overflow-hidden"
         style={{
           height: `${950 * zoomLevel}px`,
         }}

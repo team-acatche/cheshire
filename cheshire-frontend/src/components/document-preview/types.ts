@@ -11,4 +11,5 @@ export interface ActiveGroup {
   findings: VulnerabilityFinding[];
   anchorEl: HTMLElement;
   bboxKey: string;
+  focused?: VulnerabilityFinding;
 }

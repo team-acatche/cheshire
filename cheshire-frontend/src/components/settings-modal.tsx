@@ -293,7 +293,7 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
     >
       <div
         ref={modalRef}
-        className="relative flex h-162.5 max-h-[90vh] w-[860px] max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/[0.08]"
+        className="relative flex h-162.5 max-h-[90vh] w-215 max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/80"
       >
         {/* ── Left sidebar ─────────────────────────────────────────────── */}
         <div className="flex w-50 shrink-0 flex-col border-r border-border bg-muted/20 px-2 py-4">

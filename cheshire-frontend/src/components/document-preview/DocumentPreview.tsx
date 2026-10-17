@@ -299,6 +299,10 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     setActive({ findings: [f], bboxKey: `doc|${f.title}`, anchorEl: docBtnRef.current });
   }, []);
 
+  const handleFocusChange = useCallback((f: VulnerabilityFinding | null) => {
+    setActive((prev) => (prev ? { ...prev, focused: f ?? undefined } : prev));
+  }, []);
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -520,6 +524,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         pageMeta={pageMetaMap[pageNumber]}
                         findings={anchored}
                         activeFindings={active?.findings ?? null}
+                        focusedFinding={active?.focused ?? null}
                         onClick={handleClick}
                       />
                     )}
@@ -537,6 +542,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           findings={active.findings}
           anchorEl={active.anchorEl}
           onClose={() => setActive(null)}
+          onFocusChange={handleFocusChange}
         />
       )}
     </>

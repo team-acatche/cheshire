@@ -11,13 +11,19 @@ interface FindingPopoverProps {
   findings: VulnerabilityFinding[];
   anchorEl: HTMLElement;
   onClose: () => void;
+  onFocusChange?: (f: VulnerabilityFinding | null) => void;
 }
 
-export function FindingPopover({ findings: incoming, anchorEl, onClose }: FindingPopoverProps) {
+export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusChange }: FindingPopoverProps) {
   // Most severe first
   const findings = useMemo(() => [...incoming].sort(bySeverity), [incoming]);
   const [page, setPage] = useState(0);
   const finding = findings[page];
+
+  useEffect(() => {
+    onFocusChange?.(finding);
+  }, [finding, onFocusChange]);
+
   const recommendations = finding.recommendations ?? [];
   const webReferences = finding.web_references ?? [];
   const total = findings.length;

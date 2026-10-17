@@ -42,7 +42,7 @@ export const DocumentLevelFindings = forwardRef<HTMLButtonElement, Props>(
           </button>
         </PopoverTrigger>
 
-        <PopoverContent className="w-[360px] p-0 gap-0" align="start">
+        <PopoverContent className="w-90 p-0 gap-0" align="start">
           <div className="px-3 py-2 border-b bg-muted/40">
             <div className="text-sm font-semibold">Document-wide findings</div>
             <div className="text-xs text-muted-foreground">Not tied to a specific spot in the PDF</div>
