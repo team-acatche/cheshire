@@ -7,6 +7,7 @@ import { Document, Page, pdfjs } from "react-pdf";
 import {
   FileText,
   Search,
+  MessageSquareText,
   ChevronRight,
   ChevronLeft,
   Plus,
@@ -54,11 +55,12 @@ interface DocumentPreviewProps {
   src: File | string;
   findings: VulnerabilityFinding[];
   fileName?: string;
-  /** True while the AI audit is still running — shows a banner instead of the findings count */
   findingsLoading?: boolean;
+  chatOpen?: boolean;
+  onToggleChat?: () => void;
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -312,16 +314,29 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           <FileText className="h-4 w-4 shrink-0" />
           <span className="truncate">{displayFileName}</span>
         </div>
-        <button
-          onClick={() => {
-            if (searchOpen) closeSearch();
-            else { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50); }
-          }}
-          title="Search (Ctrl+F)"
-          className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
-        >
-          <Search className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => {
+              if (searchOpen) closeSearch();
+              else { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50); }
+            }}
+            title="Search (Ctrl+F)"
+            className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
+          >
+            <Search className="h-4 w-4" />
+          </button>
+
+          {onToggleChat && (
+            <button
+              onClick={onToggleChat}
+              title={chatOpen ? "Hide chatbot" : "Show chatbot"}
+              aria-pressed={chatOpen}
+              className={`p-1 rounded hover:bg-muted transition-colors ${chatOpen ? "text-foreground bg-muted" : ""}`}
+            >
+              <MessageSquareText className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {searchOpen && (

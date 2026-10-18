@@ -8,6 +8,7 @@ import {
   SidebarTrigger,
   SidebarInset,
 } from "./components/ui/sidebar"
+import { usePanelRef } from "react-resizable-panels"
 import DocumentPreview from "./components/document-preview/DocumentPreview"
 import {
   submitEvaluation,
@@ -98,6 +99,22 @@ export default function App({ user, onLogout }: AppProps) {
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // ── Chat panel state ─────────────────────────────────────────────────────────
+  const [chatOpen, setChatOpen] = useState(false)
+  const chatPanelRef = usePanelRef()
+
+  const closeChat = () => {
+    chatPanelRef.current?.collapse()
+    setChatOpen(false)
+  }
+
+  const toggleChat = () => {
+    const panel = chatPanelRef.current
+    if (!panel) return
+    if (panel.isCollapsed()) panel.expand()
+    else panel.collapse()
+  }
 
   // Track active polling tasks so we can resume them after refresh
   const pollingRef = useRef<Set<string>>(new Set())
@@ -193,12 +210,14 @@ export default function App({ user, onLogout }: AppProps) {
     setPage("chat")
     setCurrentSessionId(null)
     setFile(null)
+    closeChat()
   }
 
   const handleSelectChat = async (chat: Chat) => {
     setPage("chat")
     setCurrentSessionId(chat.session_id)
     setCurrentFileName(chat.title)
+    closeChat()
 
     if (chat.status === "processing") {
       setFindings([])
@@ -290,6 +309,7 @@ export default function App({ user, onLogout }: AppProps) {
 
   // Upload
   const handleFileUpload = async (fileInput: File) => {
+    closeChat()
     //Client-side validation
     const validation = await validatePdf(fileInput)
     if (!validation.ok) {
@@ -499,20 +519,35 @@ export default function App({ user, onLogout }: AppProps) {
                   orientation="horizontal"
                   className="h-full w-full min-w-0 overflow-hidden"
                 >
-                  <ResizablePanel defaultSize={60} minSize={30} className="min-w-0 overflow-hidden">
+                  <ResizablePanel id="doc" defaultSize="100%" minSize="30%" className="min-w-0 overflow-hidden">
                     <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden">
                       <DocumentPreview
                         src={file}
                         findings={findings}
                         fileName={currentFileName}
                         findingsLoading={findingsLoading}
+                        chatOpen={chatOpen}
+                        onToggleChat={toggleChat}
                       />
                     </CardContent>
                   </ResizablePanel>
 
-                  {!settingsOpen && <ResizableHandle withHandle />}
+                  <ResizableHandle
+                    withHandle
+                    disabled={!chatOpen || settingsOpen}
+                    className={!chatOpen || settingsOpen ? "pointer-events-none opacity-0" : ""}
+                  />
 
-                  <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
+                  <ResizablePanel
+                    id="chat"
+                    panelRef={chatPanelRef}
+                    collapsible
+                    collapsedSize="0%"
+                    defaultSize="0%"
+                    minSize="30%"
+                    onResize={() => setChatOpen(!chatPanelRef.current?.isCollapsed())}
+                    className="min-w-0 overflow-hidden"
+                  >
                     {currentSessionId && (
                       <Chatbot
                         key={currentSessionId}
