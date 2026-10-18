@@ -143,10 +143,12 @@ export default function App({ user, onLogout }: AppProps) {
       }
 
       setChats(prev =>
-        prev.map(c =>
-          c.session_id === session_id
-            ? { ...c, findings: response.vulnerabilities, status: "done" }
-            : c
+        sortChatsByLatest(
+          prev.map(c =>
+            c.session_id === session_id
+              ? { ...c, findings: response.vulnerabilities, status: "done" }
+              : c
+          )
         )
       )
 
@@ -182,7 +184,7 @@ export default function App({ user, onLogout }: AppProps) {
             title: s.title,
             findings: [],
             status: toFrontendStatus(s.status ?? "done"),
-            latestTimestamp,
+            latestTimestamp: latestTimestamp ?? s.created_at ?? null,
           } satisfies Chat
         })
       )
@@ -224,7 +226,7 @@ export default function App({ user, onLogout }: AppProps) {
       setFindingsLoading(true)
 
       const blobUrl = await fetchDocumentBlob(chat.session_id)
-      setFile(blobUrl)
+      if (blobUrl) setFile(blobUrl)
       return
     }
 
