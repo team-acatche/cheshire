@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 import aiofiles
@@ -10,7 +9,6 @@ import uuid
 from datetime import datetime
 import re
 import sqlite3
-import shutil
 
 from fastapi import (
     APIRouter,
@@ -70,15 +68,17 @@ class ErrorResponse(BaseModel):
 
 def _run_evaluation(
     session_id: str,
-    tmp_file_path: Path,
+    document_path: Path,
     filename: str,
     user_id: str,
-    user_path: Path,
     user_db_path: Path,
     config: PipelineConfig,
 ) -> None:
     """
     Runs the evaluation in a background thread.
+
+    The document is already persisted at upload time (see evaluate_document),
+    so it stays retrievable via GET /{session_id}/document while this runs.
 
     Status transitions written to SQLite:
         PENDING → PROCESSING (immediately on start)
@@ -106,17 +106,10 @@ def _run_evaluation(
     _update_session_status(SessionStatus.PROCESSING)
 
     try:
-        results = asyncio.run(evaluate_file(tmp_file_path, config))
+        results = asyncio.run(evaluate_file(document_path, config))
 
         if results is None:
             raise RuntimeError("Evaluation returned no results")
-
-        # Persist document file
-        document_path = user_path / session_id / "documents"
-        saved_filename = f"{datetime.now().isoformat()}__{filename}"
-        os.makedirs(document_path, exist_ok=True)
-        shutil.move(tmp_file_path, document_path / saved_filename)
-        logger.info(f"session({session_id}): document saved to {document_path}.")
 
         # Init vector stores
         KnowledgeRepositoryFactory.create_repositories(
@@ -152,8 +145,6 @@ def _run_evaluation(
             job.status = JobStatus.FAILED
             job.error = str(exc)
             job_store.update(job)
-
-        tmp_file_path.unlink(missing_ok=True)
 
 
 # ── POST /evaluate ─────────────────────────────────────────────────────────────
@@ -196,14 +187,17 @@ async def evaluate_document(
     filename: str = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", uploaded_document.filename or "upload.pdf")
     _session_id: str = session_id or str(uuid.uuid4())
 
-    # Buffer upload before spawning background task
-    tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    tmp.write(await uploaded_document.read())
-    tmp.flush()
-    tmp.close()
-    tmp_path = Path(tmp.name)
+    # Save the upload straight into the session's documents folder so it can
+    # be served (GET /{session_id}/document) while the evaluation is running.
+    document_dir = user_path / _session_id / "documents"
+    os.makedirs(document_dir, exist_ok=True)
+    saved_filename = f"{datetime.now().isoformat()}__{filename}"
+    saved_path = document_dir / saved_filename
 
-    if not tmp_path.exists():
+    with open(saved_path, "wb") as f:
+        f.write(await uploaded_document.read())
+
+    if not saved_path.exists():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save uploaded document",
@@ -213,8 +207,8 @@ async def evaluate_document(
     job_store.create(key=_session_id)
 
     # Create / update session record in SQLite with status=PENDING.
-    # This is the key change: status is now durable from the moment the
-    # file lands, so the frontend can reconstruct it after any refresh.
+    # Status is durable from the moment the file lands, so the frontend can
+    # reconstruct it after any refresh.
     with sqlite3.connect(user_db_path) as session_db:
         session_repo = SqliteSessionRepository(session_db)
         if session_id and session_repo.get_session(session_id):
@@ -229,10 +223,9 @@ async def evaluate_document(
     background_tasks.add_task(
         _run_evaluation,
         session_id=_session_id,
-        tmp_file_path=tmp_path,
+        document_path=saved_path,
         filename=filename,
         user_id=user_id,
-        user_path=user_path,
         user_db_path=user_db_path,
         config=config,
     )
