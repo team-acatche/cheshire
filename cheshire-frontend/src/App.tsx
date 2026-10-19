@@ -95,6 +95,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [findingsLoading, setFindingsLoading] = useState(false)
   const [chats, setChats] = useState<Chat[]>([])
+  const [chatsLoading, setChatsLoading] = useState(true)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
   const [page, setPage] = useState<"chat" | "account">("chat")
@@ -174,29 +175,34 @@ export default function App({ user, onLogout }: AppProps) {
   // Load existing sessions on mount, then merge pending sessions
   useEffect(() => {
     const loadSessions = async () => {
-      const rawSessions = await fetchSessions()
+      try {
+        const rawSessions = await fetchSessions()
 
-      const chatsWithTimestamps = await Promise.all(
-        rawSessions.map(async (s: any) => {
-          const latestTimestamp = await fetchSessionTimestamp(s.session_id)
-          return {
-            session_id: s.session_id,
-            title: s.title,
-            findings: [],
-            status: toFrontendStatus(s.status ?? "done"),
-            latestTimestamp: latestTimestamp ?? s.created_at ?? null,
-          } satisfies Chat
-        })
-      )
+        const chatsWithTimestamps = await Promise.all(
+          rawSessions.map(async (s: any) => {
+            const latestTimestamp = await fetchSessionTimestamp(s.session_id)
+            return {
+              session_id: s.session_id,
+              title: s.title,
+              findings: [],
+              status: toFrontendStatus(s.status ?? "done"),
+              latestTimestamp: latestTimestamp ?? s.created_at ?? null,
+            } satisfies Chat
+          })
+        )
 
-      setChats(sortChatsByLatest(chatsWithTimestamps))
+        setChats(sortChatsByLatest(chatsWithTimestamps))
 
-      //Resume polling for any sessions that isn't done/failed
-      for (const chat of chatsWithTimestamps) {
-        if (chat.status === "processing") {
-          resumePolling(chat.session_id)
+        //Resume polling for any sessions that isn't done/failed
+        for (const chat of chatsWithTimestamps) {
+          if (chat.status === "processing") {
+            resumePolling(chat.session_id)
+          }
         }
+      } finally {
+        setChatsLoading(false)
       }
+      
     }
 
 
@@ -391,6 +397,7 @@ export default function App({ user, onLogout }: AppProps) {
       <ChatPage
         onNewChat={handleNewChat}
         chats={chats}
+        isLoading={chatsLoading}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
         profileImage={profileImage || "/User.png"}
