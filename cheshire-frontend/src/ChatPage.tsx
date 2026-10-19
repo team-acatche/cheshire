@@ -33,7 +33,9 @@ import { useState } from "react"
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog"
 import { HowToUseDialog } from "@/components/chat/HowToUseDialog"
 import { formatTimestamp } from "./lib/helpers/format_timestamps"
+import { Skeleton } from "@/components/ui/skeleton"
 
+const SKELETON_TITLE_WIDTHS = ["w-32", "w-40", "w-28", "w-36", "w-24", "w-32"]
 export type ChatStatus = "processing" | "done" | "failed"
 
 export type Chat = {
@@ -47,6 +49,7 @@ export type Chat = {
 interface ChatPageProps {
   onNewChat: () => void
   chats: Chat[]
+  isLoading?: boolean
   onSelectChat: (chat: Chat) => void
   onGoAccount: () => void
   profileImage: string
@@ -57,9 +60,12 @@ interface ChatPageProps {
   onOpenSettings: () => void
 }
 
+
+
 export default function ChatPage({
   onNewChat,
   chats,
+  isLoading = false,
   onSelectChat,
   onGoAccount,
   profileImage,
@@ -74,7 +80,9 @@ export default function ChatPage({
   const [renamingId, setRenamingId]   = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
-  const [showHowToUse, setShowHowToUse] = useState(false)
+  const [showHowToUse, setShowHowToUse] = useState(
+    () => !localStorage.getItem("cheshire_howto_seen")
+  )
 
   const startRename = (chat: Chat) => {
     setRenamingId(chat.session_id)
@@ -100,6 +108,7 @@ export default function ChatPage({
     setRenamingId(null)
     setRenameValue("")
   }
+
 
   return (
     <Sidebar>
@@ -134,11 +143,26 @@ export default function ChatPage({
         </div>
         <div className="documents-scroll mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <div className="flex flex-col gap-1">
-            {safeChats.length === 0 && (
+            {isLoading && (
+              <div
+                className="flex flex-col gap-1"
+                role="status"
+                aria-busy="true"
+                aria-label="Loading documents"
+              >
+                {SKELETON_TITLE_WIDTHS.map((width, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-md p-2">
+                    <Skeleton className="h-4 w-4 shrink-0" />
+                    <Skeleton className={`h-3.5 ${width}`} />
+                  </div>
+                ))}
+              </div>
+            )}
+            {!isLoading &&safeChats.length === 0 && (
               <div className="text-xs text-muted-foreground px-1">No chats yet</div>
             )}
 
-            {safeChats.map((chat) => {
+            {!isLoading &&safeChats.map((chat) => {
               const isProcessing = chat.status === "processing"
               const isFailed     = chat.status === "failed"
 
@@ -291,7 +315,10 @@ export default function ChatPage({
       />
       <HowToUseDialog
         isOpen={showHowToUse}
-        onClose={() => setShowHowToUse(false)}
+        onClose={() => {
+          localStorage.setItem("cheshire_howto_seen", "1")
+          setShowHowToUse(false)
+        }}
       />
     </Sidebar>
   )

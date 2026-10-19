@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Wrench, CircleUserRound, X, Check, Sun, Moon, Monitor } from "lucide-react";
+import { Wrench, CircleUserRound, X, Sun, Moon, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/lib/theme";
 import type { Chat } from "@/ChatPage";
@@ -24,20 +24,7 @@ function Divider() {
     return <hr className="border-border" />
 }
 
-function SavedBadge({ visible }: { visible: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-700",
-        "transition-opacity duration-300",
-        visible ? "opacity-100" : "opacity-0 pointer-events-none",
-      )}
-    >
-      <Check className="size-3" />
-      Saved
-    </span>
-  )
-}
+
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,7 +106,7 @@ function ThemeSelector() {
 // General panel
 // ─────────────────────────────────────────────────────────────────────────────
 
-function GeneralPanel({ onSaved }: { onSaved: () => void; onClose: () => void }) {
+function GeneralPanel() {
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">General</h2>
@@ -139,14 +126,6 @@ function GeneralPanel({ onSaved }: { onSaved: () => void; onClose: () => void })
           <ThemeSelector />
         </div>
       </section>
-
-      <Divider />
-
-      <div className="flex justify-end">
-        <Button size="sm" onClick={onSaved}>
-          Save changes
-        </Button>
-      </div>
     </div>
   )
 }
@@ -156,12 +135,10 @@ function GeneralPanel({ onSaved }: { onSaved: () => void; onClose: () => void })
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AccountPanel({
-  onSaved,
   onClose,
   chats,
   onDeleteAllChats,
 }: {
-  onSaved: () => void
   onClose: () => void
   chats: Chat[]
   onDeleteAllChats: () => Promise<void>
@@ -241,12 +218,6 @@ function AccountPanel({
           )}
         </div>
       </section>
-
-      <Divider />
-
-      <div className="flex justify-end">
-        <Button size="sm" onClick={onSaved}>Save changes</Button>
-      </div>
     </div>
   )
 }
@@ -264,8 +235,6 @@ export interface SettingsModalProps {
 
 export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: SettingsModalProps) {
   const [activeTab,   setActiveTab]   = useState<Tab>("general")
-  const [savedBadge,  setSavedBadge]  = useState(false)
-  const timerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const modalRef  = useRef<HTMLDivElement>(null)
 
   /* Escape to close */
@@ -275,11 +244,6 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
     return () => window.removeEventListener("keydown", handler)
   }, [onClose])
 
-  const handleSaved = () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    setSavedBadge(true)
-    timerRef.current = setTimeout(() => setSavedBadge(false), 2500)
-  }
 
   if (!open) return null
 
@@ -293,7 +257,7 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
     >
       <div
         ref={modalRef}
-        className="relative flex h-162.5 max-h-[90vh] w-[860px] max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/[0.08]"
+        className="relative flex h-162.5 max-h-[90vh] w-215 max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/80"
       >
         {/* ── Left sidebar ─────────────────────────────────────────────── */}
         <div className="flex w-50 shrink-0 flex-col border-r border-border bg-muted/20 px-2 py-4">
@@ -318,19 +282,13 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
               />
             ))}
           </nav>
-
-          {/* Saved badge anchored to sidebar bottom */}
-          <div className="mt-auto flex justify-center pt-4">
-            <SavedBadge visible={savedBadge} />
-          </div>
         </div>
 
         {/* ── Right content ─────────────────────────────────────────────── */}
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          {activeTab === "general"  && <GeneralPanel  onSaved={handleSaved} onClose={onClose} />}
+          {activeTab === "general" && <GeneralPanel />}
           {activeTab === "account"  && (
             <AccountPanel
-              onSaved={handleSaved}
               onClose={onClose}
               chats={chats}
               onDeleteAllChats={onDeleteAllChats ?? (async () => {})}

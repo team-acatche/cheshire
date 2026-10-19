@@ -183,6 +183,15 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         web_refs: list[str] = getattr(f, "web_references", None) or (f.get("web_references") if isinstance(f, dict) else None) or []
         recs: list[str] = getattr(f, "recommendations", None) or (f.get("recommendations") if isinstance(f, dict) else None) or []
 
+        severity = getattr(f, "severity", None) or (f.get("severity") if isinstance(f, dict) else None)
+        if severity not in ("major", "minor", "observation"):
+            severity = "observation"
+        confidence = getattr(f, "confidence", None)
+        if confidence is None and isinstance(f, dict):
+            confidence = f.get("confidence")
+        if confidence is not None:
+            confidence = min(1.0, max(0.0, float(confidence)))
+
         page_no: int = 1
         bboxes: list[PageBoundingBox] = []
 
@@ -245,6 +254,8 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 web_references=web_refs,
                 recommendations=recs,
                 scope="section" if bboxes else "document",
+                severity=severity,
+                confidence=confidence,
             )
         )
 

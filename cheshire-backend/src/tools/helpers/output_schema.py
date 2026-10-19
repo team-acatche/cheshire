@@ -15,6 +15,8 @@ class VulnerabilityDetails(BaseModel):
     web_references: Annotated[list[str], Field(description="List of URL strings of web references for the proposed vulnerability.")]
     recommendations: Annotated[list[str], Field(description="List of recommendations for the proposed vulnerability.")]
     scope: Annotated[Literal["section", "document"], Field(description="'document' when the finding has no location in the PDF.")] = "section"
+    severity: Annotated[Optional[Literal["major", "minor", "observation"]], Field(description="Severity tier of the finding.")] = None
+    confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0, description="Evidence confidence: 1.0 verified, 0.8 likely, 0.6 inferred.")] = None
 
     @model_validator(mode="after")
     def sync_bboxes(self):

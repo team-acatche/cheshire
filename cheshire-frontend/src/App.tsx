@@ -8,6 +8,7 @@ import {
   SidebarTrigger,
   SidebarInset,
 } from "./components/ui/sidebar"
+import { usePanelRef } from "react-resizable-panels"
 import DocumentPreview from "./components/document-preview/DocumentPreview"
 import {
   submitEvaluation,
@@ -94,10 +95,27 @@ export default function App({ user, onLogout }: AppProps) {
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [findingsLoading, setFindingsLoading] = useState(false)
   const [chats, setChats] = useState<Chat[]>([])
+  const [chatsLoading, setChatsLoading] = useState(true)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  // ── Chat panel state ─────────────────────────────────────────────────────────
+  const [chatOpen, setChatOpen] = useState(false)
+  const chatPanelRef = usePanelRef()
+
+  const closeChat = () => {
+    chatPanelRef.current?.collapse()
+    setChatOpen(false)
+  }
+
+  const toggleChat = () => {
+    const panel = chatPanelRef.current
+    if (!panel) return
+    if (panel.isCollapsed()) panel.expand()
+    else panel.collapse()
+  }
 
   // Track active polling tasks so we can resume them after refresh
   const pollingRef = useRef<Set<string>>(new Set())
@@ -126,10 +144,12 @@ export default function App({ user, onLogout }: AppProps) {
       }
 
       setChats(prev =>
-        prev.map(c =>
-          c.session_id === session_id
-            ? { ...c, findings: response.vulnerabilities, status: "done" }
-            : c
+        sortChatsByLatest(
+          prev.map(c =>
+            c.session_id === session_id
+              ? { ...c, findings: response.vulnerabilities, status: "done" }
+              : c
+          )
         )
       )
 
@@ -155,29 +175,34 @@ export default function App({ user, onLogout }: AppProps) {
   // Load existing sessions on mount, then merge pending sessions
   useEffect(() => {
     const loadSessions = async () => {
-      const rawSessions = await fetchSessions()
+      try {
+        const rawSessions = await fetchSessions()
 
-      const chatsWithTimestamps = await Promise.all(
-        rawSessions.map(async (s: any) => {
-          const latestTimestamp = await fetchSessionTimestamp(s.session_id)
-          return {
-            session_id: s.session_id,
-            title: s.title,
-            findings: [],
-            status: toFrontendStatus(s.status ?? "done"),
-            latestTimestamp,
-          } satisfies Chat
-        })
-      )
+        const chatsWithTimestamps = await Promise.all(
+          rawSessions.map(async (s: any) => {
+            const latestTimestamp = await fetchSessionTimestamp(s.session_id)
+            return {
+              session_id: s.session_id,
+              title: s.title,
+              findings: [],
+              status: toFrontendStatus(s.status ?? "done"),
+              latestTimestamp: latestTimestamp ?? s.created_at ?? null,
+            } satisfies Chat
+          })
+        )
 
-      setChats(sortChatsByLatest(chatsWithTimestamps))
+        setChats(sortChatsByLatest(chatsWithTimestamps))
 
-      //Resume polling for any sessions that isn't done/failed
-      for (const chat of chatsWithTimestamps) {
-        if (chat.status === "processing") {
-          resumePolling(chat.session_id)
+        //Resume polling for any sessions that isn't done/failed
+        for (const chat of chatsWithTimestamps) {
+          if (chat.status === "processing") {
+            resumePolling(chat.session_id)
+          }
         }
+      } finally {
+        setChatsLoading(false)
       }
+      
     }
 
 
@@ -193,19 +218,21 @@ export default function App({ user, onLogout }: AppProps) {
     setPage("chat")
     setCurrentSessionId(null)
     setFile(null)
+    closeChat()
   }
 
   const handleSelectChat = async (chat: Chat) => {
     setPage("chat")
     setCurrentSessionId(chat.session_id)
     setCurrentFileName(chat.title)
+    closeChat()
 
     if (chat.status === "processing") {
       setFindings([])
       setFindingsLoading(true)
 
       const blobUrl = await fetchDocumentBlob(chat.session_id)
-      setFile(blobUrl)
+      if (blobUrl) setFile(blobUrl)
       return
     }
 
@@ -290,6 +317,7 @@ export default function App({ user, onLogout }: AppProps) {
 
   // Upload
   const handleFileUpload = async (fileInput: File) => {
+    closeChat()
     //Client-side validation
     const validation = await validatePdf(fileInput)
     if (!validation.ok) {
@@ -369,6 +397,7 @@ export default function App({ user, onLogout }: AppProps) {
       <ChatPage
         onNewChat={handleNewChat}
         chats={chats}
+        isLoading={chatsLoading}
         onSelectChat={handleSelectChat}
         onGoAccount={() => setPage("account")}
         profileImage={profileImage || "/User.png"}
@@ -499,20 +528,35 @@ export default function App({ user, onLogout }: AppProps) {
                   orientation="horizontal"
                   className="h-full w-full min-w-0 overflow-hidden"
                 >
-                  <ResizablePanel defaultSize={60} minSize={30} className="min-w-0 overflow-hidden">
+                  <ResizablePanel id="doc" defaultSize="100%" minSize="30%" className="min-w-0 overflow-hidden">
                     <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden">
                       <DocumentPreview
                         src={file}
                         findings={findings}
                         fileName={currentFileName}
                         findingsLoading={findingsLoading}
+                        chatOpen={chatOpen}
+                        onToggleChat={toggleChat}
                       />
                     </CardContent>
                   </ResizablePanel>
 
-                  {!settingsOpen && <ResizableHandle withHandle />}
+                  <ResizableHandle
+                    withHandle
+                    disabled={!chatOpen || settingsOpen}
+                    className={!chatOpen || settingsOpen ? "pointer-events-none opacity-0" : ""}
+                  />
 
-                  <ResizablePanel defaultSize={40} minSize={25} className="min-w-0 overflow-hidden">
+                  <ResizablePanel
+                    id="chat"
+                    panelRef={chatPanelRef}
+                    collapsible
+                    collapsedSize="0%"
+                    defaultSize="0%"
+                    minSize="30%"
+                    onResize={() => setChatOpen(!chatPanelRef.current?.isCollapsed())}
+                    className="min-w-0 overflow-hidden"
+                  >
                     {currentSessionId && (
                       <Chatbot
                         key={currentSessionId}

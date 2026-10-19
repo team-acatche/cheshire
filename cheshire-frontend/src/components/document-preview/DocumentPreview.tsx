@@ -1,18 +1,19 @@
 // cheshire-frontend/src/components/document-preview/DocumentPreview.tsx
-// Change from original: accepts findingsLoading prop and shows a banner
-// in the toolbar area while the AI audit is still running.
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import {
   FileText,
   Search,
+  MessageSquareText,
   ChevronRight,
   ChevronLeft,
   Plus,
   Minus,
   ShieldAlert,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import {
   Popover,
@@ -28,6 +29,8 @@ import { FindingPopover } from "./FindingPopover";
 import { PdfPageSkeleton } from "./PdfPageSkeleton";
 import { isUnanchored } from "./helpers";
 import { DocumentLevelFindings } from "./DocumentLevelFindings";
+import { SeverityLegend } from "./SeverityLegend";
+import { TONES, bySeverity, countByTone, dominantTone, getTone, toneColor, type Tone } from "./severity";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -52,11 +55,12 @@ interface DocumentPreviewProps {
   src: File | string;
   findings: VulnerabilityFinding[];
   fileName?: string;
-  /** True while the AI audit is still running — shows a banner instead of the findings count */
   findingsLoading?: boolean;
+  chatOpen?: boolean;
+  onToggleChat?: () => void;
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -83,6 +87,35 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   const pageEls        = useRef<Record<number, HTMLDivElement | null>>({});
   const roRef          = useRef<ResizeObserver | null>(null);
 
+  // ── Full screen (PDF viewer only, not the whole app) ───────────────────────
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
+  // Stored in state too, so portals (popovers) get a real element after mount
+  const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Stable callback ref (must not change between renders)
+  const setFullscreenEl = useCallback((node: HTMLDivElement | null) => {
+    fullscreenRef.current = node;
+    setPortalEl(node);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = fullscreenRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      el.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const onChange = () =>
+      setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
   // ── Derived ────────────────────────────────────────────────────────────────
   const isUrl           = typeof src === "string";
   const displayFileName = fileName ?? (isUrl ? "document.pdf" : (src as File).name);
@@ -100,21 +133,16 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
   // ── Page width ─────────────────────────────────────────────────────────────
   // Snapping containerWidth to the nearest 10 px before computing pageWidth
-  // means that tiny ResizeObserver jitter (1-3 px from scrollbars appearing /
-  // disappearing) never produces a new value and never triggers a cascade of
-  // Page re-renders → repaints → more ResizeObserver events.
+  // means that tiny ResizeObserver jitter never triggers a cascade of re-renders.
+  // In fullscreen the max page width is raised so the PDF uses the extra space.
   const pageWidth = useMemo(() => {
     const snapped = Math.round(containerWidth / 10) * 10;
-    return Math.min(snapped, 900) * zoomLevel;
-  }, [containerWidth, zoomLevel]);
+    return Math.min(snapped, isFullscreen ? 1400 : 900) * zoomLevel;
+  }, [containerWidth, zoomLevel, isFullscreen]);
 
   // ── ResizeObserver — debounced + threshold gated ───────────────────────────
   const debouncedSetWidth = useCallback(
     debounce((newWidth: number) => {
-      // Only commit a new width when the change is meaningful (> 8 px).
-      // Combined with the 10 px snap above this fully breaks the feedback loop:
-      //   setState → Pages re-render → canvas repaints → scrollbar ±15 px →
-      //   ResizeObserver → change < 8 px → ignored. Loop stopped.
       setContainerWidth((prev) => (Math.abs(prev - newWidth) > 8 ? newWidth : prev));
     }, 150),
     []
@@ -244,17 +272,32 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     clearAllMarks(); setMatchPages([]); setMatchIdx(0);
     setSearchOpen(false); setSearchQuery("");
   }, []);
-  
-  // split once
-  const { anchored, documentLevel } = useMemo(() => ({
-    anchored: findings.filter((f) => !isUnanchored(f)),
-    documentLevel: findings.filter(isUnanchored),
-  }), [findings]);
+
+  // severity filter (driven by the legend chips)
+  const [hiddenTones, setHiddenTones] = useState<Set<Tone>>(new Set());
+  const toneCounts = useMemo(() => countByTone(findings), [findings]);
+
+  const toggleTone = useCallback((t: Tone) => {
+    setActive(null);
+    setHiddenTones((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  }, []);
+
+  const { anchored, documentLevel } = useMemo(() => {
+    const shown = findings.filter((f) => !hiddenTones.has(getTone(f)));
+    return {
+      anchored: shown.filter((f) => !isUnanchored(f)),
+      documentLevel: shown.filter(isUnanchored),
+    };
+  }, [findings, hiddenTones]);
 
   // ── Findings grouping (memoised) ───────────────────────────────────────────
   const groupedFindings = useMemo(() => {
     return [...findings]
-      .sort((a, b) => a.page_no - b.page_no)
+      .sort((a, b) => a.page_no - b.page_no || bySeverity(a, b))
       .reduce((acc, f) => {
         const key = isUnanchored(f) ? "Document-wide" : String(f.page_no);
         (acc[key] ??= []).push(f);
@@ -272,9 +315,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
   const handlePageClick = useCallback(() => setActive(null), []);
 
-    // state/refs
+  // state/refs
   const docBtnRef = useRef<HTMLButtonElement>(null);
-
 
   // open the popover anchored to the stable toolbar pill (not the list item, which unmounts)
   const handleDocLevelSelect = useCallback((f: VulnerabilityFinding) => {
@@ -282,25 +324,56 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     setActive({ findings: [f], bboxKey: `doc|${f.title}`, anchorEl: docBtnRef.current });
   }, []);
 
+  const handleFocusChange = useCallback((f: VulnerabilityFinding | null) => {
+    setActive((prev) => (prev ? { ...prev, focused: f ?? undefined } : prev));
+  }, []);
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <>
+    <div
+      ref={setFullscreenEl}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden ${
+        isFullscreen ? "bg-background p-4" : ""
+      }`}
+    >
       {/* Top bar */}
       <div className="flex items-center justify-between text-sm text-muted-foreground px-1 shrink-0">
         <div className="inline-flex items-center gap-2 min-w-0">
           <FileText className="h-4 w-4 shrink-0" />
           <span className="truncate">{displayFileName}</span>
         </div>
-        <button
-          onClick={() => {
-            if (searchOpen) closeSearch();
-            else { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50); }
-          }}
-          title="Search (Ctrl+F)"
-          className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
-        >
-          <Search className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => {
+              if (searchOpen) closeSearch();
+              else { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50); }
+            }}
+            title="Search (Ctrl+F)"
+            className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
+          >
+            <Search className="h-4 w-4" />
+          </button>
+
+          {onToggleChat && !isFullscreen && (
+            <button
+              onClick={onToggleChat}
+              title={chatOpen ? "Hide chatbot" : "Show chatbot"}
+              aria-pressed={chatOpen}
+              className={`p-1 rounded hover:bg-muted transition-colors ${chatOpen ? "text-foreground bg-muted" : ""}`}
+            >
+              <MessageSquareText className="h-4 w-4" />
+            </button>
+          )}
+
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit full screen (Esc)" : "Full screen"}
+            aria-pressed={isFullscreen}
+            className={`p-1 rounded hover:bg-muted transition-colors ${isFullscreen ? "text-foreground bg-muted" : ""}`}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
 
       {searchOpen && (
@@ -322,7 +395,6 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
       {/* Toolbar — only once the PDF has loaded */}
       {isPdf && numPages > 0 && (
         <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
-
           {/* Left — findings badge OR loading indicator */}
           <div className="justify-self-start flex items-center gap-2">
             {findingsLoading ? (
@@ -334,12 +406,16 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               <Popover>
                 <PopoverTrigger asChild>
                   <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
-                    <ShieldAlert className="h-3.5 w-3.5 text-yellow-500" />
+                    <ShieldAlert className={`h-3.5 w-3.5 ${findings.length ? TONES[dominantTone(findings)].text : "text-muted-foreground"}`} />
                     <span className="text-xs text-muted-foreground">Total Findings</span>
                     <span className="text-sm font-semibold text-foreground">{findings.length}</span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-90 p-0 border bg-background shadow-md" align="start">
+                <PopoverContent
+                  container={portalEl}
+                  className="w-90 p-0 border bg -background shadow-md scroll-transparent"
+                  align="start"
+                >
                   <div className="px-3 py-2 border-b bg-muted/40">
                     <div className="text-sm font-semibold">Findings</div>
                     <div className="text-xs text-muted-foreground">Jump directly to a finding</div>
@@ -351,12 +427,15 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         {pf.map((finding, idx) => (
                           <button
                             key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
-                            onClick={() => 
-                              isUnanchored(finding) ? handleDocLevelSelect(finding) :scrollToPageNumber(finding.page_no)
+                            onClick={() =>
+                              isUnanchored(finding) ? handleDocLevelSelect(finding) : scrollToPageNumber(finding.page_no)
                             }
-                            className="w-full px-3 py-2 text-left hover:bg-amber-100/60 transition-colors"
+                            className="w-full px-3 py-2 text-left hover:bg-muted transition-colors"
                           >
-                            <div className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="size-2 shrink-0 rounded-full" style={{ background: toneColor(getTone(finding)) }} />
+                              <span className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</span>
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -370,6 +449,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                 ref={docBtnRef}
                 findings={documentLevel}
                 onSelect={handleDocLevelSelect}
+                container={portalEl}
               />
             )}
           </div>
@@ -413,6 +493,9 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           </div>
         </div>
       )}
+      {isPdf && numPages > 0 && !findingsLoading && findings.length > 0 && (
+        <SeverityLegend counts={toneCounts} hidden={hiddenTones} onToggle={toggleTone} />
+      )}
 
       {displayFileName.toLowerCase().endsWith(".docx") && (
         <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
@@ -422,28 +505,15 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
       {isPdf && (
         <>
-          {/*
-            Skeleton is shown whenever pdfLoading is true.
-            We manage this ourselves (via onLoadSuccess) instead of relying on
-            react-pdf's `loading` prop, because blob URLs load near-instantly and
-            the prop's loading state often never renders at all.
-          */}
           {pdfLoading && (
             <div className="flex-1 overflow-hidden rounded-lg bg-zinc-300">
               <PdfPageSkeleton zoomLevel={zoomLevel} />
             </div>
           )}
 
-          {/*
-            The PDF container is always mounted once isPdf is true so that
-            react-pdf can parse the file in the background. We hide it via CSS
-            (not conditional rendering) so the ref callback fires and the
-            ResizeObserver is set up, but nothing is visible until loading is done.
-            This prevents the flash from the container appearing before pages paint.
-          */}
           <div
             ref={measuredRef}
-            className="flex-1 overflow-auto rounded-lg bg-zinc-300"
+            className="flex-1 overflow-auto rounded-lg bg-zinc-300 scroll-transparent"
             style={{ position: "relative", display: pdfLoading ? "none" : "block" }}
             onClick={handlePageClick}
           >
@@ -452,7 +522,6 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               onLoadSuccess={({ numPages: n }) => {
                 setNumPages(n);
                 setCurrentPage(1);
-                // Single clean transition: skeleton off, PDF on
                 setPdfLoading(false);
               }}
               onLoadError={() => setPdfLoading(false)}
@@ -497,6 +566,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         pageMeta={pageMetaMap[pageNumber]}
                         findings={anchored}
                         activeFindings={active?.findings ?? null}
+                        focusedFinding={active?.focused ?? null}
                         onClick={handleClick}
                       />
                     )}
@@ -514,9 +584,11 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           findings={active.findings}
           anchorEl={active.anchorEl}
           onClose={() => setActive(null)}
+          onFocusChange={handleFocusChange}
+          portalRoot={portalEl}
         />
       )}
-    </>
+    </div>
   );
 }
 
