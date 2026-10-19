@@ -60,6 +60,8 @@ interface ChatPageProps {
   onOpenSettings: () => void
 }
 
+
+
 export default function ChatPage({
   onNewChat,
   chats,
@@ -78,7 +80,9 @@ export default function ChatPage({
   const [renamingId, setRenamingId]   = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
   const [chatToDelete, setChatToDelete] = useState<Chat | null>(null)
-  const [showHowToUse, setShowHowToUse] = useState(false)
+  const [showHowToUse, setShowHowToUse] = useState(
+    () => !localStorage.getItem("cheshire_howto_seen")
+  )
 
   const startRename = (chat: Chat) => {
     setRenamingId(chat.session_id)
@@ -104,6 +108,7 @@ export default function ChatPage({
     setRenamingId(null)
     setRenameValue("")
   }
+
 
   return (
     <Sidebar>
@@ -310,7 +315,10 @@ export default function ChatPage({
       />
       <HowToUseDialog
         isOpen={showHowToUse}
-        onClose={() => setShowHowToUse(false)}
+        onClose={() => {
+          localStorage.setItem("cheshire_howto_seen", "1")
+          setShowHowToUse(false)
+        }}
       />
     </Sidebar>
   )
