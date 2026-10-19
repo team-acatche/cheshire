@@ -1,20 +1,61 @@
+"""
+Helper classes, data structures, and pipeline preprocessing functions for multistep
+evaluation, including document chunking, table markdown formatting with embedded icon
+detection, figure extraction, and document indexing.
+"""
+
 import ast
 import base64
+import copy
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Optional, List, Any
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, List, Optional, Tuple, TypedDict, Union
 
-
-from docling_core.types.doc import BoundingBox, CoordOrigin
-from tabulate import tabulate
 from docling.chunking import HierarchicalChunker
 from docling.datamodel.document import ConversionResult
-from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc import BoundingBox, CoordOrigin, DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
+from pydantic import BaseModel, Field, field_validator
+from tabulate import tabulate
 
+
+# =============================================================================
+# 1. Preprocessing and Table Formatting Constants
+# =============================================================================
+
+# Bounding box default dimensions and padding (in rendered page pixel space)
+DEFAULT_ROW_HEIGHT_PX: float = 40.0
+LAST_ROW_BOTTOM_PADDING_PX: float = 15.0
+DEFAULT_COL_WIDTH_PX: float = 50.0
+LAST_COL_RIGHT_PADDING_PX: float = 20.0
+
+# Embedded visual icon detection overlap threshold (in rendered page pixels)
+MIN_ICON_OVERLAP_PX: float = 10.0
+
+# Continuation table tracking limits
+MAX_CONTINUATION_PAGE_GAP: int = 1
+MAX_HEADER_SEARCH_LINES: int = 4
+
+# Compound header column splitting parameters
+COLUMN_SPLIT_RATIO: float = 0.5
+MIN_COMPOUND_COL_WIDTH_PX: float = 120.0
+
+# Keywords denoting independent auxiliary table columns that commonly merge with primary columns
+INDEPENDENT_HEADER_KEYWORDS: frozenset[str] = frozenset({
+    "link", "links", "url", "urls",
+    "format", "attachment", "attachments",
+})
+
+# Default text scale and chunk length thresholds
+DEFAULT_MAX_CHUNK_CHARS: int = 4000
+DEFAULT_IMAGE_SCALE: float = 2.0
+
+
+# =============================================================================
+# 2. Core Domain Data Models
+# =============================================================================
 
 @dataclass(frozen=True, kw_only=True)
 class ImageBoundingBox:
@@ -29,19 +70,20 @@ class ImageBoundingBox:
 
     @staticmethod
     def from_docling_bbox(
-        bbox: BoundingBox, 
+        bbox: BoundingBox,
         page_height: float,
-        scale: float
+        scale: float,
     ) -> "ImageBoundingBox":
         """
         Converts a Docling Bounding Box to an ImageBoundingBox.
         """
         return ImageBoundingBox(
-            x1 = round(bbox.l * scale),
-            y1 = round((page_height - bbox.t) * scale),
-            x2 = round(bbox.r * scale),
-            y2 = round((page_height - bbox.b) * scale)
+            x1=round(bbox.l * scale),
+            y1=round((page_height - bbox.t) * scale),
+            x2=round(bbox.r * scale),
+            y2=round((page_height - bbox.b) * scale),
         )
+
 
 @dataclass
 class ElementRef:
@@ -50,12 +92,12 @@ class ElementRef:
     Coordinates are in rendered page image space (top-left origin, pixels).
     The bbox comes from Docling's PDF parser — it is not model-predicted.
     """
-    element_id: str             
-    label: str                  
-    page_number: int            
+    element_id: str
+    label: str
+    page_number: int
     bbox_image_px: ImageBoundingBox
-    bbox_pdf: BoundingBox       
-    text_excerpt: str           
+    bbox_pdf: BoundingBox
+    text_excerpt: str
 
 
 @dataclass
@@ -65,11 +107,11 @@ class FigureRef:
     The crop is what gets sent to the model as an image_url part.
     Sub-element bboxes within the crop are model-predicted at inference time.
     """
-    figure_id: str              
+    figure_id: str
     page_number: int
-    bbox_image_px: list[float]  
-    bbox_pdf: BoundingBox       
-    base64_png: str             
+    bbox_image_px: Union[ImageBoundingBox, list[float]]
+    bbox_pdf: BoundingBox
+    base64_png: str
 
 
 class LocalFinding(BaseModel):
@@ -190,22 +232,275 @@ class EvaluationChunk:
     chunk_id: str
     heading: str
     page_range: tuple[int, int]
-    structured_text: str # text for the model
+    structured_text: str  # text for the model
     element_refs: list[ElementRef] = field(default_factory=list)
     figures: list[FigureRef] = field(default_factory=list)
 
 
+# =============================================================================
+# 3. Geometric & Coordinate Utilities
+# =============================================================================
+
+def _get_item_label(item: Any) -> str:
+    """
+    Extracts the string representation of an item's label across Docling versions.
+    """
+    return item.label.value if hasattr(item.label, "value") else str(item.label)
+
+
+def _to_topleft_dict(bbox: BoundingBox, page_h: float) -> dict[str, float]:
+    """
+    Converts a Docling BoundingBox to a top-left origin dictionary with keys 'l', 't', 'r', 'b'.
+    """
+    if bbox.coord_origin == CoordOrigin.BOTTOMLEFT:
+        return {"l": bbox.l, "t": page_h - bbox.t, "r": bbox.r, "b": page_h - bbox.b}
+    return {"l": bbox.l, "t": bbox.t, "r": bbox.r, "b": bbox.b}
+
+
+def _compute_box_overlap(b1: dict[str, float], b2: dict[str, float]) -> tuple[float, float]:
+    """
+    Calculates the 2D spatial overlap (horizontal and vertical pixels) between two bounding boxes.
+    Returns (x_overlap_px, y_overlap_px).
+    """
+    x_ov = max(0.0, min(b1["r"], b2["r"]) - max(b1["l"], b2["l"]))
+    y_ov = max(0.0, min(b1["b"], b2["b"]) - max(b1["t"], b2["t"]))
+    return x_ov, y_ov
+
+
+# =============================================================================
+# 4. Table Cell Bounds & Layout Analysis
+# =============================================================================
+
+def _calculate_extended_row_bounds(
+    row_bboxes: dict[int, Any],
+    num_rows: int,
+    page_h: float,
+) -> dict[int, tuple[float, float]]:
+    """
+    Computes top and bottom bounds for each row, forward-filling missing rows
+    and extending boundaries to the midpoints of adjacent rows to cover inter-cell gaps.
+    """
+    row_bounds: dict[int, list[float | None]] = {}
+    for r in range(num_rows):
+        if r in row_bboxes and row_bboxes[r] is not None:
+            rb = _to_topleft_dict(row_bboxes[r], page_h)
+            row_bounds[r] = [rb["t"], rb["b"]]
+        else:
+            row_bounds[r] = [None, None]
+
+    # Forward-fill any rows without extracted bounding boxes
+    for r in range(num_rows):
+        curr_t, curr_b = row_bounds[r]
+        if curr_t is None:
+            prev_b = row_bounds[r - 1][1] if r > 0 and row_bounds[r - 1][1] is not None else 0.0
+            curr_t = prev_b
+            curr_b = prev_b + DEFAULT_ROW_HEIGHT_PX
+            row_bounds[r] = [curr_t, curr_b]
+
+    # Extend boundaries to bridge row gaps
+    extended_row_bounds: dict[int, tuple[float, float]] = {}
+    for r in range(num_rows):
+        t = row_bounds[r][0] or 0.0
+        b = row_bounds[r][1] or 0.0
+        if r > 0 and row_bounds[r - 1][1] is not None:
+            t = (row_bounds[r - 1][1] + t) / 2.0
+        if r < num_rows - 1 and row_bounds[r + 1][0] is not None:
+            b = (b + row_bounds[r + 1][0]) / 2.0
+        else:
+            b = b + LAST_ROW_BOTTOM_PADDING_PX
+        extended_row_bounds[r] = (t, b)
+
+    return extended_row_bounds
+
+
+def _calculate_extended_col_bounds(
+    col_bboxes: dict[int, Any],
+    num_cols: int,
+    page_h: float,
+) -> dict[int, tuple[float, float]]:
+    """
+    Computes left and right bounds for each column, filling missing columns
+    and extending boundaries to the midpoints of adjacent columns.
+    """
+    col_bounds: dict[int, list[float | None]] = {}
+    for c in range(num_cols):
+        if c in col_bboxes and col_bboxes[c] is not None:
+            cb = _to_topleft_dict(col_bboxes[c], page_h)
+            col_bounds[c] = [cb["l"], cb["r"]]
+        else:
+            col_bounds[c] = [None, None]
+
+    extended_col_bounds: dict[int, tuple[float, float]] = {}
+    for c in range(num_cols):
+        l = col_bounds[c][0]
+        r = col_bounds[c][1]
+        if l is None or r is None:
+            prev_r = extended_col_bounds[c - 1][1] if c > 0 else 0.0
+            l = prev_r
+            r = prev_r + DEFAULT_COL_WIDTH_PX
+        else:
+            if c > 0 and col_bounds[c - 1][1] is not None:
+                l = (col_bounds[c - 1][1] + l) / 2.0
+            if c < num_cols - 1 and col_bounds[c + 1][0] is not None:
+                r = (r + col_bounds[c + 1][0]) / 2.0
+            else:
+                r = r + LAST_COL_RIGHT_PADDING_PX
+        extended_col_bounds[c] = (l, r)
+
+    return extended_col_bounds
+
+
+def _get_table_cell_bounds(table_item: Any, page_h: float) -> dict[tuple[int, int], dict[str, float]]:
+    """
+    Computes top-left origin pixel bounding boxes for each (row, col) cell in a table.
+    Extends row and column boundaries to cover inter-cell gaps and handles missing bboxes.
+    """
+    grid = getattr(getattr(table_item, "data", None), "grid", None)
+    if not grid or len(grid) == 0:
+        return {}
+    num_rows = len(grid)
+    num_cols = len(grid[0]) if num_rows > 0 else 0
+    if num_rows == 0 or num_cols == 0:
+        return {}
+
+    try:
+        row_bboxes = table_item.data.get_row_bounding_boxes()
+        col_bboxes = table_item.data.get_column_bounding_boxes()
+    except Exception:
+        return {}
+
+    extended_row_bounds = _calculate_extended_row_bounds(row_bboxes, num_rows, page_h)
+    extended_col_bounds = _calculate_extended_col_bounds(col_bboxes, num_cols, page_h)
+
+    cell_bounds: dict[tuple[int, int], dict[str, float]] = {}
+    for r in range(num_rows):
+        for c in range(num_cols):
+            cell_bounds[(r, c)] = {
+                "l": extended_col_bounds[c][0],
+                "r": extended_col_bounds[c][1],
+                "t": extended_row_bounds[r][0],
+                "b": extended_row_bounds[r][1],
+            }
+    return cell_bounds
+
+
+def _detect_compound_header_split(
+    header_text: str,
+    col_width: float,
+    has_left_biased_picture: bool = False,
+    has_right_biased_picture: bool = False,
+) -> tuple[str, str] | None:
+    """
+    Detects if a table header cell contains multiple merged column titles.
+    Returns (left_title, right_title) if a split is justified, otherwise None.
+    Applicable universally across any PDF without document-specific overtuning.
+    """
+    cleaned = header_text.strip()
+    if not cleaned:
+        return None
+
+    # 1. Explicit multi-line separation in header
+    lines = [line.strip() for line in cleaned.split("\n") if line.strip()]
+    if len(lines) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+        return lines[0], lines[1]
+
+    # 2. Explicit multi-space separation (2 or more spaces)
+    space_parts = re.split(r'\s{2,}', cleaned)
+    if len(space_parts) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+        return space_parts[0], space_parts[1]
+
+    # 3. Explicit pipe or slash delimiter surrounded by spaces
+    delim_parts = re.split(r'\s+[|/]\s+', cleaned)
+    if len(delim_parts) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+        w1, w2 = delim_parts[0].lower(), delim_parts[1].lower()
+        if w1 not in ("new", "class") and w2 not in ("existing", "module"):
+            return delim_parts[0], delim_parts[1]
+
+    # 4. Multi-word phrase with an independent keyword suffix confirmed by layout
+    words = cleaned.split()
+    if len(words) >= 2:
+        last_word_clean = re.sub(r'[^a-zA-Z0-9]', '', words[-1]).lower()
+        if last_word_clean in INDEPENDENT_HEADER_KEYWORDS:
+            prefix = " ".join(words[:-1])
+            suffix = words[-1]
+            if (has_left_biased_picture or has_right_biased_picture) and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+                return prefix, suffix
+            if len(words) >= 3 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+                return prefix, suffix
+
+    return None
+
+
+def _detect_table_column_splits(
+    grid: list[list[Any]],
+    cell_bounds: dict[tuple[int, int], dict[str, float]],
+    pics: list[Any],
+    page_h: float,
+) -> dict[int, tuple[str, str]]:
+    """
+    Scans the header row (row 0) to detect compound columns (e.g. 'File Type Link')
+    that should be split into multiple distinct columns.
+    Uses column width and spatial distribution of embedded pictures across body rows.
+    """
+    num_rows = len(grid)
+    num_cols = len(grid[0]) if num_rows > 0 else 0
+    if num_rows == 0 or num_cols == 0:
+        return {}
+
+    col_splits: dict[int, tuple[str, str]] = {}
+    for c in range(num_cols):
+        hdr_txt = grid[0][c].text.strip()
+        cb = cell_bounds.get(
+            (0, c),
+            {"l": 0.0, "r": DEFAULT_COL_WIDTH_PX, "t": 0.0, "b": DEFAULT_ROW_HEIGHT_PX}
+        )
+        col_w = cb["r"] - cb["l"]
+        mid_x = cb["l"] + col_w * COLUMN_SPLIT_RATIO
+
+        # Check for picture bias across all data rows in this column
+        has_left_pic = False
+        has_right_pic = False
+        for r in range(1, num_rows):
+            rcb = cell_bounds.get((r, c), cb)
+            for p in pics:
+                if not p.prov:
+                    continue
+                pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+                x_ov, y_ov = _compute_box_overlap(rcb, pb)
+                if x_ov > MIN_ICON_OVERLAP_PX and y_ov > MIN_ICON_OVERLAP_PX:
+                    pic_mid_x = (pb["l"] + pb["r"]) / 2.0
+                    if pic_mid_x < mid_x:
+                        has_left_pic = True
+                    else:
+                        has_right_pic = True
+
+        split = _detect_compound_header_split(
+            hdr_txt,
+            col_w,
+            has_left_biased_picture=has_left_pic,
+            has_right_biased_picture=has_right_pic,
+        )
+        if split:
+            col_splits[c] = split
+
+    return col_splits
+
+
+# =============================================================================
+# 5. Table Formatting & Markdown Rendering
+# =============================================================================
+
 def _table_has_empty_cells(markdown: str) -> bool:
     """
     Returns True if any data row in the markdown table has at least one
-    empty cell.  Empty means the cell contains only whitespace.
+    empty cell. Empty means the cell contains only whitespace.
     Header and separator rows are excluded from the check.
     """
     lines: list[str] = markdown.strip().split('\n')
 
     # Find the separator row (e.g. |---|---|) to skip header lines
     data_start: int = 0
-    for i, line in enumerate(lines[:4]):
+    for i, line in enumerate(lines[:MAX_HEADER_SEARCH_LINES]):
         if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
             data_start = i + 1
             break
@@ -213,7 +508,7 @@ def _table_has_empty_cells(markdown: str) -> bool:
     for line in lines[data_start:]:
         # Split on pipe, ignore first/last empty strings from leading/trailing pipes
         cells: list[str] = line.split('|')
-        for cell in cells[1:-1]:           # skip outer empty splits
+        for cell in cells[1:-1]:  # skip outer empty splits
             if cell.strip() == '':
                 return True
     return False
@@ -224,12 +519,11 @@ def _crop_table_as_figure(
     prov: ProvenanceItem,
     self_ref: str,
     scale: float,
-    figure_lookup: dict[str, "FigureRef"]
+    figure_lookup: dict[str, FigureRef],
 ) -> str | None:
     """
     Renders the page region containing the table and stores a FigureRef
-    in *figure_lookup*.  Returns the synthetic figure_id, or None on
-    failure.
+    in figure_lookup. Returns the synthetic figure_id, or None on failure.
     """
     # result.pages is 0-indexed; prov.page_no is 1-indexed
     page_idx: int = prov.page_no - 1
@@ -254,98 +548,131 @@ def _crop_table_as_figure(
         bbox_image_px=ImageBoundingBox.from_docling_bbox(
             prov.bbox,
             conv_page.size.height if conv_page.size else 0,
-            scale
+            scale,
         ),
         bbox_pdf=prov.bbox,
-        base64_png=b64
+        base64_png=b64,
     )
     return fig_id
 
 
-def _to_topleft_dict(bbox: BoundingBox, page_h: float) -> dict[str, float]:
-    if bbox.coord_origin == CoordOrigin.BOTTOMLEFT:
-        return {"l": bbox.l, "t": page_h - bbox.t, "r": bbox.r, "b": page_h - bbox.b}
-    return {"l": bbox.l, "t": bbox.t, "r": bbox.r, "b": bbox.b}
+def _format_cell_with_icons(
+    cell_text: str,
+    cell_box: dict[str, float],
+    has_cell_bounds: bool,
+    pics: list[Any],
+    page_h: float,
+    is_header_row: bool,
+    col_split: tuple[str, str] | None = None,
+) -> list[str]:
+    """
+    Formats the text for a single cell, resolving embedded icons if present.
+    If col_split is provided:
+      - Header row returns [left_title, right_title]
+      - Data row returns [left_cell_text, right_cell_text]
+    Otherwise, returns [cell_text].
+    """
+    if col_split is not None:
+        left_title, right_title = col_split
+        if is_header_row:
+            return [left_title, right_title]
 
+        col_w = cell_box["r"] - cell_box["l"]
+        mid_x = cell_box["l"] + col_w * COLUMN_SPLIT_RATIO
+        left_txt = ""
+        right_txt = ""
+        for p in pics:
+            if not p.prov:
+                continue
+            pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+            x_ov, y_ov = _compute_box_overlap(cell_box, pb)
+            if x_ov > MIN_ICON_OVERLAP_PX and y_ov > MIN_ICON_OVERLAP_PX:
+                pic_mid_x = (pb["l"] + pb["r"]) / 2.0
+                if pic_mid_x < mid_x:
+                    left_txt = "[Embedded Icon]"
+                else:
+                    right_txt = "[Embedded Icon]"
 
-def _get_table_cell_bounds(table_item: Any, page_h: float) -> dict[tuple[int, int], dict[str, float]]:
-    grid = getattr(getattr(table_item, "data", None), "grid", None)
-    if not grid or len(grid) == 0:
-        return {}
-    num_rows = len(grid)
-    num_cols = len(grid[0]) if num_rows > 0 else 0
-    if num_rows == 0 or num_cols == 0:
-        return {}
-
-    try:
-        row_bboxes = table_item.data.get_row_bounding_boxes()
-        col_bboxes = table_item.data.get_column_bounding_boxes()
-    except Exception:
-        return {}
-
-    row_bounds: dict[int, list[float | None]] = {}
-    for r in range(num_rows):
-        if r in row_bboxes and row_bboxes[r] is not None:
-            rb = _to_topleft_dict(row_bboxes[r], page_h)
-            row_bounds[r] = [rb["t"], rb["b"]]
-        else:
-            row_bounds[r] = [None, None]
-
-    for r in range(num_rows):
-        curr_t, curr_b = row_bounds[r]
-        if curr_t is None:
-            prev_b = row_bounds[r - 1][1] if r > 0 and row_bounds[r - 1][1] is not None else 0.0
-            curr_t = prev_b
-            curr_b = prev_b + 40.0
-            row_bounds[r] = [curr_t, curr_b]
-
-    extended_row_bounds: dict[int, tuple[float, float]] = {}
-    for r in range(num_rows):
-        t = row_bounds[r][0] or 0.0
-        b = row_bounds[r][1] or 0.0
-        if r > 0 and row_bounds[r - 1][1] is not None:
-            t = (row_bounds[r - 1][1] + t) / 2.0
-        if r < num_rows - 1 and row_bounds[r + 1][0] is not None:
-            b = (b + row_bounds[r + 1][0]) / 2.0
-        else:
-            b = b + 15.0
-        extended_row_bounds[r] = (t, b)
-
-    col_bounds: dict[int, list[float | None]] = {}
-    for c in range(num_cols):
-        if c in col_bboxes and col_bboxes[c] is not None:
-            cb = _to_topleft_dict(col_bboxes[c], page_h)
-            col_bounds[c] = [cb["l"], cb["r"]]
-        else:
-            col_bounds[c] = [None, None]
-
-    extended_col_bounds: dict[int, tuple[float, float]] = {}
-    for c in range(num_cols):
-        l = col_bounds[c][0]
-        r = col_bounds[c][1]
-        if l is None or r is None:
-            prev_r = extended_col_bounds[c - 1][1] if c > 0 else 0.0
-            l = prev_r
-            r = prev_r + 50.0
-        else:
-            if c > 0 and col_bounds[c - 1][1] is not None:
-                l = (col_bounds[c - 1][1] + l) / 2.0
-            if c < num_cols - 1 and col_bounds[c + 1][0] is not None:
-                r = (r + col_bounds[c + 1][0]) / 2.0
+        txt = cell_text.replace("\n", " ").strip()
+        if txt:
+            if left_txt:
+                right_txt = txt if not right_txt else f"{txt} {right_txt}"
             else:
-                r = r + 20.0
-        extended_col_bounds[c] = (l, r)
+                left_txt = txt
+        return [left_txt, right_txt]
 
-    cell_bounds: dict[tuple[int, int], dict[str, float]] = {}
-    for r in range(num_rows):
-        for c in range(num_cols):
-            cell_bounds[(r, c)] = {
-                "l": extended_col_bounds[c][0],
-                "r": extended_col_bounds[c][1],
-                "t": extended_row_bounds[r][0],
-                "b": extended_row_bounds[r][1],
-            }
-    return cell_bounds
+    # Non-split standard cell
+    txt = cell_text.replace("\n", " ").strip()
+    if not is_header_row and has_cell_bounds:
+        for p in pics:
+            if not p.prov:
+                continue
+            pb = _to_topleft_dict(p.prov[0].bbox, page_h)
+            x_ov, y_ov = _compute_box_overlap(cell_box, pb)
+            if x_ov > MIN_ICON_OVERLAP_PX and y_ov > MIN_ICON_OVERLAP_PX:
+                txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
+                break
+    return [txt]
+
+
+def _format_table_row_cells(
+    row: list[Any],
+    r_idx: int,
+    is_header_row: bool,
+    col_splits: dict[int, tuple[str, str]],
+    cell_bounds: dict[tuple[int, int], dict[str, float]],
+    pics: list[Any],
+    page_h: float,
+) -> list[str]:
+    """
+    Renders all cells of a table row into a list of cell string contents,
+    expanding any compound columns and resolving embedded icons.
+    """
+    row_cells: list[str] = []
+    for c_idx, cell in enumerate(row):
+        cb = cell_bounds.get(
+            (r_idx, c_idx),
+            {"l": 0.0, "r": DEFAULT_COL_WIDTH_PX, "t": 0.0, "b": DEFAULT_ROW_HEIGHT_PX}
+        )
+        has_bounds = (r_idx, c_idx) in cell_bounds
+        split = col_splits.get(c_idx)
+        cell_txt = getattr(cell, "text", str(cell))
+        formatted = _format_cell_with_icons(
+            cell_text=cell_txt,
+            cell_box=cb,
+            has_cell_bounds=has_bounds,
+            pics=pics,
+            page_h=page_h,
+            is_header_row=is_header_row,
+            col_split=split,
+        )
+        row_cells.extend(formatted)
+    return row_cells
+
+
+def _extract_header_from_table_text(
+    table_text: str,
+    last_header: str | None,
+    is_continuation: bool,
+) -> tuple[str, str | None]:
+    """
+    Extracts header and separator rows from a formatted markdown table to support
+    continuation tracking across pages. Prepends last_header if a continuation table lacks one.
+    """
+    lines = table_text.strip().split("\n")
+    sep_idx: int | None = None
+    for i, line in enumerate(lines[:MAX_HEADER_SEARCH_LINES]):
+        if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
+            sep_idx = i
+            break
+
+    new_last_header = last_header
+    if sep_idx is not None and sep_idx >= 1:
+        new_last_header = "\n".join(lines[:sep_idx + 1])
+    elif sep_idx is None and is_continuation and last_header:
+        table_text = last_header + "\n" + table_text
+
+    return table_text, new_last_header
 
 
 def _format_table_markdown(
@@ -359,6 +686,8 @@ def _format_table_markdown(
     Detects embedded format/attachment icons from doc.pictures on the page and
     populates/annotates the corresponding cell text with '[Embedded Icon]',
     allowing the evaluator to distinguish between visual icons and genuinely empty cells.
+    Also recovers under-segmented compound header columns (e.g. 'File Type Link')
+    when layout analysis reveals multiple column titles grouped into a single cell.
     Also handles continuation tables lacking repeated headers.
     Returns (table_markdown, new_last_header).
     """
@@ -376,46 +705,42 @@ def _format_table_markdown(
     pics = [p for p in doc.pictures if p.prov and p.prov[0].page_no == page_no] if page_no != -1 else []
 
     has_col_headers = any(getattr(cell, "column_header", False) for cell in grid[0])
-    cell_bounds = _get_table_cell_bounds(table_item, page_h) if pics and page_h > 0 else {}
+    cell_bounds = _get_table_cell_bounds(table_item, page_h) if page_h > 0 else {}
+
+    col_splits = _detect_table_column_splits(grid, cell_bounds, pics, page_h)
 
     # Format continuation table lacking headers
     if is_continuation and not has_col_headers and last_header:
-        data_rows: list[str] = []
-        for r_idx, row in enumerate(grid):
-            cells: list[str] = []
-            for c_idx, cell in enumerate(row):
-                txt = cell.text.replace("\n", " ").strip()
-                if (r_idx, c_idx) in cell_bounds:
-                    cb = cell_bounds[(r_idx, c_idx)]
-                    for p in pics:
-                        pb = _to_topleft_dict(p.prov[0].bbox, page_h)
-                        x_ov = max(0, min(cb["r"], pb["r"]) - max(cb["l"], pb["l"]))
-                        y_ov = max(0, min(cb["b"], pb["b"]) - max(cb["t"], pb["t"]))
-                        if x_ov > 10 and y_ov > 10:
-                            txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
-                            break
-                cells.append(txt)
-            data_rows.append("| " + " | ".join(cells) + " |")
+        data_rows = [
+            "| " + " | ".join(
+                _format_table_row_cells(
+                    row=row,
+                    r_idx=r_idx,
+                    is_header_row=False,
+                    col_splits=col_splits,
+                    cell_bounds=cell_bounds,
+                    pics=pics,
+                    page_h=page_h,
+                )
+            ) + " |"
+            for r_idx, row in enumerate(grid)
+        ]
         text = last_header + "\n" + "\n".join(data_rows)
         return text, last_header
 
     # Standard table (or continuation with headers)
     table_rows: list[list[str]] = []
     for r_idx, row in enumerate(grid):
-        is_header_row = (r_idx == 0) or all(getattr(cell, "column_header", False) for cell in row)
-        row_cells: list[str] = []
-        for c_idx, cell in enumerate(row):
-            txt = cell.text.replace("\n", " ").strip()
-            if not is_header_row and (r_idx, c_idx) in cell_bounds:
-                cb = cell_bounds[(r_idx, c_idx)]
-                for p in pics:
-                    pb = _to_topleft_dict(p.prov[0].bbox, page_h)
-                    x_ov = max(0, min(cb["r"], pb["r"]) - max(cb["l"], pb["l"]))
-                    y_ov = max(0, min(cb["b"], pb["b"]) - max(cb["t"], pb["t"]))
-                    if x_ov > 10 and y_ov > 10:
-                        txt = "[Embedded Icon]" if not txt else f"{txt} [Embedded Icon]"
-                        break
-            row_cells.append(txt)
+        is_header = (r_idx == 0) or all(getattr(cell, "column_header", False) for cell in row)
+        row_cells = _format_table_row_cells(
+            row=row,
+            r_idx=r_idx,
+            is_header_row=is_header,
+            col_splits=col_splits,
+            cell_bounds=cell_bounds,
+            pics=pics,
+            page_h=page_h,
+        )
         table_rows.append(row_cells)
 
     if len(table_rows) > 1 and len(table_rows[0]) > 0:
@@ -425,118 +750,17 @@ def _format_table_markdown(
     else:
         text = ""
 
-    # Extract header rows + separator for continuation tracking
-    lines = text.strip().split("\n")
-    sep_idx = None
-    for i, line in enumerate(lines[:4]):
-        if re.match(r'^\s*\|([\s:-]+\|)+\s*$', line):
-            sep_idx = i
-            break
-
-    new_last_header = last_header
-    if sep_idx is not None and sep_idx >= 1:
-        new_last_header = "\n".join(lines[:sep_idx + 1])
-    elif sep_idx is None and is_continuation and last_header:
-        text = last_header + "\n" + text
-
-    return text, new_last_header
+    return _extract_header_from_table_text(text, last_header, is_continuation)
 
 
-def _build_element_lookup(
-    doc: DoclingDocument,
-    result: ConversionResult,
-    figure_lookup: dict[str, FigureRef],
-    scale: float
-) -> dict[str, ElementRef]:
-    """
-    Iterates every item in the DoclingDocument and builds a dict keyed by
-    self_ref. Pictures are excluded — they go into the figure lookup.
-    Tables use their markdown export as the text excerpt so the model
-    sees structured table content rather than a raw string.
-
-    Tables whose markdown contains empty cells (a signal that embedded
-    images were lost during extraction) are additionally cropped from the
-    rendered page and inserted into *figure_lookup* so the model receives
-    both the structured text and a visual of the table.
-
-    Continuation tables (tables that span a page break and lose their
-    header row) are detected by section + page proximity and have the
-    previous table's header prepended.
-    """
-    lookup: dict[str, ElementRef] = {}
-    # --- continuation-header tracking (scoped by section + page) ---
-    _last_table_header: str | None = None
-    _last_table_page: int = -1
-    _current_section: str = ""
-
-    for item, _level in doc.iterate_items():
-        item: Any
-        _level: int
-        if not hasattr(item, "prov") or not item.prov:
-            continue
-
-        label: str = (
-            item.label.value
-            if hasattr(item.label, "value")
-            else str(item.label)
-        )
-
-        # Skip decorative page elements (headers, footers)
-        if label in ("picture", "page_header", "page_footer"):
-            continue
-
-        # Track section boundaries to scope continuation headers
-        if label in ("section_header", "section_heading"):
-            _current_section = getattr(item, "text", "")
-            _last_table_header = None
-
-        prov: ProvenanceItem = item.prov[0]
-        page: Any = doc.pages.get(prov.page_no)
-        if page is None or page.size is None:
-            continue
-
-        bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
-
-        text: str = ""
-        if label == "table":
-            # Detect continuation table status based on adjacent page in same section
-            is_adjacent_page: bool = (
-                _last_table_header is not None and 0 <= (prov.page_no - _last_table_page) <= 1
-            )
-            text, _last_table_header = _format_table_markdown(
-                item, doc, _last_table_header, is_adjacent_page
-            )
-            _last_table_page = prov.page_no
-
-            # --- selective table cropping for tables with empty cells ---
-            if _table_has_empty_cells(text):
-                fig_id: str | None = _crop_table_as_figure(
-                    result, prov, item.self_ref, scale, figure_lookup
-                )
-                if fig_id:
-                    text += f"\n[Table Image: {fig_id}]"
-
-        elif hasattr(item, "text") and item.text:
-            text = item.text
-        elif hasattr(item, "export_to_markdown"):
-            text = item.export_to_markdown()
-
-        lookup[item.self_ref] = ElementRef(
-            element_id=item.self_ref,
-            label=label,
-            page_number=prov.page_no,
-            bbox_image_px=bbox_px,
-            bbox_pdf=prov.bbox,
-            text_excerpt=text
-        )
-
-    return lookup
-
+# =============================================================================
+# 6. Document Lookup Construction (Elements & Figures)
+# =============================================================================
 
 def _build_figure_lookup(
     doc: DoclingDocument,
     result: ConversionResult,
-    scale: float
+    scale: float,
 ) -> dict[str, FigureRef]:
     """
     Iterates doc.pictures, extracts each crop via picture.get_image(),
@@ -547,7 +771,6 @@ def _build_figure_lookup(
     lookup: dict[str, FigureRef] = {}
 
     for picture in doc.pictures:
-        picture: Any
         if not picture.prov:
             continue
 
@@ -571,7 +794,92 @@ def _build_figure_lookup(
             page_number=prov.page_no,
             bbox_image_px=bbox_px,
             bbox_pdf=prov.bbox,
-            base64_png=b64
+            base64_png=b64,
+        )
+
+    return lookup
+
+
+def _build_element_lookup(
+    doc: DoclingDocument,
+    result: ConversionResult,
+    figure_lookup: dict[str, FigureRef],
+    scale: float,
+) -> dict[str, ElementRef]:
+    """
+    Iterates every item in the DoclingDocument and builds a dict keyed by
+    self_ref. Pictures are excluded — they go into the figure lookup.
+    Tables use their markdown export as the text excerpt so the model
+    sees structured table content rather than a raw string.
+
+    Tables whose markdown contains empty cells (a signal that embedded
+    images were lost during extraction) are additionally cropped from the
+    rendered page and inserted into figure_lookup so the model receives
+    both the structured text and a visual of the table.
+
+    Continuation tables (tables that span a page break and lose their
+    header row) are detected by section + page proximity and have the
+    previous table's header prepended.
+    """
+    lookup: dict[str, ElementRef] = {}
+    # Continuation-header tracking (scoped by section + page)
+    _last_table_header: str | None = None
+    _last_table_page: int = -1
+    _current_section: str = ""
+
+    for item, _level in doc.iterate_items():
+        if not hasattr(item, "prov") or not item.prov:
+            continue
+
+        label: str = _get_item_label(item)
+
+        # Skip decorative page elements (headers, footers)
+        if label in ("picture", "page_header", "page_footer"):
+            continue
+
+        # Track section boundaries to scope continuation headers
+        if label in ("section_header", "section_heading"):
+            _current_section = getattr(item, "text", "")
+            _last_table_header = None
+
+        prov: ProvenanceItem = item.prov[0]
+        page: Any = doc.pages.get(prov.page_no)
+        if page is None or page.size is None:
+            continue
+
+        bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
+
+        text: str = ""
+        if label == "table":
+            # Detect continuation table status based on adjacent page in same section
+            is_adjacent_page: bool = (
+                _last_table_header is not None and 0 <= (prov.page_no - _last_table_page) <= MAX_CONTINUATION_PAGE_GAP
+            )
+            text, _last_table_header = _format_table_markdown(
+                item, doc, _last_table_header, is_adjacent_page
+            )
+            _last_table_page = prov.page_no
+
+            # Selective table cropping for tables with empty cells
+            if _table_has_empty_cells(text):
+                fig_id: str | None = _crop_table_as_figure(
+                    result, prov, item.self_ref, scale, figure_lookup
+                )
+                if fig_id:
+                    text += f"\n[Table Image: {fig_id}]"
+
+        elif hasattr(item, "text") and item.text:
+            text = item.text
+        elif hasattr(item, "export_to_markdown"):
+            text = item.export_to_markdown()
+
+        lookup[item.self_ref] = ElementRef(
+            element_id=item.self_ref,
+            label=label,
+            page_number=prov.page_no,
+            bbox_image_px=bbox_px,
+            bbox_pdf=prov.bbox,
+            text_excerpt=text,
         )
 
     return lookup
@@ -586,13 +894,7 @@ def _attach_captions(doc: DoclingDocument, figures: list[dict]) -> None:
     caption (PDF coordinate space). The closest figure above the caption wins.
     """
     for item, _level in doc.iterate_items():
-        item: Any
-        _level: int
-        label: str = (
-            item.label.value
-            if hasattr(item.label, "value")
-            else str(item.label)
-        )
+        label: str = _get_item_label(item)
         if label != "caption":
             continue
         if not hasattr(item, "prov") or not item.prov:
@@ -606,11 +908,9 @@ def _attach_captions(doc: DoclingDocument, figures: list[dict]) -> None:
         best_dist: float = float("inf")
 
         for fig in figures:
-            fig: dict
             if fig["page"] != caption_page:
                 continue
             for pic in doc.pictures:
-                pic: Any
                 if pic.self_ref != fig["id"] or not pic.prov:
                     continue
                 fig_bottom: float = pic.prov[0].bbox.b  # bottom of figure in PDF space
@@ -632,13 +932,7 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     section_pages: set[int] = set()
 
     for item, _level in doc.iterate_items():
-        item: Any
-        _level: int
-        label: str = (
-            item.label.value
-            if hasattr(item.label, "value")
-            else str(item.label)
-        )
+        label: str = _get_item_label(item)
         if label in ("section_header", "section_heading") and hasattr(item, "prov") and item.prov:
             section_pages.add(item.prov[0].page_no)
 
@@ -653,7 +947,6 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     prev: int = unassigned[0]
 
     for page in unassigned[1:]:
-        page: int
         if page != prev + 1:
             gaps.append({"pages": list(range(start, prev + 1))})
             start = page
@@ -662,6 +955,10 @@ def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     gaps.append({"pages": list(range(start, prev + 1))})
     return gaps
 
+
+# =============================================================================
+# 7. Semantic Chunking, Merging & Section Hierarchy
+# =============================================================================
 
 def _extract_section_key(heading: str) -> str | None:
     """
@@ -678,19 +975,55 @@ def _extract_section_key(heading: str) -> str | None:
     return None
 
 
-def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> list[EvaluationChunk]:
-    merged_chunks: list[EvaluationChunk] = []
-    if not raw_chunks:
-        return merged_chunks
+def _merge_chunk_pair(
+    current_chunk: EvaluationChunk,
+    next_chunk: EvaluationChunk,
+    current_key: str | None,
+) -> None:
+    """
+    Merges next_chunk into current_chunk in-place.
+    Concatenates text, combines element refs, deduplicates figures, and updates page range.
+    """
+    if current_key is not None and current_chunk.heading != next_chunk.heading:
+        # If current heading is a parent heading (e.g. "F. System Considerations"), preserve it.
+        is_parent: bool = bool(re.match(rf'^{current_key}\.\s+[A-Za-z]', current_chunk.heading))
+        if not is_parent:
+            current_chunk.heading = f"Section {current_key} Subsections"
 
-    import copy
+    current_chunk.structured_text = (
+        current_chunk.structured_text + "\n\n" + next_chunk.structured_text
+    ).strip()
+    current_chunk.element_refs.extend(next_chunk.element_refs)
+
+    seen_figs: set[str] = {f.figure_id for f in current_chunk.figures}
+    for fig in next_chunk.figures:
+        if fig.figure_id not in seen_figs:
+            current_chunk.figures.append(fig)
+            seen_figs.add(fig.figure_id)
+
+    min_page: int = min(current_chunk.page_range[0], next_chunk.page_range[0])
+    max_page: int = max(current_chunk.page_range[1], next_chunk.page_range[1])
+    current_chunk.page_range = (min_page, max_page)
+
+
+def merge_chunks(
+    raw_chunks: list[EvaluationChunk],
+    max_chars: int = DEFAULT_MAX_CHUNK_CHARS,
+) -> list[EvaluationChunk]:
+    """
+    Merges contiguous chunks that share the same major section identifier
+    provided their combined text length does not exceed max_chars.
+    """
+    if not raw_chunks:
+        return []
+
+    merged_chunks: list[EvaluationChunk] = []
     current_chunk: EvaluationChunk = copy.copy(raw_chunks[0])
     current_chunk.element_refs = list(current_chunk.element_refs)
     current_chunk.figures = list(current_chunk.figures)
     current_key: str | None = _extract_section_key(current_chunk.heading)
 
     for next_chunk in raw_chunks[1:]:
-        next_chunk: EvaluationChunk
         next_key: str | None = _extract_section_key(next_chunk.heading)
 
         same_section: bool = (
@@ -698,29 +1031,9 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
             (current_key is not None and next_key is not None and current_key == next_key)
         )
         len_combined: int = len(current_chunk.structured_text) + len(next_chunk.structured_text)
-        
-        if same_section and len_combined <= max_chars:
-            if current_key is not None and current_chunk.heading != next_chunk.heading:
-                # If current heading is a parent heading (e.g. "F. System Considerations"), preserve it.
-                is_parent: bool = bool(re.match(rf'^{current_key}\.\s+[A-Za-z]', current_chunk.heading))
-                if not is_parent:
-                    current_chunk.heading = f"Section {current_key} Subsections"
 
-            current_chunk.structured_text = (
-                current_chunk.structured_text + "\n\n" + next_chunk.structured_text
-            ).strip()
-            current_chunk.element_refs.extend(next_chunk.element_refs)
-            
-            seen_figs: set[str] = {f.figure_id for f in current_chunk.figures}
-            for fig in next_chunk.figures:
-                fig: FigureRef
-                if fig.figure_id not in seen_figs:
-                    current_chunk.figures.append(fig)
-                    seen_figs.add(fig.figure_id)
-            
-            min_page: int = min(current_chunk.page_range[0], next_chunk.page_range[0])
-            max_page: int = max(current_chunk.page_range[1], next_chunk.page_range[1])
-            current_chunk.page_range = (min_page, max_page)
+        if same_section and len_combined <= max_chars:
+            _merge_chunk_pair(current_chunk, next_chunk, current_key)
         else:
             merged_chunks.append(current_chunk)
             current_chunk = copy.copy(next_chunk)
@@ -729,20 +1042,100 @@ def merge_chunks(raw_chunks: list[EvaluationChunk], max_chars: int = 4000) -> li
             current_key = next_key
 
     merged_chunks.append(current_chunk)
-    
+
     for idx, c in enumerate(merged_chunks):
-        idx: int
-        c: EvaluationChunk
         c.chunk_id = f"chunk_{idx}"
-        
+
     return merged_chunks
+
+
+def _attach_figures_by_page(
+    chunks: list[EvaluationChunk],
+    figure_lookup: dict[str, FigureRef],
+) -> None:
+    """
+    Assigns figures to chunks by explicit text mention or page proximity.
+
+    HierarchicalChunker is text-based and typically doesn't include
+    picture items in chunk.meta.doc_items, so the ref_id match in
+    build_chunks never fires. This function assigns each unattached
+    figure to the chunk whose text references it, or whose page range
+    contains the figure's page, falling back to nearest page distance.
+    """
+    attached_ids: set[str] = {
+        figure.figure_id
+        for chunk in chunks
+        for figure in chunk.figures
+    }
+
+    for figure in figure_lookup.values():
+        if not figure.base64_png or figure.figure_id in attached_ids:
+            continue
+
+        best_chunk: EvaluationChunk | None = None
+
+        # 1. Prefer a chunk whose structured_text explicitly references this figure ID
+        for chunk in chunks:
+            if figure.figure_id in chunk.structured_text:
+                best_chunk = chunk
+                break
+
+        # 2. If not explicitly referenced, find a chunk by page range proximity
+        if best_chunk is None:
+            best_dist: float = float('inf')
+            for chunk in chunks:
+                if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
+                    best_chunk = chunk
+                    break
+                dist: float = min(
+                    abs(figure.page_number - chunk.page_range[0]),
+                    abs(figure.page_number - chunk.page_range[1]),
+                )
+                if dist < best_dist:
+                    best_dist = dist
+                    best_chunk = chunk
+
+        if best_chunk is not None:
+            best_chunk.figures.append(figure)
+            attached_ids.add(figure.figure_id)
+
+
+def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
+    """
+    Ensures every chunk of a multi-chunk section can see ALL figures
+    from that section. Without this, a table on page 7 that references
+    diagrams on pages 8-9 (same section, different chunk due to size
+    limits) would cause false 'missing diagram' findings.
+    """
+    heading_groups: dict[str, list[int]] = defaultdict(list)
+    for i, chunk in enumerate(chunks):
+        key: str = _extract_section_key(chunk.heading) or chunk.heading
+        heading_groups[key].append(i)
+
+    for _heading, indices in heading_groups.items():
+        # Skip single chunk or empty sections
+        if len(indices) <= 1:
+            continue
+
+        # Collect all unique figures from this multi-chunk section
+        all_figures: list[FigureRef] = []
+        seen_ids: set[str] = set()
+        for idx in indices:
+            for fig in chunks[idx].figures:
+                if fig.figure_id not in seen_ids:
+                    all_figures.append(fig)
+                    seen_ids.add(fig.figure_id)
+
+        # Distribute shared figures to every chunk in the section
+        for idx in indices:
+            chunks[idx].figures = list(all_figures)
 
 
 def build_chunks(
     doc: DoclingDocument,
     result: ConversionResult,
     chunker: HierarchicalChunker,
-    scale: float = 2.0
+    scale: float = DEFAULT_IMAGE_SCALE,
 ) -> list[EvaluationChunk]:
     """
     Runs HierarchicalChunker over the DoclingDocument and converts each
@@ -757,24 +1150,19 @@ def build_chunks(
     chunks: list[EvaluationChunk] = []
 
     for i, chunk in enumerate(chunker.chunk(doc)):
-        i: int
-        chunk: Any
         text_lines: list[str] = []
         chunk_elements: list[ElementRef] = []
         chunk_figures: list[FigureRef] = []
 
         for item in chunk.meta.doc_items:
-            item: Any
             ref_id: str = item.self_ref
 
             elem: ElementRef | None = element_lookup.get(ref_id)
             if elem is not None:
                 chunk_elements.append(elem)
-                text_lines.append(
-                    f"[ID:{ref_id}|{elem.label}|p{elem.page_number}]"
-                )
+                text_lines.append(f"[ID:{ref_id}|{elem.label}|p{elem.page_number}]")
                 text_lines.append(elem.text_excerpt)
-                text_lines.append("") # forces an extra newline when joined @ line 406
+                text_lines.append("")  # forces an extra newline when joined
 
                 # If this element was a table with an image crop, attach the crop figure directly
                 table_fig_id: str = f"table_crop_{ref_id}"
@@ -802,7 +1190,7 @@ def build_chunks(
             page_range=page_range,
             structured_text="\n".join(text_lines).strip(),
             element_refs=chunk_elements,
-            figures=chunk_figures
+            figures=chunk_figures,
         ))
 
     merged: list[EvaluationChunk] = merge_chunks(chunks)
@@ -811,97 +1199,9 @@ def build_chunks(
     return merged
 
 
-def _attach_figures_by_page(
-    chunks: list[EvaluationChunk],
-    figure_lookup: dict[str, FigureRef]
-) -> None:
-    """
-    Assigns figures to chunks by explicit text mention or page proximity.
-
-    HierarchicalChunker is text-based and typically doesn't include
-    picture items in chunk.meta.doc_items, so the ref_id match in
-    build_chunks never fires. This function assigns each unattached
-    figure to the chunk whose text references it, or whose page range
-    contains the figure's page, falling back to nearest page distance.
-    """
-    attached_ids: set[str] = {
-        figure.figure_id
-        for chunk in chunks
-        for figure in chunk.figures
-    }
-
-    for figure in figure_lookup.values():
-        figure: FigureRef
-        if not figure.base64_png or figure.figure_id in attached_ids:
-            continue
-
-        best_chunk: EvaluationChunk | None = None
-
-        # 1. Prefer a chunk whose structured_text explicitly references this figure ID
-        for chunk in chunks:
-            chunk: EvaluationChunk
-            if figure.figure_id in chunk.structured_text:
-                best_chunk = chunk
-                break
-
-        # 2. If not explicitly referenced, find a chunk by page range proximity
-        if best_chunk is None:
-            best_dist: float = float('inf')
-            for chunk in chunks:
-                chunk: EvaluationChunk
-                if chunk.page_range[0] <= figure.page_number <= chunk.page_range[1]:
-                    best_chunk = chunk
-                    break
-                dist: float = min(
-                    abs(figure.page_number - chunk.page_range[0]),
-                    abs(figure.page_number - chunk.page_range[1])
-                )
-                if dist < best_dist:
-                    best_dist = dist
-                    best_chunk = chunk
-
-        if best_chunk is not None:
-            best_chunk.figures.append(figure)
-            attached_ids.add(figure.figure_id)
-
-
-def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
-    """
-    Ensures every chunk of a multi-chunk section can see ALL figures
-    from that section. Without this, a table on page 7 that references
-    diagrams on pages 8-9 (same section, different chunk due to size
-    limits) would cause false 'missing diagram' findings.
-    """
-    heading_groups: dict[str, list[int]] = defaultdict(list)
-    for i, chunk in enumerate(chunks):
-        i: int
-        chunk: EvaluationChunk
-        key: str = _extract_section_key(chunk.heading) or chunk.heading
-        heading_groups[key].append(i)
-
-    for _heading, indices in heading_groups.items():
-        _heading: str
-        indices: list[int]
-        # skip single chunk or empty sections
-        if len(indices) <= 1:
-            continue
-
-        # collect all figures from a multi-chunk section
-        all_figures: list[FigureRef] = []
-        seen_ids: set[str] = set()
-        for idx in indices:
-            idx: int
-            for fig in chunks[idx].figures:
-                fig: FigureRef
-                if fig.figure_id not in seen_ids:
-                    all_figures.append(fig)
-                    seen_ids.add(fig.figure_id)
-
-        # distribute to every chunk with the same header
-        for idx in indices:
-            idx: int
-            chunks[idx].figures = list(all_figures)
-
+# =============================================================================
+# 8. Document Indexing
+# =============================================================================
 
 def build_document_index(doc: DoclingDocument) -> dict:
     """
@@ -918,16 +1218,10 @@ def build_document_index(doc: DoclingDocument) -> dict:
     current_section: str = ""
 
     for item, _level in doc.iterate_items():
-        item: Any
-        _level: int
         if not hasattr(item, "prov") or not item.prov:
             continue
 
-        label: str = (
-            item.label.value
-            if hasattr(item.label, "value")
-            else str(item.label)
-        )
+        label: str = _get_item_label(item)
         prov: ProvenanceItem = item.prov[0]
 
         if label in ("section_header", "section_heading"):
@@ -935,20 +1229,20 @@ def build_document_index(doc: DoclingDocument) -> dict:
             sections.append({
                 "id": item.self_ref,
                 "title": current_section,
-                "page": prov.page_no
+                "page": prov.page_no,
             })
         elif label == "picture":
             figures.append({
                 "id": item.self_ref,
                 "page": prov.page_no,
                 "caption": None,  # filled by _attach_captions
-                "section": current_section
+                "section": current_section,
             })
         elif label == "table":
             tables.append({
                 "id": item.self_ref,
                 "page": prov.page_no,
-                "section": current_section
+                "section": current_section,
             })
 
     _attach_captions(doc, figures)
@@ -957,5 +1251,5 @@ def build_document_index(doc: DoclingDocument) -> dict:
         "sections": sections,
         "figures": figures,
         "tables": tables,
-        "page_gaps": _find_page_gaps(doc)
+        "page_gaps": _find_page_gaps(doc),
     }
