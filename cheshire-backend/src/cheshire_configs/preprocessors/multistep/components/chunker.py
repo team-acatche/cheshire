@@ -7,7 +7,12 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.chunking import HierarchicalChunker
 from docling_core.transforms.chunker.hierarchical_chunker import ChunkingSerializerProvider, ChunkingDocSerializer
 from docling_core.transforms.serializer.markdown import MarkdownParams
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, build_chunks, build_document_index
+from cheshire_configs.preprocessors.multistep.helpers import (
+    DEFAULT_IMAGE_SCALE,
+    EvaluationChunk,
+    build_chunks,
+    build_document_index,
+)
 
 
 class ImagePlaceholderSerializerProvider(ChunkingSerializerProvider):
@@ -27,7 +32,7 @@ class MultistepDoclingConverter:
     Accepts a PDF path, returns structured chunks and a document index.
     """
 
-    def __init__(self, images_scale: float = 2.0):
+    def __init__(self, images_scale: float = DEFAULT_IMAGE_SCALE):
         pipeline_options: PdfPipelineOptions = PdfPipelineOptions()
         pipeline_options.images_scale = images_scale
         pipeline_options.generate_picture_images = True
