@@ -47,7 +47,7 @@ export const DocumentLevelFindings = forwardRef<HTMLButtonElement, Props>(
             <div className="text-sm font-semibold">Document-wide findings</div>
             <div className="text-xs text-muted-foreground">Not tied to a specific spot in the PDF</div>
           </div>
-          <div className="max-h-80 overflow-y-auto py-1">
+          <div className="max-h-80 overflow-y-auto py-1 scroll-transparent">
             {groups.map(([category, items]) => (
               <div key={category} className="mb-1">
                 <div className="px-3 py-1 text-[11px] font-semibold uppercase text-muted-foreground">

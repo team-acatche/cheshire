@@ -154,7 +154,7 @@ export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusC
         </div>
 
         {/* Body */}
-        <div className="px-4 py-3 space-y-3 max-h-72 overflow-y-auto">
+        <div className="px-4 py-3 space-y-3 max-h-72 overflow-y-auto scroll-transparent">
           <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
             {finding.description}
           </p>
