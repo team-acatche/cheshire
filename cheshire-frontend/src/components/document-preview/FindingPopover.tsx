@@ -12,9 +12,10 @@ interface FindingPopoverProps {
   anchorEl: HTMLElement;
   onClose: () => void;
   onFocusChange?: (f: VulnerabilityFinding | null) => void;
+  portalRoot?: HTMLElement | null;
 }
 
-export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusChange }: FindingPopoverProps) {
+export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusChange, portalRoot }: FindingPopoverProps) {
   // Most severe first
   const findings = useMemo(() => [...incoming].sort(bySeverity), [incoming]);
   const [page, setPage] = useState(0);
@@ -71,7 +72,7 @@ export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusC
   }, [anchorEl, onClose, refs.floating]);
 
   return (
-    <FloatingPortal>
+    <FloatingPortal root={portalRoot}>
       <div
         ref={refs.setFloating}
         style={{ ...floatingStyles, zIndex: 9999, borderColor: toneColor(tone, 0.35) }}

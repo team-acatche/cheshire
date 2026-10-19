@@ -1,6 +1,4 @@
 // cheshire-frontend/src/components/document-preview/DocumentPreview.tsx
-// Change from original: accepts findingsLoading prop and shows a banner
-// in the toolbar area while the AI audit is still running.
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
@@ -14,6 +12,8 @@ import {
   Minus,
   ShieldAlert,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import {
   Popover,
@@ -87,6 +87,35 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   const pageEls        = useRef<Record<number, HTMLDivElement | null>>({});
   const roRef          = useRef<ResizeObserver | null>(null);
 
+  // ── Full screen (PDF viewer only, not the whole app) ───────────────────────
+  const fullscreenRef = useRef<HTMLDivElement | null>(null);
+  // Stored in state too, so portals (popovers) get a real element after mount
+  const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Stable callback ref (must not change between renders)
+  const setFullscreenEl = useCallback((node: HTMLDivElement | null) => {
+    fullscreenRef.current = node;
+    setPortalEl(node);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const el = fullscreenRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      el.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const onChange = () =>
+      setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
   // ── Derived ────────────────────────────────────────────────────────────────
   const isUrl           = typeof src === "string";
   const displayFileName = fileName ?? (isUrl ? "document.pdf" : (src as File).name);
@@ -104,21 +133,16 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
   // ── Page width ─────────────────────────────────────────────────────────────
   // Snapping containerWidth to the nearest 10 px before computing pageWidth
-  // means that tiny ResizeObserver jitter (1-3 px from scrollbars appearing /
-  // disappearing) never produces a new value and never triggers a cascade of
-  // Page re-renders → repaints → more ResizeObserver events.
+  // means that tiny ResizeObserver jitter never triggers a cascade of re-renders.
+  // In fullscreen the max page width is raised so the PDF uses the extra space.
   const pageWidth = useMemo(() => {
     const snapped = Math.round(containerWidth / 10) * 10;
-    return Math.min(snapped, 900) * zoomLevel;
-  }, [containerWidth, zoomLevel]);
+    return Math.min(snapped, isFullscreen ? 1400 : 900) * zoomLevel;
+  }, [containerWidth, zoomLevel, isFullscreen]);
 
   // ── ResizeObserver — debounced + threshold gated ───────────────────────────
   const debouncedSetWidth = useCallback(
     debounce((newWidth: number) => {
-      // Only commit a new width when the change is meaningful (> 8 px).
-      // Combined with the 10 px snap above this fully breaks the feedback loop:
-      //   setState → Pages re-render → canvas repaints → scrollbar ±15 px →
-      //   ResizeObserver → change < 8 px → ignored. Loop stopped.
       setContainerWidth((prev) => (Math.abs(prev - newWidth) > 8 ? newWidth : prev));
     }, 150),
     []
@@ -248,7 +272,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     clearAllMarks(); setMatchPages([]); setMatchIdx(0);
     setSearchOpen(false); setSearchQuery("");
   }, []);
-  
+
   // severity filter (driven by the legend chips)
   const [hiddenTones, setHiddenTones] = useState<Set<Tone>>(new Set());
   const toneCounts = useMemo(() => countByTone(findings), [findings]);
@@ -291,9 +315,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
   const handlePageClick = useCallback(() => setActive(null), []);
 
-    // state/refs
+  // state/refs
   const docBtnRef = useRef<HTMLButtonElement>(null);
-
 
   // open the popover anchored to the stable toolbar pill (not the list item, which unmounts)
   const handleDocLevelSelect = useCallback((f: VulnerabilityFinding) => {
@@ -307,7 +330,12 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <>
+    <div
+      ref={setFullscreenEl}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden ${
+        isFullscreen ? "bg-background p-4" : ""
+      }`}
+    >
       {/* Top bar */}
       <div className="flex items-center justify-between text-sm text-muted-foreground px-1 shrink-0">
         <div className="inline-flex items-center gap-2 min-w-0">
@@ -326,7 +354,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             <Search className="h-4 w-4" />
           </button>
 
-          {onToggleChat && (
+          {onToggleChat && !isFullscreen && (
             <button
               onClick={onToggleChat}
               title={chatOpen ? "Hide chatbot" : "Show chatbot"}
@@ -336,6 +364,15 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               <MessageSquareText className="h-4 w-4" />
             </button>
           )}
+
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit full screen (Esc)" : "Full screen"}
+            aria-pressed={isFullscreen}
+            className={`p-1 rounded hover:bg-muted transition-colors ${isFullscreen ? "text-foreground bg-muted" : ""}`}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 
@@ -374,7 +411,11 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                     <span className="text-sm font-semibold text-foreground">{findings.length}</span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-90 p-0 border bg-background shadow-md scroll-transparent" align="start">
+                <PopoverContent
+                  container={portalEl}
+                  className="w-90 p-0 border bg -background shadow-md scroll-transparent"
+                  align="start"
+                >
                   <div className="px-3 py-2 border-b bg-muted/40">
                     <div className="text-sm font-semibold">Findings</div>
                     <div className="text-xs text-muted-foreground">Jump directly to a finding</div>
@@ -386,15 +427,15 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         {pf.map((finding, idx) => (
                           <button
                             key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
-                            onClick={() => 
-                              isUnanchored(finding) ? handleDocLevelSelect(finding) :scrollToPageNumber(finding.page_no)
+                            onClick={() =>
+                              isUnanchored(finding) ? handleDocLevelSelect(finding) : scrollToPageNumber(finding.page_no)
                             }
                             className="w-full px-3 py-2 text-left hover:bg-muted transition-colors"
                           >
                             <div className="flex items-center gap-2">
-                            <span className="size-2 shrink-0 rounded-full" style={{ background: toneColor(getTone(finding)) }} />
-                            <span className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</span>
-                          </div>
+                              <span className="size-2 shrink-0 rounded-full" style={{ background: toneColor(getTone(finding)) }} />
+                              <span className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</span>
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -408,10 +449,10 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                 ref={docBtnRef}
                 findings={documentLevel}
                 onSelect={handleDocLevelSelect}
+                container={portalEl}
               />
             )}
-          </div>       
-
+          </div>
 
           {/* Center — zoom */}
           <div className="justify-self-center">
@@ -464,25 +505,12 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
 
       {isPdf && (
         <>
-          {/*
-            Skeleton is shown whenever pdfLoading is true.
-            We manage this ourselves (via onLoadSuccess) instead of relying on
-            react-pdf's `loading` prop, because blob URLs load near-instantly and
-            the prop's loading state often never renders at all.
-          */}
           {pdfLoading && (
             <div className="flex-1 overflow-hidden rounded-lg bg-zinc-300">
               <PdfPageSkeleton zoomLevel={zoomLevel} />
             </div>
           )}
 
-          {/*
-            The PDF container is always mounted once isPdf is true so that
-            react-pdf can parse the file in the background. We hide it via CSS
-            (not conditional rendering) so the ref callback fires and the
-            ResizeObserver is set up, but nothing is visible until loading is done.
-            This prevents the flash from the container appearing before pages paint.
-          */}
           <div
             ref={measuredRef}
             className="flex-1 overflow-auto rounded-lg bg-zinc-300 scroll-transparent"
@@ -494,7 +522,6 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               onLoadSuccess={({ numPages: n }) => {
                 setNumPages(n);
                 setCurrentPage(1);
-                // Single clean transition: skeleton off, PDF on
                 setPdfLoading(false);
               }}
               onLoadError={() => setPdfLoading(false)}
@@ -558,9 +585,10 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           anchorEl={active.anchorEl}
           onClose={() => setActive(null)}
           onFocusChange={handleFocusChange}
+          portalRoot={portalEl}
         />
       )}
-    </>
+    </div>
   );
 }
 
