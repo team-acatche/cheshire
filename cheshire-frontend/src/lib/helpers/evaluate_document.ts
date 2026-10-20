@@ -10,16 +10,17 @@ interface SubmitResponse {
 }
 
 interface StatusResponse {
-  status: "PENDING" | "RUNNING" | "PROCESSING" |"FAILED"
+  status: "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "CANCELLED"
   error?: string
 }
 
 export interface EvaluateResponse {
   session_id: string
   vulnerabilities: VulnerabilityFinding[]
+  cancelled?: boolean
 }
 
-export type EvaluationStatus = "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "DONE"
+export type EvaluationStatus = "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "DONE" | "CANCELLED"
 
 // ── Polling config ────────────────────────────────────────────────────────────
 
@@ -106,6 +107,10 @@ export async function pollEvaluation(
 
     // Still in progress
     const body = await pollRes.json() as StatusResponse
+    if (body.status === "CANCELLED") {
+      onProgress?.("CANCELLED")
+      return { session_id, vulnerabilities: [], cancelled: true }
+    }
     if (body.status === "FAILED") {
       console.error("evaluate job failed:", body.error)
       return null
@@ -141,4 +146,16 @@ export async function getSessionDocumentUrl(sessionId: string): Promise<string |
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export type CancelResult = "cancelled" | "finished" | "error"
+export async function cancelEvaluation(sessionId: string): Promise<CancelResult> {
+  try {
+    const res = await authFetch(`/api/v1/${sessionId}/cancel`, { method: "POST" })
+    if (res.ok) return "cancelled"
+    if (res.status === 409) return "finished" // completed before the cancel landed
+    return "error"
+  } catch {
+    return "error"
+  }
 }
