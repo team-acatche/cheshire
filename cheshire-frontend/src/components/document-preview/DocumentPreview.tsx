@@ -14,6 +14,7 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Square
 } from "lucide-react";
 import {
   Popover,
@@ -58,9 +59,10 @@ interface DocumentPreviewProps {
   findingsLoading?: boolean;
   chatOpen?: boolean;
   onToggleChat?: () => void;
+  onCancelAnalysis?: () => void;
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -401,6 +403,17 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Analyzing document…
+                {onCancelAnalysis && (
+                  <button
+                  type="button"
+                  onClick={onCancelAnalysis}
+                  className="-mr-1 rounded-full border border-red-600 p-1 hover:bg-red-100 dark:border-red-400 dark:hover:bg-red-950"
+                  aria-label="Cancel analysis"
+                  title="Cancel analysis"
+                >
+                  <Square className="h-3 w-3 text-red-600 dark:text-red-400" />
+                </button>
+                )}
               </div>
             ) : (
               <Popover>
