@@ -34,7 +34,7 @@ from globals import DATA_PATH, LOGGING_CONFIG
 from knowledge_base.session_manager import Session, SessionStatus, SqliteSessionRepository
 from knowledge_base.history import Event, EventType, SqliteEventRepository
 from knowledge_base.repository import RepositoryType, KnowledgeRepositoryFactory
-from knowledge_base.job_store import job_store, JobStatus
+from knowledge_base.job_store import job_store, JobStatus, EvaluationCancelled
 from auth.models import User
 from auth.dependencies import get_current_user
 from dependencies.sessions import get_user_path, get_user_db_path
@@ -51,13 +51,18 @@ class SubmitResponse(BaseModel):
 
 
 class StatusResponse(BaseModel):
-    status: Literal["PENDING", "PROCESSING", "FAILED"] = Field(
+    status: Literal["PENDING", "PROCESSING", "FAILED", "CANCELLED"] = Field(
         description="Current evaluation status. `DONE` is never returned in a body; it redirects (301) to the result endpoint instead."
     )
     error: Optional[str] = Field(
         default=None,
         description="Failure reason. Only present when `status` is `FAILED`.",
     )
+
+
+class CancelResponse(BaseModel):
+    session_id: str
+    status: Literal["CANCELLED"] = "CANCELLED"
 
 
 class ErrorResponse(BaseModel):
@@ -84,32 +89,53 @@ def _run_evaluation(
         PENDING → PROCESSING (immediately on start)
         PROCESSING → DONE    (on success)
         PROCESSING → FAILED  (on error)
+        PENDING/PROCESSING → CANCELLED (when the user cancels.)
 
     SQLite is the authoritative status store — the in-memory job_store is
     only used for fast same-process polling during the request lifecycle.
     """
 
-    def _update_session_status(new_status: SessionStatus) -> None:
+    job = job_store.get(session_id)
+
+    def is_cancelled() -> bool:
+        return job is not None and job.cancel_event.is_set()
+
+    def _transition(new_status: SessionStatus, *, expected: tuple[SessionStatus, ...]) -> bool:
+        """Compare-and-set the status in SQLite. False means the guard failed (e.g. user cancelled)."""
+        with sqlite3.connect(user_db_path) as db:
+            return SqliteSessionRepository(db).update_status_if(session_id, new_status, expected=expected) is not None
+
+    def _mark_terminal(new_status: SessionStatus) -> None:
         try:
-            with sqlite3.connect(user_db_path) as db:
-                SqliteSessionRepository(db).update_status(session_id, new_status)
+            _transition(new_status, expected=(SessionStatus.PENDING, SessionStatus.PROCESSING))
         except Exception as exc:
             logger.error(f"session({session_id}): failed to persist status {new_status}: {exc}")
 
+    def _finish_cancelled() -> None:
+        _mark_terminal(SessionStatus.CANCELLED)
+        if job is not None:
+            job.status = JobStatus.CANCELLED
+            job_store.update(job)
+        logger.info(f"session({session_id}): evaluation cancelled.")
+
     logger.info(f"session({session_id}): starting evaluation of {filename}…")
-    job = job_store.get(session_id)
-
-    if job is not None:
-        job.status = JobStatus.RUNNING
-        job_store.update(job)
-
-    _update_session_status(SessionStatus.PROCESSING)
+    saved_event_ids: list[int] = []
 
     try:
-        results = asyncio.run(evaluate_file(document_path, config))
+        # Only start if still PENDING — a cancel that arrived before we started wins.
+        if not _transition(SessionStatus.PROCESSING, expected=(SessionStatus.PENDING,)) or is_cancelled():
+            raise EvaluationCancelled()
+
+        if job is not None:
+            job.status = JobStatus.RUNNING
+            job_store.update(job)
+
+        results = asyncio.run(evaluate_file(document_path, config, should_cancel=is_cancelled))
 
         if results is None:
             raise RuntimeError("Evaluation returned no results")
+        if is_cancelled():
+            raise EvaluationCancelled()
 
         # Init vector stores
         KnowledgeRepositoryFactory.create_repositories(
@@ -120,14 +146,19 @@ def _run_evaluation(
         with sqlite3.connect(user_db_path) as history_db:
             repo = SqliteEventRepository(history_db)
             for v in results:
-                repo.save(Event(
+                saved = repo.save(Event(
                     session_id=session_id,
                     event_type=EventType.VULNERABILITY_FINDING,
                     content=v.model_dump_json(),
                 ))
+                if saved.event_id is not None:
+                    saved_event_ids.append(saved.event_id)
 
-        # Mark done in both stores
-        _update_session_status(SessionStatus.DONE)
+        # DONE only if still PROCESSING. If the user cancelled in the meantime, discard the findings.
+        if not _transition(SessionStatus.DONE, expected=(SessionStatus.PROCESSING,)):
+            with sqlite3.connect(user_db_path) as db:
+                SqliteEventRepository(db).delete_events(saved_event_ids)
+            raise EvaluationCancelled()
 
         if job is not None:
             job.status = JobStatus.DONE
@@ -137,10 +168,15 @@ def _run_evaluation(
 
         logger.info(f"session({session_id}): done — {len(results)} finding(s).")
 
-    except Exception as exc:
-        logger.exception(f"session({session_id}): evaluation failed — {exc}")
-        _update_session_status(SessionStatus.FAILED)
+    except EvaluationCancelled:
+        _finish_cancelled()
 
+    except Exception as exc:
+        if is_cancelled():          # an error caused by shutting down shouldn't show as "failed"
+            _finish_cancelled()
+            return
+        logger.exception(f"session({session_id}): evaluation failed — {exc}")
+        _mark_terminal(SessionStatus.FAILED)
         if job is not None:
             job.status = JobStatus.FAILED
             job.error = str(exc)
@@ -316,6 +352,61 @@ def get_evaluation_status(
 
     body = StatusResponse(status=session.status.upper())
     return Response(content=body.model_dump_json(), media_type="application/json")
+
+
+# ── POST /{session_id}/cancel ──────────────────────────────────────────────────
+
+@evaluate_router.post(
+    "/{session_id}/cancel",
+    response_model=CancelResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "No session found for the given ID."},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse, "description": "Evaluation already finished (done/failed)."},
+    },
+)
+def cancel_evaluation(
+    session_id: Annotated[str, PathParam()],
+    current_user: Annotated[User, Depends(get_current_user)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
+) -> CancelResponse:
+    """
+    Request cancellation of a pending/processing evaluation.
+
+    Idempotent: cancelling an already-cancelled session returns 200.
+    Works even if no live job exists (e.g. after a server restart left the
+    session stuck in "processing").
+    """
+    if not user_db_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No session found for '{session_id}'.")
+
+    with sqlite3.connect(user_db_path) as db:
+        repo = SqliteSessionRepository(db)
+        session = repo.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No session found for '{session_id}'.")
+        if session.status == SessionStatus.CANCELLED:
+            return CancelResponse(session_id=session_id)
+
+        updated = repo.update_status_if(
+            session_id,
+            SessionStatus.CANCELLED,
+            expected=(SessionStatus.PENDING, SessionStatus.PROCESSING),
+        )
+
+    if updated is None:  # finished (or failed) before we could cancel
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This evaluation has already finished and can't be cancelled.",
+        )
+
+    job = job_store.get(session_id)
+    if job is not None:
+        job.cancel_event.set()
+        job.status = JobStatus.CANCELLED
+        job_store.update(job)
+
+    logger.info(f"POST /{session_id}/cancel: cancellation requested.")
+    return CancelResponse(session_id=session_id)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

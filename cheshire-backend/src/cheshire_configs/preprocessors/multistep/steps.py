@@ -11,7 +11,8 @@ from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails, C
 from docling_core.types.doc import BoundingBox
 
 import logging
-from typing import Any
+from typing import Any, Optional
+from knowledge_base.job_store import CancelCheck, raise_if_cancelled
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -22,13 +23,15 @@ class PreprocessingPassResults:
     chunks: list[EvaluationChunk]
 
 
-def run_pass1(pdf_path: str) -> PreprocessingPassResults:
+def run_pass1(pdf_path: str, should_cancel: Optional[CancelCheck] = None) -> PreprocessingPassResults:
+    raise_if_cancelled(should_cancel)
     preprocessing_pipeline: Pipeline = build_preprocessing_pipeline()
 
     logger.info("[1/2] Preprocessing document with Docling...")
     prep_result: dict = preprocessing_pipeline.run({
         "docling_converter": {"pdf_path": pdf_path}
     })
+    raise_if_cancelled(should_cancel)
     chunks: list[EvaluationChunk] = prep_result["docling_converter"]["chunks"]
     document_index: dict = prep_result["docling_converter"]["document_index"]
     logger.info(
@@ -43,6 +46,7 @@ def run_pass1(pdf_path: str) -> PreprocessingPassResults:
     all_findings: list[LocalFinding] = []
 
     for i, chunk in enumerate(chunks):
+        raise_if_cancelled(should_cancel)
         i: int
         chunk: EvaluationChunk
         logger.info(
@@ -89,11 +93,12 @@ def run_pass1(pdf_path: str) -> PreprocessingPassResults:
         chunks=chunks
     )
 
-def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
+def run_pass2(results: PreprocessingPassResults, should_cancel: Optional[CancelCheck] = None) -> list[VulnerabilityDetails]:
     all_findings: list[LocalFinding] = results.findings
     document_index: dict = results.document_index
 
     # ---- Step 1: Deduplication & contradiction resolution ----
+    raise_if_cancelled(should_cancel)
     logger.info("[Pass 2a] Deduplicating findings...")
     dedup_pipeline: Pipeline = build_dedup_pipeline()
 
@@ -140,6 +145,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         logger.info(f"  Programmatic dedup: {len(all_findings)} to {len(accepted_local)}.")
 
     # ---- Step 2: Global standards checklist audit (fresh context) ----
+    raise_if_cancelled(should_cancel)
     logger.info("[Pass 2b] Global standards audit...")
     audit_pipeline: Pipeline = build_global_audit_pipeline()
 
@@ -154,6 +160,7 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         audit_result.get("agent", {}).get("audit_findings") or []
     )
     logger.info(f"  {len(audit_findings)} global finding(s) recorded.")
+    raise_if_cancelled(should_cancel)
 
     # Merge dedup-accepted findings with new global audit findings
     audit_ids = {id(f) for f in audit_findings}
