@@ -22,8 +22,12 @@ from .constants import (
     LAST_ROW_BOTTOM_PADDING_PX,
     MAX_CONTINUATION_PAGE_GAP,
     MAX_HEADER_SEARCH_LINES,
+    MAX_TABLE_RIGHT_GAP_PX,
     MIN_COMPOUND_COL_WIDTH_PX,
     MIN_ICON_OVERLAP_PX,
+    MIN_TABLE_CELL_COVERAGE_RATIO,
+    MIN_WIDE_TABLE_WIDTH_PX,
+    WIDE_TABLE_ASPECT_RATIO,
 )
 from .geometry import _compute_box_overlap, _to_topleft_dict
 from .models import FigureRef, ImageBoundingBox
@@ -75,10 +79,12 @@ def _calculate_extended_col_bounds(
     col_bboxes: dict[int, Any],
     num_cols: int,
     page_h: float,
+    table_r: float | None = None,
 ) -> dict[int, tuple[float, float]]:
     """
     Computes left and right bounds for each column, filling missing columns
     and extending boundaries to the midpoints of adjacent columns.
+    If table_r is provided, ensures the rightmost column extends to the table boundary.
     """
     col_bounds: dict[int, list[float | None]] = {}
     for c in range(num_cols):
@@ -102,7 +108,8 @@ def _calculate_extended_col_bounds(
             if c < num_cols - 1 and col_bounds[c + 1][0] is not None:
                 r = (r + col_bounds[c + 1][0]) / 2.0
             else:
-                r = r + LAST_COL_RIGHT_PADDING_PX
+                padded_r = r + LAST_COL_RIGHT_PADDING_PX
+                r = max(padded_r, table_r) if table_r is not None else padded_r
         extended_col_bounds[c] = (l, r)
 
     return extended_col_bounds
@@ -127,8 +134,14 @@ def _get_table_cell_bounds(table_item: Any, page_h: float) -> dict[tuple[int, in
     except Exception:
         return {}
 
+    prov = table_item.prov[0] if hasattr(table_item, "prov") and table_item.prov else None
+    table_r = None
+    if prov and page_h > 0.0:
+        tb = _to_topleft_dict(prov.bbox, page_h)
+        table_r = tb["r"]
+
     extended_row_bounds = _calculate_extended_row_bounds(row_bboxes, num_rows, page_h)
-    extended_col_bounds = _calculate_extended_col_bounds(col_bboxes, num_cols, page_h)
+    extended_col_bounds = _calculate_extended_col_bounds(col_bboxes, num_cols, page_h, table_r=table_r)
 
     cell_bounds: dict[tuple[int, int], dict[str, float]] = {}
     for r in range(num_rows):
@@ -268,6 +281,88 @@ def _table_has_empty_cells(markdown: str) -> bool:
     return False
 
 
+def _table_needs_visual_crop(
+    table_item: Any,
+    markdown: str,
+    page_h: float,
+) -> bool:
+    """
+    Determines if a table needs a visual image crop attached to its chunk.
+    Triggers visual fallback under three general physical and structural conditions:
+    1. Empty data cells exist in the markdown representation (possible dropped icons, images, or unparsed text).
+    2. Geometric cell coverage discrepancy: the horizontal extent of extracted cell
+       bounding boxes is significantly narrower than the table's detected provenance
+       bounding box (e.g. cell width < 85% of table bbox width or right margin gap > 30px),
+       indicating severe horizontal margin clipping by the layout model.
+    3. Structural under-segmentation: a table with a wide aspect ratio (> 2.5) and
+       multiple rows was collapsed into a single column, indicating missed column boundaries.
+    """
+    # 1. Check for empty cells
+    if _table_has_empty_cells(markdown):
+        return True
+
+    prov = table_item.prov[0] if hasattr(table_item, "prov") and table_item.prov else None
+    if not prov or page_h <= 0.0:
+        return False
+
+    table_box = _to_topleft_dict(prov.bbox, page_h)
+    table_w = table_box["r"] - table_box["l"]
+    table_h = table_box["b"] - table_box["t"]
+    if table_w <= 0.0:
+        return False
+
+    # 2. Check geometric cell coverage discrepancy (horizontal clipping)
+    cb_list: list[dict[str, float]] = []
+    try:
+        col_bboxes = table_item.data.get_column_bounding_boxes()
+        if col_bboxes:
+            cb_list = [_to_topleft_dict(cb, page_h) for cb in col_bboxes.values() if cb is not None]
+    except Exception:
+        pass
+
+    if not cb_list:
+        table_cells = getattr(getattr(table_item, "data", None), "table_cells", [])
+        cb_list = [
+            _to_topleft_dict(getattr(c, "bbox", None), page_h)
+            for c in table_cells
+            if getattr(c, "bbox", None) is not None
+        ]
+
+    if cb_list:
+        min_cell_l = min(c["l"] for c in cb_list)
+        max_cell_r = max(c["r"] for c in cb_list)
+        cells_w = max_cell_r - min_cell_l
+        right_gap = table_box["r"] - max_cell_r
+        if cells_w < table_w * MIN_TABLE_CELL_COVERAGE_RATIO or right_gap > MAX_TABLE_RIGHT_GAP_PX:
+            return True
+
+    # 3. Check structural under-segmentation (single column on wide multi-row table)
+    grid = getattr(getattr(table_item, "data", None), "grid", None)
+    if grid and len(grid) > 2 and len(grid[0]) == 1:
+        aspect_ratio = table_w / table_h if table_h > 0.0 else 0.0
+        if table_w >= MIN_WIDE_TABLE_WIDTH_PX and aspect_ratio >= WIDE_TABLE_ASPECT_RATIO:
+            return True
+
+    return False
+
+
+def _sanitize_table_cell_text(text: str) -> str:
+    """
+    Cleans soft hyphens, zero-width characters, non-printing artifacts,
+    and normalizes whitespace and hyphen-broken words across line breaks in table cell text.
+    """
+    if not text:
+        return ""
+    # Remove soft-hyphens, zero-width spaces, and PDF encoding control artifacts
+    cleaned = re.sub(r'[\xad\ufffe\u200b\ufeff\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    # Normalize hyphen-split words across linebreaks (e.g. "LOA-\n SCR-013" -> "LOA-SCR-013")
+    cleaned = re.sub(r'(\b\w+-\s*)\n\s*(\w+)', r'\1\2', cleaned)
+    # Replace remaining newlines with spaces and collapse multiple whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
+
 def _crop_table_as_figure(
     result: ConversionResult,
     prov: ProvenanceItem,
@@ -347,7 +442,7 @@ def _format_cell_with_icons(
                 else:
                     right_txt = "[Embedded Icon]"
 
-        txt = cell_text.replace("\n", " ").strip()
+        txt = _sanitize_table_cell_text(cell_text)
         if txt:
             if left_txt:
                 right_txt = txt if not right_txt else f"{txt} {right_txt}"
@@ -356,7 +451,7 @@ def _format_cell_with_icons(
         return [left_txt, right_txt]
 
     # Non-split standard cell
-    txt = cell_text.replace("\n", " ").strip()
+    txt = _sanitize_table_cell_text(cell_text)
     if not is_header_row and has_cell_bounds:
         for p in pics:
             if not p.prov:

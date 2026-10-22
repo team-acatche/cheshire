@@ -13,7 +13,12 @@ from docling_core.types.doc.document import ProvenanceItem
 from .constants import MAX_CONTINUATION_PAGE_GAP
 from .geometry import _get_item_label
 from .models import ElementRef, FigureRef, ImageBoundingBox
-from .tables import _crop_table_as_figure, _format_table_markdown, _table_has_empty_cells
+from .tables import (
+    _crop_table_as_figure,
+    _format_table_markdown,
+    _table_has_empty_cells,
+    _table_needs_visual_crop,
+)
 
 
 def _build_figure_lookup(
@@ -119,8 +124,8 @@ def _build_element_lookup(
             )
             _last_table_page = prov.page_no
 
-            # Selective table cropping for tables with empty cells
-            if _table_has_empty_cells(text):
+            # Selective table cropping for tables with empty cells or extraction clipping
+            if _table_needs_visual_crop(item, text, page.size.height):
                 fig_id: str | None = _crop_table_as_figure(
                     result, prov, item.self_ref, scale, figure_lookup
                 )
