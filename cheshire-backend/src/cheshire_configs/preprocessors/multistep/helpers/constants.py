@@ -28,3 +28,9 @@ INDEPENDENT_HEADER_KEYWORDS: frozenset[str] = frozenset({
 # Default text scale and chunk length thresholds
 DEFAULT_MAX_CHUNK_CHARS: int = 4000
 DEFAULT_IMAGE_SCALE: float = 2.0
+
+# Table cell coverage and clipping detection thresholds
+MIN_TABLE_CELL_COVERAGE_RATIO: float = 0.85
+MAX_TABLE_RIGHT_GAP_PX: float = 30.0
+MIN_WIDE_TABLE_WIDTH_PX: float = 300.0
+WIDE_TABLE_ASPECT_RATIO: float = 2.5

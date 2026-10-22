@@ -98,6 +98,10 @@ AUDIT RULES & CONSTRAINTS
   * Tables that span multiple pages frequently continue on the following page without repeating headers (though occasionally they may repeat headers).
   * If a table on the following page continues the rows of a table from the preceding page (such as the Look-Up Files continuation table on page 13), it is a VALID continuation table.
   * NEVER flag continuation tables as empty, missing headers, or having an unpopulated/blank body when their continuation rows are present.
+- TABLE TEXT FRAGMENTATION & MARGIN CLIPPING:
+  * In tables extracted from documents, long cell content (such as technical descriptions, parameters, compound identifiers, URLs, or configuration options) frequently experiences line-wrapping, hyphen-splitting, or margin clipping during table conversion.
+  * You MUST distinguish between genuine author omissions (e.g., completely unpopulated cells, missing required columns, or explicit placeholders like "---", "N/A", "TBD") and parser extraction artifacts (e.g., long text wrapped across lines, hyphen-split tokens, or entries truncated at cell boundaries in the markdown representation).
+  * When a table cell or row is populated, NEVER flag it as "incomplete information", "malformed", or "missing content" simply because its text was line-wrapped, hyphen-split across lines, or truncated by the markdown table extractor.
 
 3. LOCAL CHECKLIST COMPLIANCE:
 - Evaluate the present section against the mandatory local standards checklist above.
@@ -131,7 +135,7 @@ AUDIT RULES & CONSTRAINTS
 - In "standard_ref": Quote the exact text of the requirement from the checklist above.
 - In "finding": Clearly explain the violation and standard requirement.
 - "web_references": MUST only contain valid HTTP/HTTPS URLs returned by web_search (for deprecated software checks). Leave as [] if none.
-- Boundary awareness: Do not flag content as truncated or missing simply because it continues across chunk or table boundaries.
+- Boundary awareness: Do not flag content as truncated or missing simply because it continues across chunk, page, or table boundaries, or because long cell text is wrapped or fragmented across lines within a table.
 - If multiple local violations exist in this section, invoke add_local_finding for each violation. If no violations exist, take no action.
 
 7. JSON ARRAY FORMAT:
@@ -275,6 +279,7 @@ TASKS
    - Do NOT discard findings for genuinely empty attachment cells in specification tables (such as empty Attachment cells in "Files and Records" or "Reports" tables where rows lack attachments).
    - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
    - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
+   - Discard any finding claiming that a populated table specification, parameter, or cell entry is incomplete, malformed, or missing information when the issue arises from table parser line-wrapping, hyphen-splitting, or margin clipping of long cell text, rather than a genuine author omission or placeholder.
 4. If two findings contradict each other, call flag_contradiction.
 5. For each unique, valid finding without duplicates, call accept_local_finding with the original fields preserved, ensuring severity is "major", "minor", or "observation" and confidence is calibrated (1.0, 0.8, or 0.6). For groups of duplicate same-topic findings, call merge_findings.
 

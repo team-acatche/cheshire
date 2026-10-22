@@ -30,8 +30,12 @@ from .constants import (
     LAST_ROW_BOTTOM_PADDING_PX,
     MAX_CONTINUATION_PAGE_GAP,
     MAX_HEADER_SEARCH_LINES,
+    MAX_TABLE_RIGHT_GAP_PX,
     MIN_COMPOUND_COL_WIDTH_PX,
     MIN_ICON_OVERLAP_PX,
+    MIN_TABLE_CELL_COVERAGE_RATIO,
+    MIN_WIDE_TABLE_WIDTH_PX,
+    WIDE_TABLE_ASPECT_RATIO,
 )
 from .elements import (
     _attach_captions,
@@ -65,7 +69,9 @@ from .tables import (
     _format_table_markdown,
     _format_table_row_cells,
     _get_table_cell_bounds,
+    _sanitize_table_cell_text,
     _table_has_empty_cells,
+    _table_needs_visual_crop,
 )
 
 __all__ = [
@@ -77,6 +83,10 @@ __all__ = [
     "MIN_ICON_OVERLAP_PX",
     "MAX_CONTINUATION_PAGE_GAP",
     "MAX_HEADER_SEARCH_LINES",
+    "MAX_TABLE_RIGHT_GAP_PX",
+    "MIN_TABLE_CELL_COVERAGE_RATIO",
+    "MIN_WIDE_TABLE_WIDTH_PX",
+    "WIDE_TABLE_ASPECT_RATIO",
     "COLUMN_SPLIT_RATIO",
     "MIN_COMPOUND_COL_WIDTH_PX",
     "INDEPENDENT_HEADER_KEYWORDS",
@@ -99,6 +109,8 @@ __all__ = [
     "_detect_compound_header_split",
     "_detect_table_column_splits",
     "_table_has_empty_cells",
+    "_table_needs_visual_crop",
+    "_sanitize_table_cell_text",
     "_crop_table_as_figure",
     "_format_cell_with_icons",
     "_format_table_row_cells",

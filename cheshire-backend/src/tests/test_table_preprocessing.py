@@ -5,7 +5,9 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     DEFAULT_ROW_HEIGHT_PX,
     _detect_compound_header_split,
     _format_table_markdown,
+    _sanitize_table_cell_text,
     _table_has_empty_cells,
+    _table_needs_visual_crop,
     build_document_index,
 )
 
@@ -193,4 +195,63 @@ def test_build_document_index_reference_documents_extraction():
 
     # Attachment table entries not erroneously included
     assert not any("LoanApplication.docx" in d for d in ref_docs)
+
+
+def test_sanitize_table_cell_text_removes_soft_hyphens_and_artifacts():
+    """Verify that soft hyphens, zero-width characters, and non-printing artifacts are removed."""
+    dirty = "LOA\ufffeSCR-013: Manual\xadApproval\u200b and Verification\ufeff\x02"
+    cleaned = _sanitize_table_cell_text(dirty)
+    assert cleaned == "LOASCR-013: ManualApproval and Verification"
+
+
+def test_sanitize_table_cell_text_normalizes_hyphen_linebreaks():
+    """Verify that hyphen-split words across linebreaks are rejoined."""
+    split_text = "LOA-SCR-\n 013: Manual Approval\n/ Decline Screen"
+    cleaned = _sanitize_table_cell_text(split_text)
+    assert "LOA-SCR-013: Manual Approval / Decline Screen" in cleaned
+
+
+def test_table_needs_visual_crop_empty_cells():
+    """Verify that a table with empty data cells triggers a visual crop."""
+    md_with_empty = "| Col1 | Col2 |\n|---|---|\n| Value |  |\n"
+    grid = [[MockCell("Col1", True), MockCell("Col2", True)], [MockCell("Value"), MockCell("")]]
+    bbox = BoundingBox(l=50.0, t=100.0, r=400.0, b=200.0, coord_origin=CoordOrigin.TOPLEFT)
+    item = MockTableItem(grid, bbox)
+    assert _table_needs_visual_crop(item, md_with_empty, page_h=792.0) is True
+
+
+def test_table_needs_visual_crop_geometric_clipping():
+    """Verify that a table with horizontally clipped cell bounding boxes triggers a visual crop."""
+    md_complete = "| Module Specifications |\n|---|\n| Line 1 |\n| Line 2 |\n"
+    grid = [[MockCell("Module Specifications", True)], [MockCell("Line 1")], [MockCell("Line 2")]]
+    table_bbox = BoundingBox(l=50.0, t=100.0, r=550.0, b=250.0, coord_origin=CoordOrigin.TOPLEFT)
+    col_bboxes = {0: BoundingBox(l=50.0, t=100.0, r=320.0, b=250.0, coord_origin=CoordOrigin.TOPLEFT)}
+    item = MockTableItem(grid, table_bbox, col_bboxes=col_bboxes)
+
+    assert _table_needs_visual_crop(item, md_complete, page_h=792.0) is True
+
+
+def test_table_needs_visual_crop_single_col_anomaly():
+    """Verify that a multi-row table collapsed into 1 column on wide aspect ratio triggers a visual crop."""
+    md = "| Header |\n|---|\n| Row 1 |\n| Row 2 |\n| Row 3 |\n"
+    grid = [[MockCell("Header", True)], [MockCell("Row 1")], [MockCell("Row 2")], [MockCell("Row 3")]]
+    table_bbox = BoundingBox(l=50.0, t=100.0, r=500.0, b=220.0, coord_origin=CoordOrigin.TOPLEFT)
+    col_bboxes = {0: BoundingBox(l=50.0, t=100.0, r=490.0, b=220.0, coord_origin=CoordOrigin.TOPLEFT)}
+    item = MockTableItem(grid, table_bbox, col_bboxes=col_bboxes)
+
+    assert _table_needs_visual_crop(item, md, page_h=792.0) is True
+
+
+def test_table_needs_visual_crop_normal_table():
+    """Verify that a properly extracted, full-coverage table with multiple columns does not trigger visual crop."""
+    md = "| Col1 | Col2 |\n|---|---|\n| A | B |\n| C | D |\n"
+    grid = [[MockCell("Col1", True), MockCell("Col2", True)], [MockCell("A"), MockCell("B")], [MockCell("C"), MockCell("D")]]
+    table_bbox = BoundingBox(l=50.0, t=100.0, r=550.0, b=200.0, coord_origin=CoordOrigin.TOPLEFT)
+    col_bboxes = {
+        0: BoundingBox(l=50.0, t=100.0, r=300.0, b=200.0, coord_origin=CoordOrigin.TOPLEFT),
+        1: BoundingBox(l=300.0, t=100.0, r=540.0, b=200.0, coord_origin=CoordOrigin.TOPLEFT),
+    }
+    item = MockTableItem(grid, table_bbox, col_bboxes=col_bboxes)
+
+    assert _table_needs_visual_crop(item, md, page_h=792.0) is False
 
