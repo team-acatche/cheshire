@@ -25,7 +25,8 @@ import {
   LogOut,
   Loader2,
   X,
-  Ban
+  Ban,
+  RotateCw,
 } from "lucide-react"
 
 import { BadgeQuestionMark } from "lucide-react"
@@ -61,6 +62,7 @@ interface ChatPageProps {
   onLogout: () => void
   onOpenSettings: () => void
   onCancelChat?: (chat: Chat) => void
+  onRerunChat?: (chat: Chat) => void
 }
 
 
@@ -78,6 +80,7 @@ export default function ChatPage({
   onLogout,
   onOpenSettings,
   onCancelChat,
+  onRerunChat,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
@@ -170,8 +173,7 @@ export default function ChatPage({
               const isProcessing = chat.status === "processing"
               const isFailed     = chat.status === "failed"
               const isCancelled  = chat.status === "cancelled"
-              const isUnavailable = isFailed || isCancelled  
-
+              const isUnavailable = isFailed
               return (
                 <div
                   key={chat.session_id}
@@ -193,6 +195,19 @@ export default function ChatPage({
                     <Ban className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
                     <FileText className={`h-4 w-4 shrink-0 ${isUnavailable ? "text-destructive" : "text-muted-foreground"}`} />
+                  )}
+                  
+                  {isCancelled && onRerunChat && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={(e) => { e.stopPropagation(); onRerunChat(chat) }}
+                        className="cursor-pointer"
+                      >
+                        <RotateCw className="mr-2 h-4 w-4" />
+                        Re-run analysis
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
                   )}
 
                   {/* Title / rename input */}
@@ -243,6 +258,7 @@ export default function ChatPage({
                           <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
                         </button>
                       </DropdownMenuTrigger>
+
 
                       <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuGroup>

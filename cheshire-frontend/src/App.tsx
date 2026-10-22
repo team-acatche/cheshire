@@ -15,6 +15,7 @@ import {
   pollEvaluation,
   getSessionResults,
   cancelEvaluation,
+  rerunEvaluation,
 } from "./lib/helpers/evaluate_document"
 import { validatePdf } from "./lib/helpers/validate_pdf"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
@@ -426,6 +427,35 @@ export default function App({ user, onLogout }: AppProps) {
     }
   }
 
+  const handleRerunChat = async (chat: Chat) => {
+    const result = await rerunEvaluation(chat.session_id)
+
+    if (result === "busy") {
+      toast.info("Still stopping", { description: "The cancelled run is wrapping up. Try again in a moment." })
+      return
+    }
+    if (result === "error") {
+      toast.error("Couldn't re-run the analysis", { description: "Please try again." })
+      return
+    }
+
+    setChats(prev =>
+      sortChatsByLatest(
+        prev.map(c =>
+          c.session_id === chat.session_id
+            ? { ...c, status: "processing", findings: [], latestTimestamp: new Date().toISOString() }
+            : c
+        )
+      )
+    )
+    if (currentSessionIdRef.current === chat.session_id) {
+      setFindings([])
+      setFindingsLoading(true) // also disables the chatbot input until findings land
+    }
+    resumePolling(chat.session_id)
+    toast.info("Re-running analysis")
+  }
+
   const handleLogout = () => {
     clearAuth()
     onLogout()
@@ -451,6 +481,7 @@ export default function App({ user, onLogout }: AppProps) {
         onLogout={handleLogout}
         onOpenSettings={() => setSettingsOpen(true)}
         onCancelChat={(chat) => setChatToCancel(chat)}
+        onRerunChat={handleRerunChat}
       />
 
       <SettingsModal
