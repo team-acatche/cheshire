@@ -6,6 +6,7 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     _detect_compound_header_split,
     _format_table_markdown,
     _table_has_empty_cells,
+    build_document_index,
 )
 
 
@@ -122,3 +123,74 @@ def test_format_table_markdown_compound_column_expansion():
 
     # Verify empty cell detection fires for the newly created empty Link cell
     assert _table_has_empty_cells(md) is True
+
+
+class MockItem:
+    def __init__(self, label: str, text: str = "", self_ref: str = "", page_no: int = 1, grid=None):
+        self.label = label
+        self.text = text
+        self.self_ref = self_ref
+        self.prov = [MockProv(BoundingBox(l=0, t=0, r=10, b=10), page_no=page_no)]
+        if grid is not None:
+            self.data = MockTableData(grid)
+
+
+class MockDoc:
+    def __init__(self, items):
+        self.items = items
+        self.pages = {1: type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()}
+        self.pictures = []
+
+    def iterate_items(self):
+        for item in self.items:
+            yield item, 0
+
+
+def test_build_document_index_reference_documents_extraction():
+    """Verify that build_document_index extracts reference document titles and codes from tables and overview text."""
+    items = [
+        MockItem(label="section_header", text="1. Overview", self_ref="#/texts/1", page_no=1),
+        MockItem(
+            label="paragraph",
+            text="This platform was designed in accordance with the System Requirements Specification (SRS-2025-LO-004).",
+            self_ref="#/texts/2",
+            page_no=1,
+        ),
+        MockItem(label="section_header", text="B. Reference Documents", self_ref="#/texts/3", page_no=4),
+        MockItem(
+            label="table",
+            self_ref="#/tables/5",
+            page_no=4,
+            grid=[
+                [MockCell("Document Title", column_header=True), MockCell("Document Reference / Link", column_header=True)],
+                [MockCell("System Requirements Specification - SentroLoan"), MockCell("SRS-2025-LO-004")],
+                [MockCell("Enterprise Architecture Standards v4.2"), MockCell("EAS-2024-SEC-011")],
+                [MockCell("Security & Compliance Checklist"), MockCell("SEC-CHK-2025-Q1")],
+            ],
+        ),
+        # Attachments table under same section should be excluded from reference_documents
+        MockItem(
+            label="table",
+            self_ref="#/tables/6",
+            page_no=4,
+            grid=[
+                [MockCell("File Name", column_header=True), MockCell("Format", column_header=True), MockCell("Description", column_header=True)],
+                [MockCell("LoanApplication.docx"), MockCell("Word"), MockCell("Template document")],
+            ],
+        ),
+    ]
+    doc = MockDoc(items)
+
+    index = build_document_index(doc)
+
+    assert "reference_documents" in index
+    ref_docs = index["reference_documents"]
+
+    # Table entries extracted with title + reference code
+    assert "System Requirements Specification - SentroLoan (SRS-2025-LO-004)" in ref_docs
+    assert "Enterprise Architecture Standards v4.2 (EAS-2024-SEC-011)" in ref_docs
+    assert "Security & Compliance Checklist (SEC-CHK-2025-Q1)" in ref_docs
+
+    # Attachment table entries not erroneously included
+    assert not any("LoanApplication.docx" in d for d in ref_docs)
+
