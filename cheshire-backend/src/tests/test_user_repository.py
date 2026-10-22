@@ -63,7 +63,7 @@ def test_login_invalid_password(repo):
         repo.login(email="david@example.com", password="wrong_password")
         
     assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED
-    assert excinfo.value.detail == "Invalid username or password for david@example.com"
+    assert excinfo.value.detail == "Incorrect email address or password."
 
 def test_login_disabled_user(repo):
     user_entity = repo.register(email="eve@example.com", username="eve", password="password_eve")
@@ -104,7 +104,8 @@ def test_sqlite_login_success(sqlite_repo):
 def test_sqlite_login_user_not_found(sqlite_repo):
     with pytest.raises(HTTPException) as excinfo:
         sqlite_repo.login(email="nonexistent@example.com", password="password")
-    assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
+    assert excinfo.value.status_code == status.HTTP_401_UNAUTHORIZED
+    assert excinfo.value.detail == "Incorrect email address or password."
 
 def test_sqlite_login_invalid_password(sqlite_repo):
     sqlite_repo.register(email="david@example.com", username="david", password="correct_password")

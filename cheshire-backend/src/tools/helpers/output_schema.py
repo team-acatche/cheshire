@@ -1,10 +1,27 @@
 from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from docling_core.types.doc import BoundingBox
 
 class PageBoundingBox(BoundingBox):
     page_no: Optional[int] = None
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, BoundingBox):
+            same_coords = (
+                self.l == other.l
+                and self.t == other.t
+                and self.r == other.r
+                and self.b == other.b
+                and self.coord_origin == other.coord_origin
+            )
+            if not same_coords:
+                return False
+            other_page = getattr(other, "page_no", None)
+            if self.page_no is not None and other_page is not None:
+                return self.page_no == other_page
+            return True
+        return super().__eq__(other)
 
 class VulnerabilityDetails(BaseModel):
     title: Annotated[str, Field(description="Title of the proposed vulnerability.")]
@@ -17,6 +34,21 @@ class VulnerabilityDetails(BaseModel):
     scope: Annotated[Literal["section", "document"], Field(description="'document' when the finding has no location in the PDF.")] = "section"
     severity: Annotated[Optional[Literal["major", "minor", "observation"]], Field(description="Severity tier of the finding.")] = None
     confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0, description="Evidence confidence: 1.0 verified, 0.8 likely, 0.6 inferred.")] = None
+
+    @field_validator("bboxes", mode="before")
+    @classmethod
+    def coerce_bboxes(cls, v):
+        if isinstance(v, list):
+            res = []
+            for item in v:
+                if isinstance(item, PageBoundingBox):
+                    res.append(item)
+                elif isinstance(item, BoundingBox):
+                    res.append(PageBoundingBox(**item.model_dump(exclude={"page_no"})))
+                else:
+                    res.append(item)
+            return res
+        return v
 
     @model_validator(mode="after")
     def sync_bboxes(self):
