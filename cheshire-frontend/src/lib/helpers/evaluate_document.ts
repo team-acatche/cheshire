@@ -159,3 +159,17 @@ export async function cancelEvaluation(sessionId: string): Promise<CancelResult>
     return "error"
   }
 }
+
+// ── Rerun Evaluation ──────────────────────────────────────────────────────────
+export type RerunResult = "started" | "busy" | "error"
+
+export async function rerunEvaluation(sessionId: string): Promise<RerunResult> {
+  try {
+    const res = await authFetch(`/api/v1/${sessionId}/rerun`, { method: "POST" })
+    if (res.ok) return "started"
+    if (res.status === 409) return "busy" // previous run still stopping, or no longer cancelled
+    return "error"
+  } catch {
+    return "error"
+  }
+}
