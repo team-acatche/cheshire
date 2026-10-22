@@ -620,6 +620,7 @@ export default function App({ user, onLogout }: AppProps) {
                         chatOpen={chatOpen}
                         onToggleChat={toggleChat}
                         onCancelAnalysis={currentChat?.status === "processing" ? () => setChatToCancel(currentChat) : undefined}
+                        onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
                       />
                     </CardContent>
                   </ResizablePanel>

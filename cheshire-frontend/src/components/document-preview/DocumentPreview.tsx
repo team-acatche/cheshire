@@ -14,7 +14,9 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
-  Square
+  Square,
+  Ban,
+  RotateCw,
 } from "lucide-react";
 import {
   Popover,
@@ -60,9 +62,10 @@ interface DocumentPreviewProps {
   chatOpen?: boolean;
   onToggleChat?: () => void;
   onCancelAnalysis?: () => void;
+  onRerunAnalysis?: () => void;
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -415,7 +418,21 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                 </button>
                 )}
               </div>
-            ) : (
+            ) : onRerunAnalysis ? (
+              <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
+                <Ban className="h-3.5 w-3.5" />
+                Analysis cancelled
+                <button
+                  type="button"
+                  onClick={onRerunAnalysis}
+                  className="-mr-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-foreground hover:bg-muted transition-colors"
+                  title="Re-run analysis"
+                >
+                  <RotateCw className="h-3 w-3" />
+                  Re-run
+                </button>
+              </div>
+            ) :(
               <Popover>
                 <PopoverTrigger asChild>
                   <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
