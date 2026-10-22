@@ -339,10 +339,10 @@ Audit the document index against the mandatory global checklist above:
    - CRITICAL: Only flag a required section as missing if there is GENUINELY NO corresponding section in `document_index["sections"]`. Do NOT flag sections as missing simply because they omit letter prefixes like "A." or "B.".
 
 2. Required Reference Documents (ALIAS RECOGNITION):
-   - Check Reference Documents / References in `document_index["sections"]` and the accepted finding titles.
+   - Check `document_index.get("reference_documents", [])` as well as Reference Documents / References in `document_index["sections"]` and the accepted finding titles.
    - Recognize that standard industry titles satisfy the "Requirements Document" requirement:
-     * "System Requirements Specification" (SRS), "Software Requirements Specification", "Business Requirements Document" (BRD), or "Requirements Specification" ALL satisfy the Requirements Document standard. Do NOT flag the Requirements Document as missing if any of these are referenced.
-     * "Solutions Document", "Solutions Architecture Document", or "Solution Design" satisfies the Solutions Document standard.
+     * "System Requirements Specification" (SRS), "Software Requirements Specification", "Business Requirements Document" (BRD), or "Requirements Specification" ALL satisfy the Requirements Document standard. Do NOT flag the Requirements Document as missing if any of these appear in `document_index["reference_documents"]`, in section headings, or in accepted finding titles.
+     * "Solutions Document", "Solutions Architecture Document", or "Solution Design" satisfies the Solutions Document standard. Do NOT flag the Solutions Document as missing if any of these appear in `document_index["reference_documents"]`, in section headings, or in accepted finding titles.
 
 3. Required Diagrams:
    - Verify the document contains all 4 mandatory diagram types (inspect `document_index["figures"]` captions, sections, and accepted finding titles):
