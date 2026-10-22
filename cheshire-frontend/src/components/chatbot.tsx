@@ -11,7 +11,7 @@ import VulnerabilityFindingComponent from "./vulnerability-finding"
 import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 import { EVALUATION_MODE, PROVIDER } from "@/globals"
 import { authFetch } from "@/lib/auth"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, Square } from "lucide-react"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
@@ -38,6 +38,8 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const lastEventIdRef = useRef<string | null>(null)
   const isAtBottomRef = useRef(true)
+  const abortRef = useRef<AbortController | null>(null)
+  const stoppedRef = useRef(false)
 
   // ── Scroll state tracking ──────────────────────────────────────────────────
   const checkScrollPosition = useCallback(() => {
@@ -129,6 +131,12 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     })
   }
 
+  const stopGenerating = () => {
+    stoppedRef.current = true
+    authFetch(`/api/v1/${sessionId}/stop`, { method: "POST" }).catch(() => {})
+    abortRef.current?.abort()
+  }
+
   // ── SSE frame parser ──────────────────────────────────────────────────────
   const processFrame = (frame: string) => {
     if (!frame.trim()) return
@@ -182,7 +190,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
     const response = await authFetch(
       `/api/v1/${sessionId}?evaluation_mode=${EVALUATION_MODE}&provider=${PROVIDER}`,
-      { method: "POST", headers, body: JSON.stringify({ message: userText }) }
+      { method: "POST", headers, body: JSON.stringify({ message: userText }), signal: abortRef.current?.signal }
     )
 
     if (!response.ok) throw new Error("Failed to send message")
@@ -229,11 +237,21 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     setTimeout(() => scrollToBottom("smooth"), 50)
 
     const MAX_RETRIES = 2
+    stoppedRef.current = false
+    abortRef.current = new AbortController()
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         await consumeSSE(userText, lastEventIdRef.current)
         break
       } catch {
+        if (stoppedRef.current) {
+          // drop the empty placeholder if nothing streamed yet
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            return last?.role === "bot1" && last.text === "" ? prev.slice(0, -1) : prev
+          })
+          break
+        }
         if (attempt === MAX_RETRIES) {
           setMessages(prev => {
             const updated = [...prev]
@@ -253,6 +271,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
     lastEventIdRef.current = null
     setTyping(false)
+    abortRef.current = null
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -486,26 +505,38 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 placeholder:text-muted-foreground/70
               "
             />
+            {typing ? (
+              <button
+                type="button"
+                onClick={stopGenerating}
+                aria-label="Stop generating"
+                title="Stop generating"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-all duration-200 hover:scale-105 hover:opacity-90 active:scale-95"
+              >
+                <Square className="size-4 fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={sendMessage}
+                disabled={typing || evaluationPending || !input.trim()}
+                className="
+                  flex h-10 w-10 shrink-0 items-center justify-center
+                  rounded-full
+                  bg-muted
+                  text-muted-foreground
+                  transition-all duration-200
+                  hover:scale-105
+                  hover:bg-muted/80
+                  active:scale-95
+                  disabled:scale-100
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                "
+              >
+                <SentIcon size={18} color="currentColor" />
+              </button> 
+            )}
 
-            <button
-              onClick={sendMessage}
-              disabled={typing || evaluationPending || !input.trim()}
-              className="
-                flex h-10 w-10 shrink-0 items-center justify-center
-                rounded-full
-                bg-muted
-                text-muted-foreground
-                transition-all duration-200
-                hover:scale-105
-                hover:bg-muted/80
-                active:scale-95
-                disabled:scale-100
-                disabled:cursor-not-allowed
-                disabled:opacity-50
-              "
-            >
-              <SentIcon size={18} color="currentColor" />
-            </button>
           </div>
 
           <p className="mt-2 text-center text-xs text-muted-foreground/60">

@@ -3,6 +3,7 @@ import json
 import logging
 import shutil
 import sqlite3
+import threading
 from contextvars import copy_context
 from pathlib import Path
 from typing import Annotated, AsyncGenerator, Optional, cast
@@ -60,6 +61,11 @@ class RenameBody(BaseModel):
 # Works per-process only. Use Redis for multi-replica deployments.
 _session_token_buffers: dict[str, list[tuple[int, str]]] = {}
 _session_agent_tasks: dict[str, asyncio.Task] = {}
+
+class ChatCancelled(Exception):
+    """Raised inside the streaming callback when the user stops generation."""
+
+_session_cancel_events: dict[str, threading.Event] = {}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -219,6 +225,8 @@ async def chat(
     token_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
     _session_token_buffers[session_id] = []
     response_parts: list[str] = []
+    cancel_event = threading.Event()
+    _session_cancel_events[session_id] = cancel_event
 
     async def event_stream() -> AsyncGenerator[dict, None]:
         loop = asyncio.get_running_loop()
@@ -226,6 +234,8 @@ async def chat(
 
         def enqueue_chunk(chunk: StreamingChunk) -> None:
             """Called from executor thread — must use call_soon_threadsafe."""
+            if cancel_event.is_set():
+                raise ChatCancelled()
             if chunk.content:
                 response_parts.append(chunk.content)
                 loop.call_soon_threadsafe(token_queue.put_nowait, chunk.content)
@@ -261,11 +271,16 @@ PROTOCOL:
                     ),
                 )
             except Exception as exc:
-                import traceback
-                logger.error("Agent error: %s\n%s", exc, traceback.format_exc())
-                raise
+                if cancel_event.is_set():
+                    # user stopped generation — keep the partial text, not an error
+                    logger.info("session(%s): chat generation stopped by user.", session_id)
+                else:
+                    import traceback
+                    logger.error("Agent error: %s\n%s", exc, traceback.format_exc())
+                    raise
             finally:
                 current_knowledge_state.reset(knowledge_token)
+                _session_cancel_events.pop(session_id, None)
 
                 final_text = "".join(response_parts)
                 if final_text:
@@ -388,3 +403,14 @@ def rename_session(
         if updated:
             return updated
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+
+@chat_router.post("/{session_id}/stop", status_code=status.HTTP_204_NO_CONTENT)
+async def stop_chat(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session_id: str,
+) -> Response:
+    event = _session_cancel_events.get(session_id)
+    if event is not None:
+        event.set()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
