@@ -131,7 +131,7 @@ export default function ChatPage({
           </div>
           <div>
             <div className="font-medium text-foreground">{userName}</div>
-            <div className="text-xs text-muted-foreground">account settings</div>
+            <div className="text-xs text-muted-foreground">Account settings</div>
           </div>
         </div>
 
@@ -197,19 +197,6 @@ export default function ChatPage({
                     <FileText className={`h-4 w-4 shrink-0 ${isUnavailable ? "text-destructive" : "text-muted-foreground"}`} />
                   )}
                   
-                  {isCancelled && onRerunChat && (
-                    <>
-                      <DropdownMenuItem
-                        onClick={(e) => { e.stopPropagation(); onRerunChat(chat) }}
-                        className="cursor-pointer"
-                      >
-                        <RotateCw className="mr-2 h-4 w-4" />
-                        Re-run analysis
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>
-                  )}
-
                   {/* Title / rename input */}
                   {renamingId === chat.session_id ? (
                     <input
@@ -266,14 +253,27 @@ export default function ChatPage({
                             <p className="truncate text-sm font-medium text-foreground">
                               {chat.title}
                             </p>
-                              {chat.latestTimestamp && (
-                                <span className="mt-1 truncate text-[10px] text-gray-400">
-                                  Last Activity: {formatTimestamp(chat.latestTimestamp)}
-                                </span>
-                              )}
+                            {chat.latestTimestamp && (
+                              <span className="mt-1 truncate text-[10px] text-gray-400">
+                                Last Activity: {formatTimestamp(chat.latestTimestamp)}
+                              </span>
+                            )}
                           </div>
 
                           <DropdownMenuSeparator />
+
+                          {isCancelled && onRerunChat && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); onRerunChat(chat) }}
+                                className="cursor-pointer"
+                              >
+                                <RotateCw className="mr-2 h-4 w-4" />
+                                Re-run analysis
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
 
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); startRename(chat) }}
