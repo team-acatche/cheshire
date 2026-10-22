@@ -436,6 +436,74 @@ def _get_latest_document(session_path: Path) -> str:
     return latest_filename
 
 
+# ── POST /{session_id}/rerun ───────────────────────────────────────────────────
+
+@evaluate_router.post(
+    "/{session_id}/rerun",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SubmitResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse, "description": "Session or its document not found."},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse, "description": "Session isn't cancelled, or the previous run is still stopping."},
+    },
+)
+async def rerun_evaluation(
+    background_tasks: BackgroundTasks,
+    config: Annotated[PipelineConfig, Depends(resolve_config)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    user_path: Annotated[Path, Depends(get_user_path)],
+    user_db_path: Annotated[Path, Depends(get_user_db_path)],
+    session_id: Annotated[str, PathParam()],
+) -> SubmitResponse:
+    """Re-run the evaluation of a CANCELLED session using its already-stored document."""
+    if not user_db_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No session found for '{session_id}'.")
+
+    with sqlite3.connect(user_db_path) as db:
+        session = SqliteSessionRepository(db).get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No session found for '{session_id}'.")
+    if session.status != SessionStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only cancelled evaluations can be re-run.")
+
+    # The cancelled worker may still be unwinding; two workers on one session would race on status.
+    prior = job_store.get(session_id)
+    if prior is not None and not prior.worker_done.is_set():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The previous run is still stopping. Try again in a moment.")
+
+    # Resolve the document *before* touching status so a missing file can't strand the session in PENDING.
+    session_path = user_path / session_id
+    saved_path = session_path / "documents" / _get_latest_document(session_path)
+    if not saved_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document for this session not found.")
+
+    with sqlite3.connect(user_db_path) as db:
+        # compare-and-set so two rapid clicks can't both start a run
+        if SqliteSessionRepository(db).update_status_if(
+            session_id, SessionStatus.PENDING, expected=(SessionStatus.CANCELLED,)
+        ) is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only cancelled evaluations can be re-run.")
+
+        # drop any stale findings so the new run starts clean
+        event_repo = SqliteEventRepository(db)
+        stale = event_repo.get_recent(session_id, event_types=[EventType.VULNERABILITY_FINDING])
+        event_repo.delete_events([e.event_id for e in stale if e.event_id is not None])
+
+    job_store.create(key=session_id)
+    background_tasks.add_task(
+        _run_evaluation,
+        session_id=session_id,
+        document_path=saved_path,
+        filename=session.title,
+        user_id=current_user.user_id,
+        user_db_path=user_db_path,
+        config=config,
+    )
+
+    logger.info(f"POST /{session_id}/rerun: session re-queued (status=pending).")
+    return SubmitResponse(session_id=session_id, status="pending")
+
+
 # ── GET /{session_id}/result ───────────────────────────────────────────────────
 
 @evaluate_router.get("/{session_id}/result")
