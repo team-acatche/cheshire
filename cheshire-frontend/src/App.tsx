@@ -235,7 +235,7 @@ export default function App({ user, onLogout }: AppProps) {
 
   const handleSelectChat = async (chat: Chat) => {
     setPage("chat")
-    setCurrentSessionId(chat.session_id)
+    selectSession(chat.session_id)
     setCurrentFileName(chat.title)
     closeChat()
 
@@ -357,7 +357,7 @@ export default function App({ user, onLogout }: AppProps) {
     setFile(fileInput)
     setFindings([])
     setFindingsLoading(true)
-    setCurrentSessionId(session_id)
+    selectSession(session_id)
     setCurrentFileName(fileInput.name)
     setPage("chat")
 
