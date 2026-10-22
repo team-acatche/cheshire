@@ -37,6 +37,7 @@ class Job:
     result:     Optional[list[Any]]  = None
     error:      Optional[str]        = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    worker_done: threading.Event = field(default_factory=threading.Event)
 
     def touch(self) -> None:
         self.updated_at = datetime.now().isoformat()

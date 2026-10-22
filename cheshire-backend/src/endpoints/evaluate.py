@@ -181,6 +181,10 @@ def _run_evaluation(
             job.status = JobStatus.FAILED
             job.error = str(exc)
             job_store.update(job)
+    finally:
+        # lets /rerun know this worker has fully exited
+        if job is not None:
+            job.worker_done.set()
 
 
 # ── POST /evaluate ─────────────────────────────────────────────────────────────
