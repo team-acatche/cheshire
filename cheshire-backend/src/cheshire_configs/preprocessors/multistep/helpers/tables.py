@@ -7,6 +7,7 @@ import base64
 from io import BytesIO
 import re
 from typing import Any
+import warnings
 
 from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
@@ -18,6 +19,7 @@ from .constants import (
     DEFAULT_COL_WIDTH_PX,
     DEFAULT_ROW_HEIGHT_PX,
     FOOTER_BOTTOM_MARGIN_RATIO,
+    FOOTER_MAX_TOP_RATIO,
     FOOTER_METADATA_PATTERN,
     INDEPENDENT_HEADER_KEYWORDS,
     LAST_COL_RIGHT_PADDING_PX,
@@ -543,17 +545,108 @@ def _extract_header_from_table_text(
     return table_text, new_last_header
 
 
+def _detect_document_footer_top(doc: DoclingDocument, page_h: float) -> float:
+    """
+    Dynamically infers the top vertical boundary of the footer zone across the document.
+    Adapts to any footer height (compact 1-line or multi-line/multi-row disclaimers)
+    without relying on fixed percentage assumptions.
+    Inspects:
+    1. Furniture items (e.g. page_footer, page_number) across all pages.
+    2. Recurring text elements matching FOOTER_METADATA_PATTERN in the lower portion of pages.
+    Falls back to FOOTER_MAX_TOP_RATIO * page_h (0.65) if no explicit footer elements exist.
+    """
+    if page_h <= 0.0 or not doc:
+        return page_h * FOOTER_MAX_TOP_RATIO if page_h > 0.0 else 0.0
+
+    candidates: list[float] = []
+
+    # 1. Inspect doc.furniture (headers/footers/page numbers extracted by Docling)
+    furniture_items: list[Any] = []
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            furniture_items = getattr(doc, "furniture", []) or []
+    except Exception:
+        furniture_items = []
+
+    for item in furniture_items:
+        prov = item.prov[0] if getattr(item, "prov", None) else None
+        if prov and prov.bbox:
+            p_no = prov.page_no
+            item_page = doc.pages.get(p_no) if hasattr(doc, "pages") else None
+            item_page_h = item_page.size.height if item_page and item_page.size else page_h
+            if item_page_h > 0.0:
+                tb = _to_topleft_dict(prov.bbox, item_page_h)
+                ratio = tb["t"] / item_page_h
+                # Footers and page numbers reside in the lower half of the page
+                if ratio >= 0.50:
+                    candidates.append(ratio * page_h)
+
+    # 1b. Inspect doc.texts for items labeled as page_footer or page_number
+    for item in getattr(doc, "texts", []):
+        lbl = getattr(item, "label", None) or getattr(getattr(item, "data", None), "label", None)
+        lbl_str = str(lbl).lower() if lbl else ""
+        if "page_footer" in lbl_str or "page_number" in lbl_str or "footnote" in lbl_str:
+            prov = item.prov[0] if getattr(item, "prov", None) else None
+            if prov and prov.bbox:
+                p_no = prov.page_no
+                item_page = doc.pages.get(p_no) if hasattr(doc, "pages") else None
+                item_page_h = item_page.size.height if item_page and item_page.size else page_h
+                if item_page_h > 0.0:
+                    tb = _to_topleft_dict(prov.bbox, item_page_h)
+                    ratio = tb["t"] / item_page_h
+                    if ratio >= 0.50:
+                        candidates.append(ratio * page_h)
+
+    # 2. Inspect text and standalone table elements matching FOOTER_METADATA_PATTERN in lower half
+    if not candidates:
+        for collection_name in ("texts", "tables"):
+            for item in getattr(doc, collection_name, []):
+                prov = item.prov[0] if getattr(item, "prov", None) else None
+                if prov and prov.bbox:
+                    p_no = prov.page_no
+                    item_page = doc.pages.get(p_no) if hasattr(doc, "pages") else None
+                    item_page_h = item_page.size.height if item_page and item_page.size else page_h
+                    if item_page_h > 0.0:
+                        grid = getattr(getattr(item, "data", None), "grid", None)
+                        # Multi-row tables that absorbed a footer should not use the whole table's top bbox
+                        if collection_name == "tables" and grid and len(grid) > 2:
+                            continue
+                        tb = _to_topleft_dict(prov.bbox, item_page_h)
+                        ratio = tb["t"] / item_page_h
+                        if ratio >= 0.50:
+                            txt = getattr(item, "text", "")
+                            if not txt:
+                                if grid:
+                                    txt = " ".join(getattr(c, "text", str(c)) for row in grid for c in row)
+                                elif hasattr(item, "export_to_markdown"):
+                                    try:
+                                        txt = item.export_to_markdown(doc=doc)
+                                    except Exception:
+                                        txt = ""
+                            if txt and FOOTER_METADATA_PATTERN.search(txt):
+                                candidates.append(ratio * page_h)
+
+    if candidates:
+        min_top = min(candidates)
+        # Give 10px headroom above the detected footer element, bounded to lower 40% of page
+        return max(min_top - 10.0, page_h * 0.60)
+
+    return page_h * FOOTER_MAX_TOP_RATIO
+
+
 def _is_table_footer_row(
     row: list[Any],
     r_idx: int,
     cell_bounds: dict[tuple[int, int], dict[str, float]],
     page_h: float,
+    footer_top: float | None = None,
 ) -> bool:
     """
     Checks if a trailing table row is a page footer accidentally absorbed into the table.
     Requires both:
     1. Row text matches generic corporate document-control footer metadata patterns.
-    2. Row's vertical position is in the bottom footer margin band of the page.
+    2. Row's vertical position is in the footer zone (below footer_top or lower page bound).
     """
     if not row or page_h <= 0.0:
         return False
@@ -562,12 +655,14 @@ def _is_table_footer_row(
     if not row_text or not FOOTER_METADATA_PATTERN.search(row_text):
         return False
 
+    threshold_y = footer_top if footer_top is not None and footer_top > 0.0 else page_h * FOOTER_MAX_TOP_RATIO
+
     # Check vertical position from cell_bounds
     cb_list = [cell_bounds[(r_idx, c_idx)] for c_idx in range(len(row)) if (r_idx, c_idx) in cell_bounds]
     if cb_list:
         row_top = min(cb["t"] for cb in cb_list)
         row_bottom = max(cb["b"] for cb in cb_list)
-        if row_top >= page_h * FOOTER_BOTTOM_MARGIN_RATIO or row_bottom >= page_h * FOOTER_BOTTOM_MARGIN_RATIO:
+        if row_top >= threshold_y or row_bottom >= threshold_y:
             return True
 
     # Fallback to individual cell bounding boxes if cell_bounds missing
@@ -575,7 +670,7 @@ def _is_table_footer_row(
         bbox = getattr(cell, "bbox", None)
         if bbox is not None:
             tb = _to_topleft_dict(bbox, page_h)
-            if tb["t"] >= page_h * FOOTER_BOTTOM_MARGIN_RATIO or tb["b"] >= page_h * FOOTER_BOTTOM_MARGIN_RATIO:
+            if tb["t"] >= threshold_y or tb["b"] >= threshold_y:
                 return True
 
     return False
@@ -615,8 +710,10 @@ def _format_table_markdown(
 
     col_splits = _detect_table_column_splits(grid, cell_bounds, pics, page_h)
 
+    footer_top = _detect_document_footer_top(doc, page_h) if doc and page_h > 0.0 else None
+
     # Prune trailing footer rows accidentally absorbed into table
-    while len(grid) > 1 and _is_table_footer_row(grid[-1], len(grid) - 1, cell_bounds, page_h):
+    while len(grid) > 1 and _is_table_footer_row(grid[-1], len(grid) - 1, cell_bounds, page_h, footer_top=footer_top):
         grid = grid[:-1]
 
     # Format continuation table lacking headers

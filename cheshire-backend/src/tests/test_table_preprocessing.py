@@ -3,7 +3,9 @@ from docling_core.types.doc.document import DoclingDocument
 from cheshire_configs.preprocessors.multistep.helpers import (
     DEFAULT_COL_WIDTH_PX,
     DEFAULT_ROW_HEIGHT_PX,
+    FOOTER_MAX_TOP_RATIO,
     _detect_compound_header_split,
+    _detect_document_footer_top,
     _format_table_markdown,
     _is_footer_element,
     _is_table_footer_row,
@@ -328,5 +330,62 @@ def test_is_footer_element_detection():
     high_bbox = BoundingBox(l=50.0, t=200.0, r=550.0, b=220.0, coord_origin=CoordOrigin.TOPLEFT)
     high_item = MockElementItem("Classification: AsianBank Confidential", high_bbox)
     assert _is_footer_element(high_item, doc, page_h=792.0) is False
+
+
+def test_detect_document_footer_top_tall_footer():
+    """Verify that _detect_document_footer_top adapts dynamically to tall footer (>20% of page)."""
+    class MockElementItem:
+        def __init__(self, text: str, bbox: BoundingBox, label: str = "text"):
+            self.text = text
+            self.label = label
+            self.prov = [MockProv(bbox, page_no=1)]
+
+    # A tall 3-line legal disclaimer footer starting at y=580 on page_h=792 (starts at ~73% of page)
+    tall_footer_bbox = BoundingBox(l=50.0, t=580.0, r=550.0, b=760.0, coord_origin=CoordOrigin.TOPLEFT)
+    footer_text = MockElementItem("Classification: Strictly Confidential\nAll rights reserved", tall_footer_bbox)
+    doc = MockDoc([])
+    doc.texts = [footer_text]
+    doc.pages[1] = type("MockPage", (), {"size": type("MockSize", (), {"height": 792.0})()})()
+
+    footer_top = _detect_document_footer_top(doc, page_h=792.0)
+    # Headroom gives 580 - 10 = 570
+    assert footer_top == 570.0
+
+
+def test_detect_document_footer_top_compact_footer():
+    """Verify that _detect_document_footer_top adapts dynamically to compact footer (<10% of page)."""
+    class MockElementItem:
+        def __init__(self, text: str, bbox: BoundingBox, label: str = "page_footer"):
+            self.text = text
+            self.label = label
+            self.prov = [MockProv(bbox, page_no=1)]
+
+    # A single compact 1-line footer at bottom (y=750 on page_h=792, ~95% of page)
+    compact_footer_bbox = BoundingBox(l=50.0, t=750.0, r=550.0, b=770.0, coord_origin=CoordOrigin.TOPLEFT)
+    footer_item = MockElementItem("Page 1 of 10", compact_footer_bbox, label="page_footer")
+    doc = MockDoc([])
+    doc.texts = [footer_item]
+    doc.pages[1] = type("MockPage", (), {"size": type("MockSize", (), {"height": 792.0})()})()
+
+    footer_top = _detect_document_footer_top(doc, page_h=792.0)
+    # Headroom gives 750 - 10 = 740
+    assert footer_top == 740.0
+
+
+def test_is_table_footer_row_tall_footer_dynamic():
+    """Verify that _is_table_footer_row prunes tall footers when passed dynamic footer_top."""
+    tall_footer_row = [MockCell("Classification: Strictly Confidential"), MockCell("Doc Title: Specs")]
+    # Located at y=600 (which is above static 0.85 * 792 = 673, but below dynamic footer_top 570)
+    cell_bounds = {
+        (5, 0): {"l": 50.0, "r": 250.0, "t": 600.0, "b": 630.0},
+        (5, 1): {"l": 250.0, "r": 500.0, "t": 600.0, "b": 630.0},
+    }
+    # With default static threshold (0.65 fallback), y=600 is below 0.65 * 792 = 514.8, so it would not trigger if threshold were 673.
+    # With explicit dynamic footer_top = 570, y=600 >= 570 -> identified as footer!
+    assert _is_table_footer_row(tall_footer_row, r_idx=5, cell_bounds=cell_bounds, page_h=792.0, footer_top=570.0) is True
+
+    # Normal row at y=600 should NOT be flagged as footer
+    normal_row = [MockCell("Specification Step 5"), MockCell("Active")]
+    assert _is_table_footer_row(normal_row, r_idx=5, cell_bounds=cell_bounds, page_h=792.0, footer_top=570.0) is False
 
 
