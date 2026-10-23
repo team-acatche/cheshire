@@ -318,3 +318,56 @@ def test_vulnerability_details_sync():
         recommendations=[],
     )
     assert v2.bboxes == [b1]
+
+
+# ===========================================================================
+# 5. Mandatory Recommendations Validation Tests
+# ===========================================================================
+
+def test_add_local_finding_mandatory_recommendations():
+    # Calling add_local_finding with actionable recommendation succeeds
+    res = add_local_finding(
+        finding="Deprecated component",
+        element_id="p_1",
+        element_type="paragraph",
+        recommendations=["Upgrade component to supported LTS version"],
+    )
+    assert res["finding"].recommendations == ["Upgrade component to supported LTS version"]
+
+    # Calling add_local_finding without recommendations raises ValueError
+    with pytest.raises(ValueError, match="Field 'recommendations' is mandatory"):
+        add_local_finding(
+            finding="Deprecated component",
+            element_id="p_1",
+            element_type="paragraph",
+            recommendations=[],
+        )
+
+    # Calling with only whitespace recommendation raises ValueError
+    with pytest.raises(ValueError, match="Field 'recommendations' is mandatory"):
+        add_local_finding(
+            finding="Deprecated component",
+            element_id="p_1",
+            element_type="paragraph",
+            recommendations=["   "],
+        )
+
+
+def test_accept_local_finding_mandatory_recommendations():
+    # Valid recommendations succeeds
+    res = accept_local_finding(
+        finding="Architecture gap",
+        element_id="p_2",
+        element_type="paragraph",
+        recommendations=["Add detailed interface specifications"],
+    )
+    assert res["finding"].recommendations == ["Add detailed interface specifications"]
+
+    # Missing recommendations raises ValueError
+    with pytest.raises(ValueError, match="Field 'recommendations' is mandatory"):
+        accept_local_finding(
+            finding="Architecture gap",
+            element_id="p_2",
+            element_type="paragraph",
+            recommendations=[],
+        )

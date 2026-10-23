@@ -38,6 +38,7 @@ MIN_WIDE_TABLE_WIDTH_PX: float = 300.0
 WIDE_TABLE_ASPECT_RATIO: float = 2.5
 
 # Page footer spatial and metadata detection thresholds
+FOOTER_MAX_TOP_RATIO: float = 0.65
 FOOTER_BOTTOM_MARGIN_RATIO: float = 0.85
 FOOTER_METADATA_PATTERN: re.Pattern[str] = re.compile(
     r"(?i)\b("
@@ -53,5 +54,6 @@ FOOTER_METADATA_PATTERN: re.Pattern[str] = re.compile(
     r"|page\s+no\.?\s*:"
     r"|page\s+\d+\s+of\s+\d+"
     r"|all\s+rights\s+reserved"
+    r"|proprietary\b"
     r")"
 )

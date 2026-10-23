@@ -10,11 +10,12 @@ from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
 
-from .constants import FOOTER_BOTTOM_MARGIN_RATIO, FOOTER_METADATA_PATTERN, MAX_CONTINUATION_PAGE_GAP
+from .constants import FOOTER_BOTTOM_MARGIN_RATIO, FOOTER_MAX_TOP_RATIO, FOOTER_METADATA_PATTERN, MAX_CONTINUATION_PAGE_GAP
 from .geometry import _get_item_label, _to_topleft_dict
 from .models import ElementRef, FigureRef, ImageBoundingBox
 from .tables import (
     _crop_table_as_figure,
+    _detect_document_footer_top,
     _format_table_markdown,
     _table_has_empty_cells,
     _table_needs_visual_crop,
@@ -68,11 +69,13 @@ def _is_footer_element(
     item: Any,
     doc: DoclingDocument,
     page_h: float,
+    footer_top: float | None = None,
 ) -> bool:
     """
     Detects whether an extracted item (table, paragraph, or text block)
-    is actually an anomalous page footer based on spatial location in the bottom margin band
+    is actually an anomalous page footer based on spatial location in the footer zone
     and presence of corporate document-control metadata.
+    Adapts dynamically to footer height (compact 1-line or multi-line disclaimers).
     """
     if page_h <= 0.0 or not hasattr(item, "prov") or not item.prov:
         return False
@@ -81,9 +84,11 @@ def _is_footer_element(
     if not prov.bbox:
         return False
 
+    threshold_y = footer_top if footer_top is not None and footer_top > 0.0 else page_h * FOOTER_MAX_TOP_RATIO
+
     tb = _to_topleft_dict(prov.bbox, page_h)
-    # Must be located in the bottom margin band of the page
-    if tb["t"] < page_h * FOOTER_BOTTOM_MARGIN_RATIO and tb["b"] < page_h * FOOTER_BOTTOM_MARGIN_RATIO:
+    # Must be located in the footer zone of the page
+    if tb["t"] < threshold_y and tb["b"] < threshold_y:
         return False
 
     # Extract item text
@@ -131,6 +136,7 @@ def _build_element_lookup(
     _last_table_header: str | None = None
     _last_table_page: int = -1
     _current_section: str = ""
+    footer_top_cache: dict[float, float] = {}
 
     for item, _level in doc.iterate_items():
         if not hasattr(item, "prov") or not item.prov:
@@ -152,11 +158,16 @@ def _build_element_lookup(
         if page is None or page.size is None:
             continue
 
+        page_h = page.size.height
+        if page_h not in footer_top_cache:
+            footer_top_cache[page_h] = _detect_document_footer_top(doc, page_h)
+        footer_top = footer_top_cache[page_h]
+
         # Skip anomalous tabular or columnar footers mislabeled as table/paragraph/text
-        if _is_footer_element(item, doc, page.size.height):
+        if _is_footer_element(item, doc, page_h, footer_top=footer_top):
             continue
 
-        bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)
+        bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page_h, scale)
 
         text: str = ""
         if label == "table":
