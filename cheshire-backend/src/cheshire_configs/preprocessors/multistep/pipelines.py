@@ -55,7 +55,7 @@ Figures: [Figure ID:<ref>|p<n>] (images are attached)
 
 TOOLS
 - query_other_section(section_title): Retrieve content of another section by its title. Use this to verify cross-references before flagging issues.
-- web_search(query): RESTRICTED. Use ONLY to check whether a specific software library or version mentioned in the text is deprecated or outdated. Do NOT search for generic external vulnerabilities.
+- web_search(query): Search the web to verify external facts, industry classifications, standards, regulatory directives, or software documentation. Do NOT rely on training memory for external facts.
 - add_local_finding(finding): Record a local vulnerability or compliance gap. The `finding` dictionary must match the schema:
   {{
     "title": "str (concise, direct summary of the issue, e.g. 'Reports Table: Missing Class/Module Field' or 'Compatibility: Deprecated Runtime Version')",
@@ -67,8 +67,8 @@ TOOLS
     "standard_ref": "str (exact quoted standard text from the checklist)",
     "severity": "major|minor|observation",
     "confidence": 1.0|0.8|0.6,
-    "recommendations": ["Actionable recommendation 1", "Actionable recommendation 2"],
-    "web_references": ["https://example.com/reference-url"]
+    "recommendations": ["Actionable recommendation 1", "Actionable recommendation 2"] (MANDATORY: must contain at least one concrete recommendation),
+    "web_references": ["https://example.com/reference-url"] (MANDATORY if referencing any external fact, standard, directive, or document; pass [] only if finding is purely internal to the document)
   }}
 
 AUDIT RULES & CONSTRAINTS
@@ -118,9 +118,14 @@ AUDIT RULES & CONSTRAINTS
   * Confirm that the scan contains NO specified critical issues (Critical Issues target = 0). If any critical issues are present (e.g., 2 critical issues), flag this as a critical violation of company standards.
 - Do NOT flag whole missing sections or whole missing diagrams—global document inventory is audited in Pass 2.
 
-4. EXTERNAL REFERENCES & DELEGATED CONTENT:
+4. EXTERNAL REFERENCES, DELEGATED CONTENT & EXTERNAL FACT GROUNDING:
 - Do NOT flag details or requirements as missing if the document explicitly delegates or references them to an external companion document (e.g., Solutions Document, Requirements Document / System Requirements Specification, external API specification, or third-party contract listed in Reference Documents).
 - It is standard and expected for technical design documents to omit details that are formally specified in referenced companion documents.
+- MANDATORY EXTERNAL FACT GROUNDING & REFERENCES:
+  * Whenever citing or referencing an external fact, classification, industry standard, government/regulatory directive, or external document (such as SIC being superseded by PSIC, ISO standards, NIST, regulatory circulars, or companion document specifications):
+    - You MUST NOT rely on your own memory, even if you were trained on that data.
+    - You MUST use `web_search` to verify the external fact or document and retrieve the official source/URL.
+    - Adding the reference URL(s) to "web_references" is MANDATORY whenever referencing any external fact, standard, or document.
 
 5. VISUAL DIAGRAM QUALITY & DRAFTING NORMS:
 - Visually evaluate all embedded diagram images across four criteria:
@@ -135,12 +140,13 @@ AUDIT RULES & CONSTRAINTS
 - In "title": Provide a concise, plain-English summary. Do NOT include "[Company Standard: '...']" in the title.
 - In "standard_ref": Quote the exact text of the requirement from the checklist above.
 - In "finding": Clearly explain the violation and standard requirement.
-- "web_references": MUST only contain valid HTTP/HTTPS URLs returned by web_search (for deprecated software checks). Leave as [] if none.
+- "web_references": MUST contain valid HTTP/HTTPS URLs returned by web_search whenever citing an external fact, standard, directive, or document. Leave as [] only when the finding is strictly internal to the document.
 - Boundary awareness: Do not flag content as truncated or missing simply because it continues across chunk, page, or table boundaries, or because long cell text is wrapped or fragmented across lines within a table.
 - If multiple local violations exist in this section, invoke add_local_finding for each violation. If no violations exist, take no action.
 
-7. JSON ARRAY FORMAT:
-- "recommendations" and "web_references" MUST be native JSON arrays of strings like ["item1", "item2"]. NEVER format them as a single string containing brackets or single quotes like "['item']". If there are no web references, pass an empty array [].
+7. JSON ARRAY FORMAT & MANDATORY RECOMMENDATIONS:
+- "recommendations": MANDATORY native JSON array of strings like ["item1", "item2"]. Every finding MUST contain at least one concrete, actionable recommendation. NEVER pass an empty array [] or omit recommendations.
+- "web_references": Native JSON array of URL strings. Mandatory whenever referencing any external fact, standard, directive, or document. If no external facts are cited, pass [].
 
 8. SEVERITY & CONFIDENCE SCORING RUBRIC:
 - SEVERITY TIERS:
@@ -289,7 +295,7 @@ CONSTRAINTS
 - You MUST call accept_local_finding for every unique, non-duplicate finding, or merge_findings for groups of duplicate same-topic findings. This is the only way findings are recorded.
 - Preserve ALL original fields exactly as given when accepting valid findings.
 - Do NOT accept duplicate findings individually.
-- "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
+- "recommendations" and "web_references" MUST be native JSON arrays of strings. "recommendations" is MANDATORY and must contain at least one concrete, actionable recommendation.
 - After processing all findings, output a brief text summary of what you did.
 """
 
@@ -321,8 +327,8 @@ TOOLS
     "standard_ref": "str (exact quoted standard text from global checklist)",
     "severity": "major|minor|observation",
     "confidence": 1.0|0.8|0.6,
-    "recommendations": ["Actionable remediation step 1"],
-    "web_references": ["https://example.com/reference-url"]
+    "recommendations": ["Actionable remediation step 1"] (MANDATORY: must contain at least one concrete remediation step),
+    "web_references": ["https://example.com/reference-url"] (MANDATORY if referencing external facts/standards; else [])
   }}
 
 TASKS
@@ -375,7 +381,7 @@ RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
 
 CONSTRAINTS
 - Only record NEW document-level findings. Do NOT re-record findings from the accepted list.
-- "recommendations" and "web_references" MUST be native JSON arrays of strings. If none, pass [].
+- "recommendations" and "web_references" MUST be native JSON arrays of strings. "recommendations" is MANDATORY and must contain at least one concrete remediation step for drafting or incorporating the missing item. If no external facts or documents are cited, pass [] for "web_references".
 - After processing, output a brief text summary of what you did.
 """
 
