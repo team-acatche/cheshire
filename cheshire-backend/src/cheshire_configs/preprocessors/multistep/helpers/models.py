@@ -78,7 +78,7 @@ class LocalFinding(BaseModel):
     confidence: float = Field(..., description="Confidence score (1.0 for deterministic, 0.8 for semantic, 0.6 for inferred/ambiguous).")
     title: Optional[str] = Field(None, description="An optional short, descriptive title for the finding.")
     web_references: Optional[List[str]] = Field(default_factory=list, description="Optional list of web reference URLs.")
-    recommendations: Optional[List[str]] = Field(default_factory=list, description="Optional list of recommendation strings.")
+    recommendations: Optional[List[str]] = Field(default_factory=list, description="Mandatory list of recommendation strings.")
 
     @field_validator("severity", mode="before")
     @classmethod
