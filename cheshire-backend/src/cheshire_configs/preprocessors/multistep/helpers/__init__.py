@@ -25,6 +25,8 @@ from .constants import (
     DEFAULT_IMAGE_SCALE,
     DEFAULT_MAX_CHUNK_CHARS,
     DEFAULT_ROW_HEIGHT_PX,
+    FOOTER_BOTTOM_MARGIN_RATIO,
+    FOOTER_METADATA_PATTERN,
     INDEPENDENT_HEADER_KEYWORDS,
     LAST_COL_RIGHT_PADDING_PX,
     LAST_ROW_BOTTOM_PADDING_PX,
@@ -42,6 +44,7 @@ from .elements import (
     _build_element_lookup,
     _build_figure_lookup,
     _find_page_gaps,
+    _is_footer_element,
 )
 from .geometry import (
     _compute_box_overlap,
@@ -69,6 +72,7 @@ from .tables import (
     _format_table_markdown,
     _format_table_row_cells,
     _get_table_cell_bounds,
+    _is_table_footer_row,
     _sanitize_table_cell_text,
     _table_has_empty_cells,
     _table_needs_visual_crop,
@@ -90,6 +94,8 @@ __all__ = [
     "COLUMN_SPLIT_RATIO",
     "MIN_COMPOUND_COL_WIDTH_PX",
     "INDEPENDENT_HEADER_KEYWORDS",
+    "FOOTER_BOTTOM_MARGIN_RATIO",
+    "FOOTER_METADATA_PATTERN",
     "DEFAULT_MAX_CHUNK_CHARS",
     "DEFAULT_IMAGE_SCALE",
     # Models
@@ -116,11 +122,13 @@ __all__ = [
     "_format_table_row_cells",
     "_extract_header_from_table_text",
     "_format_table_markdown",
+    "_is_table_footer_row",
     # Elements
     "_build_figure_lookup",
     "_build_element_lookup",
     "_attach_captions",
     "_find_page_gaps",
+    "_is_footer_element",
     # Chunking
     "_extract_section_key",
     "_merge_chunk_pair",
