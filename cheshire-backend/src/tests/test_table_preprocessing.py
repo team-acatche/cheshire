@@ -5,6 +5,8 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     DEFAULT_ROW_HEIGHT_PX,
     _detect_compound_header_split,
     _format_table_markdown,
+    _is_footer_element,
+    _is_table_footer_row,
     _sanitize_table_cell_text,
     _table_has_empty_cells,
     _table_needs_visual_crop,
@@ -254,4 +256,77 @@ def test_table_needs_visual_crop_normal_table():
     item = MockTableItem(grid, table_bbox, col_bboxes=col_bboxes)
 
     assert _table_needs_visual_crop(item, md, page_h=792.0) is False
+
+
+def test_is_table_footer_row_detection():
+    """Verify that a trailing table row matching footer metadata in the footer zone is identified."""
+    footer_row = [MockCell("Classification: AsianBank Confidential"), MockCell("Document Owner: ITSD")]
+    cell_bounds = {
+        (2, 0): {"l": 50.0, "r": 250.0, "t": 720.0, "b": 740.0},
+        (2, 1): {"l": 250.0, "r": 500.0, "t": 720.0, "b": 740.0},
+    }
+    assert _is_table_footer_row(footer_row, r_idx=2, cell_bounds=cell_bounds, page_h=792.0) is True
+
+    # Normal row in footer zone should NOT be flagged as footer
+    normal_row = [MockCell("Module A"), MockCell("Active status")]
+    assert _is_table_footer_row(normal_row, r_idx=2, cell_bounds=cell_bounds, page_h=792.0) is False
+
+    # Footer text located high on page (not in footer band) should NOT be flagged as footer
+    high_bounds = {
+        (0, 0): {"l": 50.0, "r": 250.0, "t": 100.0, "b": 120.0},
+        (0, 1): {"l": 250.0, "r": 500.0, "t": 100.0, "b": 120.0},
+    }
+    assert _is_table_footer_row(footer_row, r_idx=0, cell_bounds=high_bounds, page_h=792.0) is False
+
+
+def test_format_table_markdown_prunes_absorbed_footer_rows():
+    """Verify that _format_table_markdown strips swallowed footer rows from the table output."""
+    grid = [
+        [MockCell("Description of Change", True), MockCell("Revised By", True), MockCell("Version", True)],
+        [MockCell("Initial draft"), MockCell("J. Mendoza"), MockCell("1.0")],
+        [MockCell("Classification: AsianBank Confidential"), MockCell("Document Owner: ITSD"), MockCell("Page 2 of 15")],
+    ]
+    table_bbox = BoundingBox(l=50.0, t=600.0, r=550.0, b=750.0, coord_origin=CoordOrigin.TOPLEFT)
+    col_bboxes = {
+        0: BoundingBox(l=50.0, t=600.0, r=250.0, b=750.0, coord_origin=CoordOrigin.TOPLEFT),
+        1: BoundingBox(l=250.0, t=600.0, r=400.0, b=750.0, coord_origin=CoordOrigin.TOPLEFT),
+        2: BoundingBox(l=400.0, t=600.0, r=550.0, b=750.0, coord_origin=CoordOrigin.TOPLEFT),
+    }
+    item = MockTableItem(grid, table_bbox, col_bboxes=col_bboxes)
+    # Set cell bounds on bottom row into the footer zone
+    doc = MockDoc([])
+    doc.pages[1] = type("MockPage", (), {"size": type("MockSize", (), {"height": 792.0})()})()
+
+    md, _ = _format_table_markdown(item, doc, last_header=None, is_continuation=False)
+
+    # Output table must retain genuine row and prune footer row
+    assert "Initial draft" in md
+    assert "J. Mendoza" in md
+    assert "Classification: AsianBank Confidential" not in md
+    assert "Document Owner: ITSD" not in md
+
+
+def test_is_footer_element_detection():
+    """Verify that standalone items in the bottom margin matching footer metadata are identified."""
+    class MockElementItem:
+        def __init__(self, text: str, bbox: BoundingBox):
+            self.text = text
+            self.prov = [MockProv(bbox, page_no=1)]
+
+    footer_bbox = BoundingBox(l=50.0, t=730.0, r=550.0, b=750.0, coord_origin=CoordOrigin.TOPLEFT)
+    footer_item = MockElementItem("Classification: AsianBank Confidential | Page No.: 2 of 15", footer_bbox)
+    doc = MockDoc([])
+
+    # In footer zone with footer metadata
+    assert _is_footer_element(footer_item, doc, page_h=792.0) is True
+
+    # In footer zone but without footer metadata
+    body_item = MockElementItem("Standard architecture description text.", footer_bbox)
+    assert _is_footer_element(body_item, doc, page_h=792.0) is False
+
+    # In middle of page with footer metadata
+    high_bbox = BoundingBox(l=50.0, t=200.0, r=550.0, b=220.0, coord_origin=CoordOrigin.TOPLEFT)
+    high_item = MockElementItem("Classification: AsianBank Confidential", high_bbox)
+    assert _is_footer_element(high_item, doc, page_h=792.0) is False
+
 

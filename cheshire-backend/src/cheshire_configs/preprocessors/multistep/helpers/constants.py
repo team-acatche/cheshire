@@ -2,6 +2,8 @@
 Configuration constants for multistep preprocessing, table formatting, and chunking.
 """
 
+import re
+
 # Bounding box default dimensions and padding (in rendered page pixel space)
 DEFAULT_ROW_HEIGHT_PX: float = 40.0
 LAST_ROW_BOTTOM_PADDING_PX: float = 15.0
@@ -34,3 +36,22 @@ MIN_TABLE_CELL_COVERAGE_RATIO: float = 0.85
 MAX_TABLE_RIGHT_GAP_PX: float = 30.0
 MIN_WIDE_TABLE_WIDTH_PX: float = 300.0
 WIDE_TABLE_ASPECT_RATIO: float = 2.5
+
+# Page footer spatial and metadata detection thresholds
+FOOTER_BOTTOM_MARGIN_RATIO: float = 0.85
+FOOTER_METADATA_PATTERN: re.Pattern[str] = re.compile(
+    r"(?i)\b("
+    r"classification\s*:"
+    r"|confidential\b"
+    r"|internal\s+use\s+only\b"
+    r"|strictly\s+confidential\b"
+    r"|document\s+owner\s*:"
+    r"|doc\s+owner\s*:"
+    r"|document\s+title\s*:"
+    r"|doc\s+title\s*:"
+    r"|document\s+id\s*:"
+    r"|page\s+no\.?\s*:"
+    r"|page\s+\d+\s+of\s+\d+"
+    r"|all\s+rights\s+reserved"
+    r")"
+)

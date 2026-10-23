@@ -10,8 +10,8 @@ from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
 
-from .constants import MAX_CONTINUATION_PAGE_GAP
-from .geometry import _get_item_label
+from .constants import FOOTER_BOTTOM_MARGIN_RATIO, FOOTER_METADATA_PATTERN, MAX_CONTINUATION_PAGE_GAP
+from .geometry import _get_item_label, _to_topleft_dict
 from .models import ElementRef, FigureRef, ImageBoundingBox
 from .tables import (
     _crop_table_as_figure,
@@ -64,6 +64,47 @@ def _build_figure_lookup(
     return lookup
 
 
+def _is_footer_element(
+    item: Any,
+    doc: DoclingDocument,
+    page_h: float,
+) -> bool:
+    """
+    Detects whether an extracted item (table, paragraph, or text block)
+    is actually an anomalous page footer based on spatial location in the bottom margin band
+    and presence of corporate document-control metadata.
+    """
+    if page_h <= 0.0 or not hasattr(item, "prov") or not item.prov:
+        return False
+
+    prov: ProvenanceItem = item.prov[0]
+    if not prov.bbox:
+        return False
+
+    tb = _to_topleft_dict(prov.bbox, page_h)
+    # Must be located in the bottom margin band of the page
+    if tb["t"] < page_h * FOOTER_BOTTOM_MARGIN_RATIO and tb["b"] < page_h * FOOTER_BOTTOM_MARGIN_RATIO:
+        return False
+
+    # Extract item text
+    item_text = getattr(item, "text", "")
+    if not item_text:
+        # If table, inspect cell texts
+        grid = getattr(getattr(item, "data", None), "grid", None)
+        if grid:
+            item_text = " ".join(getattr(c, "text", str(c)) for row in grid for c in row)
+        elif hasattr(item, "export_to_markdown"):
+            try:
+                item_text = item.export_to_markdown(doc=doc)
+            except Exception:
+                item_text = ""
+
+    if not item_text:
+        return False
+
+    return bool(FOOTER_METADATA_PATTERN.search(item_text))
+
+
 def _build_element_lookup(
     doc: DoclingDocument,
     result: ConversionResult,
@@ -109,6 +150,10 @@ def _build_element_lookup(
         prov: ProvenanceItem = item.prov[0]
         page: Any = doc.pages.get(prov.page_no)
         if page is None or page.size is None:
+            continue
+
+        # Skip anomalous tabular or columnar footers mislabeled as table/paragraph/text
+        if _is_footer_element(item, doc, page.size.height):
             continue
 
         bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page.size.height, scale)

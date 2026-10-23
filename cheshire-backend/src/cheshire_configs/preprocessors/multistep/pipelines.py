@@ -77,6 +77,7 @@ AUDIT RULES & CONSTRAINTS
 - ONLY the following managerial blocks are excluded from standards evaluation:
   * Approvals, "Approved By", "Reviewed By", sign-off tables, and signature/date rows.
   * Version/Revision history tables, changelogs, author metadata, and distribution lists.
+  * Corporate page-control footers (e.g. Classification, Document Owner, Document Title, Page No.) appearing at the bottom of pages or near tables. NEVER evaluate page footers as technical content, and NEVER flag table rows or schema definitions because footer metadata appears adjacent to or within them.
   * Do NOT flag missing signatures, unpopulated dates, or empty cells in these administrative blocks.
 - IN-SCOPE FOR AUDITING (DO NOT SKIP):
   * ALL technical, architectural, operational, and system specifications across the document MUST be audited.
@@ -280,6 +281,7 @@ TASKS
    - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
    - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
    - Discard any finding claiming that a populated table specification, parameter, or cell entry is incomplete, malformed, or missing information when the issue arises from table parser line-wrapping, hyphen-splitting, or margin clipping of long cell text, rather than a genuine author omission or placeholder.
+   - Discard any finding claiming a violation based on corporate page-control footers, document classification markings, or page numbering metadata.
 4. If two findings contradict each other, call flag_contradiction.
 5. For each unique, valid finding without duplicates, call accept_local_finding with the original fields preserved, ensuring severity is "major", "minor", or "observation" and confidence is calibrated (1.0, 0.8, or 0.6). For groups of duplicate same-topic findings, call merge_findings.
 

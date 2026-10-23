@@ -17,6 +17,8 @@ from .constants import (
     COLUMN_SPLIT_RATIO,
     DEFAULT_COL_WIDTH_PX,
     DEFAULT_ROW_HEIGHT_PX,
+    FOOTER_BOTTOM_MARGIN_RATIO,
+    FOOTER_METADATA_PATTERN,
     INDEPENDENT_HEADER_KEYWORDS,
     LAST_COL_RIGHT_PADDING_PX,
     LAST_ROW_BOTTOM_PADDING_PX,
@@ -37,27 +39,37 @@ def _calculate_extended_row_bounds(
     row_bboxes: dict[int, Any],
     num_rows: int,
     page_h: float,
+    table_t: float | None = None,
+    table_b: float | None = None,
 ) -> dict[int, tuple[float, float]]:
     """
     Computes top and bottom bounds for each row, forward-filling missing rows
     and extending boundaries to the midpoints of adjacent rows to cover inter-cell gaps.
+    If no row bboxes exist, estimates row spans evenly from table_t to table_b.
     """
     row_bounds: dict[int, list[float | None]] = {}
+    has_any_row_bbox = False
     for r in range(num_rows):
         if r in row_bboxes and row_bboxes[r] is not None:
             rb = _to_topleft_dict(row_bboxes[r], page_h)
             row_bounds[r] = [rb["t"], rb["b"]]
+            has_any_row_bbox = True
         else:
             row_bounds[r] = [None, None]
 
-    # Forward-fill any rows without extracted bounding boxes
-    for r in range(num_rows):
-        curr_t, curr_b = row_bounds[r]
-        if curr_t is None:
-            prev_b = row_bounds[r - 1][1] if r > 0 and row_bounds[r - 1][1] is not None else 0.0
-            curr_t = prev_b
-            curr_b = prev_b + DEFAULT_ROW_HEIGHT_PX
-            row_bounds[r] = [curr_t, curr_b]
+    if not has_any_row_bbox and table_t is not None and table_b is not None and table_b > table_t and num_rows > 0:
+        row_h = (table_b - table_t) / num_rows
+        for r in range(num_rows):
+            row_bounds[r] = [table_t + r * row_h, table_t + (r + 1) * row_h]
+    else:
+        # Forward-fill any rows without extracted bounding boxes
+        for r in range(num_rows):
+            curr_t, curr_b = row_bounds[r]
+            if curr_t is None:
+                prev_b = row_bounds[r - 1][1] if r > 0 and row_bounds[r - 1][1] is not None else (table_t or 0.0)
+                curr_t = prev_b
+                curr_b = prev_b + DEFAULT_ROW_HEIGHT_PX
+                row_bounds[r] = [curr_t, curr_b]
 
     # Extend boundaries to bridge row gaps
     extended_row_bounds: dict[int, tuple[float, float]] = {}
@@ -69,7 +81,8 @@ def _calculate_extended_row_bounds(
         if r < num_rows - 1 and row_bounds[r + 1][0] is not None:
             b = (b + row_bounds[r + 1][0]) / 2.0
         else:
-            b = b + LAST_ROW_BOTTOM_PADDING_PX
+            padded_b = b + LAST_ROW_BOTTOM_PADDING_PX
+            b = max(padded_b, table_b) if table_b is not None else padded_b
         extended_row_bounds[r] = (t, b)
 
     return extended_row_bounds
@@ -136,11 +149,17 @@ def _get_table_cell_bounds(table_item: Any, page_h: float) -> dict[tuple[int, in
 
     prov = table_item.prov[0] if hasattr(table_item, "prov") and table_item.prov else None
     table_r = None
+    table_t = None
+    table_b = None
     if prov and page_h > 0.0:
         tb = _to_topleft_dict(prov.bbox, page_h)
         table_r = tb["r"]
+        table_t = tb["t"]
+        table_b = tb["b"]
 
-    extended_row_bounds = _calculate_extended_row_bounds(row_bboxes, num_rows, page_h)
+    extended_row_bounds = _calculate_extended_row_bounds(
+        row_bboxes, num_rows, page_h, table_t=table_t, table_b=table_b
+    )
     extended_col_bounds = _calculate_extended_col_bounds(col_bboxes, num_cols, page_h, table_r=table_r)
 
     cell_bounds: dict[tuple[int, int], dict[str, float]] = {}
@@ -524,6 +543,44 @@ def _extract_header_from_table_text(
     return table_text, new_last_header
 
 
+def _is_table_footer_row(
+    row: list[Any],
+    r_idx: int,
+    cell_bounds: dict[tuple[int, int], dict[str, float]],
+    page_h: float,
+) -> bool:
+    """
+    Checks if a trailing table row is a page footer accidentally absorbed into the table.
+    Requires both:
+    1. Row text matches generic corporate document-control footer metadata patterns.
+    2. Row's vertical position is in the bottom footer margin band of the page.
+    """
+    if not row or page_h <= 0.0:
+        return False
+
+    row_text = " ".join(getattr(c, "text", str(c)) for c in row).strip()
+    if not row_text or not FOOTER_METADATA_PATTERN.search(row_text):
+        return False
+
+    # Check vertical position from cell_bounds
+    cb_list = [cell_bounds[(r_idx, c_idx)] for c_idx in range(len(row)) if (r_idx, c_idx) in cell_bounds]
+    if cb_list:
+        row_top = min(cb["t"] for cb in cb_list)
+        row_bottom = max(cb["b"] for cb in cb_list)
+        if row_top >= page_h * FOOTER_BOTTOM_MARGIN_RATIO or row_bottom >= page_h * FOOTER_BOTTOM_MARGIN_RATIO:
+            return True
+
+    # Fallback to individual cell bounding boxes if cell_bounds missing
+    for cell in row:
+        bbox = getattr(cell, "bbox", None)
+        if bbox is not None:
+            tb = _to_topleft_dict(bbox, page_h)
+            if tb["t"] >= page_h * FOOTER_BOTTOM_MARGIN_RATIO or tb["b"] >= page_h * FOOTER_BOTTOM_MARGIN_RATIO:
+                return True
+
+    return False
+
+
 def _format_table_markdown(
     table_item: Any,
     doc: DoclingDocument,
@@ -557,6 +614,10 @@ def _format_table_markdown(
     cell_bounds = _get_table_cell_bounds(table_item, page_h) if page_h > 0 else {}
 
     col_splits = _detect_table_column_splits(grid, cell_bounds, pics, page_h)
+
+    # Prune trailing footer rows accidentally absorbed into table
+    while len(grid) > 1 and _is_table_footer_row(grid[-1], len(grid) - 1, cell_bounds, page_h):
+        grid = grid[:-1]
 
     # Format continuation table lacking headers
     if is_continuation and not has_col_headers and last_header:
