@@ -11,31 +11,48 @@ from fastapi.testclient import TestClient
 
 from server import api
 from cheshire_configs.registry import configs
+from cheshire_configs.resolver import resolve_config
 from cheshire_configs.core import PipelineConfig, Provider, EvaluationType
 from auth.dependencies import get_current_user
 from auth.models import User
 from endpoints.evaluate import _run_evaluation
-from knowledge_base.history import Event, EventType, SqliteEventRepository
+from knowledge_base.history import EventType, SqliteEventRepository
 from knowledge_base.session_manager import Session, SessionStatus, SqliteSessionRepository
 from tools.helpers.output_schema import VulnerabilityDetails
 
-# Override the registry dependency to avoid real model initialization
-# This also ensures resolve_config finds a valid config for the default provider
+# Override the registry dependencies to avoid real model initialization.
 mock_config = PipelineConfig(
     model=MagicMock(),
     tools=[],
-    mode=EvaluationType.MULTISTEP
+    mode=EvaluationType.MULTISTEP,
 )
+
+TEST_USER = User(
+    user_id="test_id",
+    email="test@example.com",
+    sessions_folder="testuser",
+    username="testuser",
+    full_name="Test User",
+    avatar_uri="default.png",
+)
+
+
 def mock_get_current_user():
-    return User(user_id="test_id", email="test@example.com", sessions_folder="testuser", username="testuser", full_name="Test User", avatar_uri="default.png")
+    return TEST_USER
+
 
 @pytest.fixture(autouse=True)
 def setup_overrides():
     api.dependency_overrides[configs] = lambda: {Provider.OPENROUTER: mock_config}
+    api.dependency_overrides[resolve_config] = lambda: mock_config
     api.dependency_overrides[get_current_user] = mock_get_current_user
-    with patch("endpoints.evaluate.KnowledgeRepositoryFactory.create_repositories", return_value=(MagicMock(), MagicMock())):
+    with patch(
+        "endpoints.evaluate.KnowledgeRepositoryFactory.create_repositories",
+        return_value=(MagicMock(), MagicMock()),
+    ):
         yield
         api.dependency_overrides.clear()
+
 
 client = TestClient(api)
 
@@ -46,7 +63,7 @@ client = TestClient(api)
 
 def _make_pdf_bytes() -> bytes:
     """Return a minimal valid PDF as bytes (no external files needed)."""
-    from pypdfium2 import PdfDocument # type: ignore
+    from pypdfium2 import PdfDocument  # type: ignore
 
     doc = PdfDocument.new()
     doc.new_page(595, 842)
@@ -81,6 +98,32 @@ def _setup_db(tmp_path: Path, session_id: str) -> Path:
     return db_path
 
 
+def _run(session_id: str, tmp_path: Path, db_path: Path) -> None:
+    """Invoke the background worker against a freshly written PDF."""
+    document_path = tmp_path / "upload.pdf"
+    document_path.write_bytes(PDF_BYTES)
+    _run_evaluation(
+        session_id=session_id,
+        document_path=document_path,
+        filename="test.pdf",
+        user_id="test_id",
+        user_db_path=db_path,
+        config=mock_config,
+    )
+
+
+def _findings(db_path: Path, session_id: str) -> list:
+    with sqlite3.connect(db_path) as db:
+        return SqliteEventRepository(db).get_recent(
+            session_id, event_types=[EventType.VULNERABILITY_FINDING]
+        )
+
+
+def _session(db_path: Path, session_id: str) -> Session | None:
+    with sqlite3.connect(db_path) as db:
+        return SqliteSessionRepository(db).get_session(session_id)
+
+
 PDF_BYTES = _make_pdf_bytes()
 
 
@@ -92,13 +135,13 @@ class TestEvaluateSubmission:
     """Tests for the async POST /evaluate submission endpoint."""
 
     @patch("endpoints.evaluate._run_evaluation")
-    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
-    def test_submit_returns_202_with_session_id(self, mock_run):
+    def test_submit_returns_202_with_session_id(self, mock_run, tmp_path: Path):
         """Upload a PDF → 202 Accepted with session_id and status='pending'."""
-        response = client.post(
-            "/api/v1/evaluate",
-            files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
-        )
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
+            )
         assert response.status_code == status.HTTP_202_ACCEPTED
         data = response.json()
         assert "session_id" in data
@@ -106,30 +149,92 @@ class TestEvaluateSubmission:
         mock_run.assert_called_once()
 
     @patch("endpoints.evaluate._run_evaluation")
-    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
-    def test_submit_with_custom_session_id(self, mock_run):
+    def test_submit_persists_document_and_pending_session(self, mock_run, tmp_path: Path):
+        """The upload is saved up-front and the session row starts as PENDING."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("test.pdf", PDF_BYTES, "application/pdf")},
+            )
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        session_id = response.json()["session_id"]
+
+        saved = list((tmp_path / TEST_USER.user_id / session_id / "documents").glob("*__test.pdf"))
+        assert len(saved) == 1
+        assert saved[0].read_bytes() == PDF_BYTES
+
+        session = _session(tmp_path / TEST_USER.user_id / f"{TEST_USER.user_id}.sqlite", session_id)
+        assert session is not None
+        assert session.title == "test.pdf"
+        assert session.status == SessionStatus.PENDING
+
+        # The worker receives the persisted document path
+        assert mock_run.call_args.kwargs["document_path"] == saved[0]
+        assert mock_run.call_args.kwargs["session_id"] == session_id
+
+    @patch("endpoints.evaluate._run_evaluation")
+    def test_submit_with_custom_session_id(self, mock_run, tmp_path: Path):
         """When a session_id query param is provided, it is echoed back."""
         custom_id = "my-custom-session-id"
-        response = client.post(
-            "/api/v1/evaluate",
-            params={"session_id": custom_id},
-            files={"uploaded_document": ("report.pdf", PDF_BYTES, "application/pdf")},
-        )
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                params={"session_id": custom_id},
+                files={"uploaded_document": ("report.pdf", PDF_BYTES, "application/pdf")},
+            )
         assert response.status_code == status.HTTP_202_ACCEPTED
         assert response.json()["session_id"] == custom_id
         mock_run.assert_called_once()
 
     @patch("endpoints.evaluate._run_evaluation")
-    @patch("dependencies.sessions.SESSIONS_PATH", Path("/tmp"))
-    def test_filename_fallback(self, mock_run):
+    def test_filename_fallback(self, mock_run, tmp_path: Path):
         """An unusual filename doesn't crash the endpoint."""
-        response = client.post(
-            "/api/v1/evaluate",
-            files={"uploaded_document": ("upload", PDF_BYTES, "application/pdf")},
-        )
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("upload.pdf", PDF_BYTES, "application/pdf")},
+            )
         assert response.status_code == status.HTTP_202_ACCEPTED
         assert response.json()["status"] == "pending"
         mock_run.assert_called_once()
+
+    @patch("endpoints.evaluate._run_evaluation")
+    def test_unsafe_filename_is_sanitized(self, mock_run, tmp_path: Path):
+        """Characters outside [a-zA-Z0-9_.-] are replaced in the stored title."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("my report (v2).pdf", PDF_BYTES, "application/pdf")},
+            )
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        session = _session(
+            tmp_path / TEST_USER.user_id / f"{TEST_USER.user_id}.sqlite",
+            response.json()["session_id"],
+        )
+        assert session is not None
+        assert session.title == "my_report__v2_.pdf"
+
+    @patch("endpoints.evaluate._run_evaluation")
+    def test_non_pdf_content_is_rejected(self, mock_run, tmp_path: Path):
+        """A file named .pdf whose bytes aren't a PDF → 400, worker never queued."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("fake.pdf", b"just some text", "application/pdf")},
+            )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_run.assert_not_called()
+
+    @patch("endpoints.evaluate._run_evaluation")
+    def test_wrong_extension_is_rejected(self, mock_run, tmp_path: Path):
+        """Real PDF bytes under a non-.pdf filename → 400."""
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("report.txt", PDF_BYTES, "application/pdf")},
+            )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_run.assert_not_called()
 
 
 class TestRequestValidation:
@@ -153,12 +258,6 @@ class TestBackgroundEvaluation:
         """Findings from evaluate_file are persisted as VULNERABILITY_FINDING events."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
-
-        # Create a temp file to stand in for the uploaded PDF
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
 
         mock_results = [
             _make_vulnerability("Vuln A", "Description A", page=1),
@@ -167,21 +266,9 @@ class TestBackgroundEvaluation:
         ]
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        # Verify findings were persisted
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
+        events = _findings(db_path, session_id)
         assert len(events) == 3
         titles = [VulnerabilityDetails.model_validate_json(e.content).title for e in events]
         assert set(titles) == {"Vuln A", "Vuln B", "Vuln C"}
@@ -190,57 +277,45 @@ class TestBackgroundEvaluation:
         """Session status transitions PENDING → PROCESSING → DONE on success."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
 
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
+        with patch(
+            "endpoints.evaluate.evaluate_file",
+            new_callable=AsyncMock,
+            return_value=[_make_vulnerability("Vuln X", "Desc X")],
+        ):
+            _run(session_id, tmp_path, db_path)
 
-        mock_results = [_make_vulnerability("Vuln X", "Desc X")]
-
-        with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
-
-        with sqlite3.connect(db_path) as db:
-            session = SqliteSessionRepository(db).get_session(session_id)
+        session = _session(db_path, session_id)
         assert session is not None
         assert session.status == SessionStatus.DONE
+
+    def test_evaluate_file_receives_document_and_cancel_check(self, tmp_path: Path):
+        """The worker passes the document path and a should_cancel callable through."""
+        session_id = str(uuid.uuid4())
+        db_path = _setup_db(tmp_path, session_id)
+
+        with patch(
+            "endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=[]
+        ) as mock_eval:
+            _run(session_id, tmp_path, db_path)
+
+        mock_eval.assert_awaited_once()
+        args, kwargs = mock_eval.call_args
+        assert args[0] == tmp_path / "upload.pdf"
+        assert args[1] is mock_config
+        assert callable(kwargs["should_cancel"])
 
     def test_finding_metadata_fields(self, tmp_path: Path):
         """Each persisted finding round-trips all metadata fields correctly."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
-
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
 
         original = _make_vulnerability("SQL Injection", "Unsanitized input on page 5", page=5)
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=[original]):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="doc.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
+        events = _findings(db_path, session_id)
         assert len(events) == 1
         restored = VulnerabilityDetails.model_validate_json(events[0].content)
         assert restored.title == "SQL Injection"
@@ -249,114 +324,77 @@ class TestBackgroundEvaluation:
         assert restored.web_references == ["http://example.com"]
         assert restored.recommendations == ["Recommendation 1"]
 
+    def test_severity_and_confidence_round_trip(self, tmp_path: Path):
+        """Severity and confidence survive persistence."""
+        session_id = str(uuid.uuid4())
+        db_path = _setup_db(tmp_path, session_id)
+
+        finding = _make_vulnerability("Deprecated runtime", "EOL framework", page=2)
+        finding.severity = "major"
+        finding.confidence = 0.8
+
+        with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=[finding]):
+            _run(session_id, tmp_path, db_path)
+
+        restored = VulnerabilityDetails.model_validate_json(_findings(db_path, session_id)[0].content)
+        assert restored.severity == "major"
+        assert restored.confidence == 0.8
+
     def test_finding_titles_are_unique(self, tmp_path: Path):
         """All persisted finding titles are unique."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
-
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
 
         mock_results = [_make_vulnerability(f"Vuln {i}", f"Desc {i}") for i in range(5)]
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
-        titles = [VulnerabilityDetails.model_validate_json(e.content).title for e in events]
+        titles = [
+            VulnerabilityDetails.model_validate_json(e.content).title
+            for e in _findings(db_path, session_id)
+        ]
         assert len(set(titles)) == len(titles)
 
     def test_empty_results_no_findings(self, tmp_path: Path):
         """When evaluate_file returns an empty list, no findings are persisted."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
-
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=[]):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
-            session = SqliteSessionRepository(db).get_session(session_id)
-        assert events == []
+        assert _findings(db_path, session_id) == []
+        session = _session(db_path, session_id)
+        assert session is not None
         assert session.status == SessionStatus.DONE
 
     def test_evaluation_failure_transitions_to_failed(self, tmp_path: Path):
         """When evaluate_file raises, session status transitions to FAILED."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
 
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
+        with patch(
+            "endpoints.evaluate.evaluate_file",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Model crashed"),
+        ):
+            _run(session_id, tmp_path, db_path)
 
-        with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, side_effect=RuntimeError("Model crashed")):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
-
-        with sqlite3.connect(db_path) as db:
-            session = SqliteSessionRepository(db).get_session(session_id)
+        session = _session(db_path, session_id)
         assert session is not None
         assert session.status == SessionStatus.FAILED
+        assert _findings(db_path, session_id) == []
 
     def test_none_results_transitions_to_failed(self, tmp_path: Path):
         """When evaluate_file returns None, session status transitions to FAILED."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
-
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=None):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            session = SqliteSessionRepository(db).get_session(session_id)
+        session = _session(db_path, session_id)
         assert session is not None
         assert session.status == SessionStatus.FAILED
 
@@ -372,11 +410,6 @@ class TestGetResults:
         """Findings persisted by _run_evaluation are returned by GET /result."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
-
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
 
         mock_results = [
             _make_vulnerability("Vuln A", "Description A"),
@@ -384,15 +417,7 @@ class TestGetResults:
         ]
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                tmp_file_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_path=user_path,
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
         from dependencies.sessions import get_user_db_path
         api.dependency_overrides[get_user_db_path] = lambda: db_path
@@ -413,8 +438,10 @@ class TestGetResults:
             assert "description" in item
             assert "page_no" in item
             assert "bbox" in item
+            assert "bboxes" in item
             assert "web_references" in item
             assert "recommendations" in item
+            assert "scope" in item
 
     def test_empty_results_returns_empty_list(self, tmp_path: Path):
         """When no findings were persisted, GET /result returns []."""
@@ -430,6 +457,7 @@ class TestGetResults:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
 
 # ---------------------------------------------------------------------------
 # Tests — GET /{session_id}/status
@@ -454,15 +482,18 @@ class TestStatusOpenApi:
         spec = client.get("/openapi.json").json()
         op = spec["paths"]["/api/v1/{session_id}/status"]["get"]
 
-        
         assert "301" in op["responses"]
         assert "Location" in op["responses"]["301"]["headers"]
         assert "404" in op["responses"]
 
-        
         schema_ref = op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
         assert schema_ref.endswith("/StatusResponse")
         assert "StatusResponse" in spec["components"]["schemas"]
+
+    def test_status_response_includes_cancelled(self):
+        spec = client.get("/openapi.json").json()
+        status_enum = spec["components"]["schemas"]["StatusResponse"]["properties"]["status"]["enum"]
+        assert set(status_enum) == {"PENDING", "PROCESSING", "FAILED", "CANCELLED"}
 
 
 class TestGetStatus:
@@ -474,6 +505,15 @@ class TestGetStatus:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["status"] == "PENDING"
 
+    def test_processing_returns_200(self, status_db):
+        session_id, db_path = status_db
+        with sqlite3.connect(db_path) as db:
+            SqliteSessionRepository(db).update_status(session_id, SessionStatus.PROCESSING)
+
+        response = client.get(f"/api/v1/{session_id}/status")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "PROCESSING"
+
     def test_failed_returns_200(self, status_db):
         session_id, db_path = status_db
         with sqlite3.connect(db_path) as db:
@@ -482,6 +522,15 @@ class TestGetStatus:
         response = client.get(f"/api/v1/{session_id}/status")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["status"] == "FAILED"
+
+    def test_cancelled_returns_200(self, status_db):
+        session_id, db_path = status_db
+        with sqlite3.connect(db_path) as db:
+            SqliteSessionRepository(db).update_status(session_id, SessionStatus.CANCELLED)
+
+        response = client.get(f"/api/v1/{session_id}/status")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == "CANCELLED"
 
     def test_done_returns_301_to_result(self, status_db):
         session_id, db_path = status_db
