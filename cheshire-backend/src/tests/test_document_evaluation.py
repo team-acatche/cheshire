@@ -20,7 +20,7 @@ from knowledge_base.history import EventType, SqliteEventRepository
 from knowledge_base.session_manager import Session, SessionStatus, SqliteSessionRepository
 from tools.helpers.output_schema import VulnerabilityDetails
 
-# Override the registry dependencies to avoid real model initialization.
+# override the registry dependencies to avoid real model initialization.
 mock_config = PipelineConfig(
     model=MagicMock(),
     tools=[],
@@ -58,7 +58,7 @@ client = TestClient(api)
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# helpers
 # ---------------------------------------------------------------------------
 
 def _make_pdf_bytes() -> bytes:
@@ -128,7 +128,7 @@ PDF_BYTES = _make_pdf_bytes()
 
 
 # ---------------------------------------------------------------------------
-# Tests — POST /evaluate (submission)
+# tests — post /evaluate (submission)
 # ---------------------------------------------------------------------------
 
 class TestEvaluateSubmission:
@@ -168,7 +168,7 @@ class TestEvaluateSubmission:
         assert session.title == "test.pdf"
         assert session.status == SessionStatus.PENDING
 
-        # The worker receives the persisted document path
+        # the worker receives the persisted document path
         assert mock_run.call_args.kwargs["document_path"] == saved[0]
         assert mock_run.call_args.kwargs["session_id"] == session_id
 
@@ -247,7 +247,7 @@ class TestRequestValidation:
 
 
 # ---------------------------------------------------------------------------
-# Tests — _run_evaluation (background worker)
+# tests — _run_evaluation (background worker)
 # ---------------------------------------------------------------------------
 
 class TestBackgroundEvaluation:
@@ -265,20 +265,9 @@ class TestBackgroundEvaluation:
         ]
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        # Verify findings were persisted
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
+        events = _findings(db_path, session_id)
         assert len(events) == 3
         titles = [VulnerabilityDetails.model_validate_json(e.content).title for e in events]
         assert set(titles) == {"Vuln A", "Vuln B", "Vuln C"}
@@ -287,26 +276,15 @@ class TestBackgroundEvaluation:
         """Session status transitions PENDING → PROCESSING → DONE on success."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
 
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
+        with patch(
+            "endpoints.evaluate.evaluate_file",
+            new_callable=AsyncMock,
+            return_value=[_make_vulnerability("Vuln X", "Desc X")],
+        ):
+            _run(session_id, tmp_path, db_path)
 
-        mock_results = [_make_vulnerability("Vuln X", "Desc X")]
-
-        with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
-
-        with sqlite3.connect(db_path) as db:
-            session = SqliteSessionRepository(db).get_session(session_id)
+        session = _session(db_path, session_id)
         assert session is not None
         assert session.status == SessionStatus.DONE
 
@@ -334,19 +312,9 @@ class TestBackgroundEvaluation:
         original = _make_vulnerability("SQL Injection", "Unsanitized input on page 5", page=5)
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=[original]):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="doc.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
+        events = _findings(db_path, session_id)
         assert len(events) == 1
         restored = VulnerabilityDetails.model_validate_json(events[0].content)
         assert restored.title == "SQL Injection"
@@ -379,20 +347,12 @@ class TestBackgroundEvaluation:
         mock_results = [_make_vulnerability(f"Vuln {i}", f"Desc {i}") for i in range(5)]
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
-        titles = [VulnerabilityDetails.model_validate_json(e.content).title for e in events]
+        titles = [
+            VulnerabilityDetails.model_validate_json(e.content).title
+            for e in _findings(db_path, session_id)
+        ]
         assert len(set(titles)) == len(titles)
 
     def test_empty_results_no_findings(self, tmp_path: Path):
@@ -401,45 +361,26 @@ class TestBackgroundEvaluation:
         db_path = _setup_db(tmp_path, session_id)
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=[]):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            events = SqliteEventRepository(db).get_recent(
-                session_id, event_types=[EventType.VULNERABILITY_FINDING]
-            )
-            session = SqliteSessionRepository(db).get_session(session_id)
-        assert events == []
+        assert _findings(db_path, session_id) == []
+        session = _session(db_path, session_id)
+        assert session is not None
         assert session.status == SessionStatus.DONE
 
     def test_evaluation_failure_transitions_to_failed(self, tmp_path: Path):
         """When evaluate_file raises, session status transitions to FAILED."""
         session_id = str(uuid.uuid4())
         db_path = _setup_db(tmp_path, session_id)
-        user_path = tmp_path / "user"
-        user_path.mkdir()
 
-        tmp_file = tmp_path / "upload.pdf"
-        tmp_file.write_bytes(PDF_BYTES)
+        with patch(
+            "endpoints.evaluate.evaluate_file",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Model crashed"),
+        ):
+            _run(session_id, tmp_path, db_path)
 
-        with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, side_effect=RuntimeError("Model crashed")):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
-
-        with sqlite3.connect(db_path) as db:
-            session = SqliteSessionRepository(db).get_session(session_id)
+        session = _session(db_path, session_id)
         assert session is not None
         assert session.status == SessionStatus.FAILED
         assert _findings(db_path, session_id) == []
@@ -450,23 +391,15 @@ class TestBackgroundEvaluation:
         db_path = _setup_db(tmp_path, session_id)
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=None):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
-        with sqlite3.connect(db_path) as db:
-            session = SqliteSessionRepository(db).get_session(session_id)
+        session = _session(db_path, session_id)
         assert session is not None
         assert session.status == SessionStatus.FAILED
 
 
 # ---------------------------------------------------------------------------
-# Tests — GET /{session_id}/result (serving persisted findings)
+# tests — get /{session_id}/result (serving persisted findings)
 # ---------------------------------------------------------------------------
 
 class TestGetResults:
@@ -483,14 +416,7 @@ class TestGetResults:
         ]
 
         with patch("endpoints.evaluate.evaluate_file", new_callable=AsyncMock, return_value=mock_results):
-            _run_evaluation(
-                session_id=session_id,
-                document_path=tmp_file,
-                filename="test.pdf",
-                user_id="test_id",
-                user_db_path=db_path,
-                config=mock_config,
-            )
+            _run(session_id, tmp_path, db_path)
 
         from dependencies.sessions import get_user_db_path
         api.dependency_overrides[get_user_db_path] = lambda: db_path
@@ -505,7 +431,7 @@ class TestGetResults:
         titles = {item["title"] for item in data}
         assert titles == {"Vuln A", "Vuln B"}
 
-        # Verify all expected fields are present
+        # verify all expected fields are present
         for item in data:
             assert "title" in item
             assert "description" in item
@@ -533,7 +459,7 @@ class TestGetResults:
 
 
 # ---------------------------------------------------------------------------
-# Tests — GET /{session_id}/status
+# tests — get /{session_id}/status
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
