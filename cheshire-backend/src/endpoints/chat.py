@@ -290,14 +290,11 @@ PROTOCOL:
                 agent_input = (
                     messages if body.regenerate
                     else [*messages, ChatMessage.from_user(body.message)]
-                ),
+                )
                 ctx = copy_context()
                 await loop.run_in_executor(
                     None,
-                    lambda: ctx.run(
-                        agent.run,
-                        messages=[*messages, ChatMessage.from_user(body.message)],
-                    ),
+                    lambda: ctx.run( agent.run, messages=agent_input),
                 )
             except Exception as exc:
                 if cancel_event.is_set():

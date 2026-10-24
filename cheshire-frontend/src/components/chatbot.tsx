@@ -92,7 +92,8 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                   text === "" ||
                   msg._role === "system"
                 ) return null
-                return { role: msg._role as "user" | "bot1" | "bot2" | "bot3", text }
+                
+                return { role: msg._role === "user" ? "user" : "bot1", text }
               })
               .filter((m): m is Message => m !== null)
           )
