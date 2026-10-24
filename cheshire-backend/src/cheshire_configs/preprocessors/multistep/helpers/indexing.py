@@ -11,6 +11,7 @@ from docling_core.types.doc.document import ProvenanceItem
 
 from .elements import _attach_captions, _find_page_gaps
 from .geometry import _get_item_label
+from .hierarchy import HeaderHierarchyResolver
 
 
 def _is_reference_section(section_title: str) -> bool:
@@ -151,6 +152,7 @@ def build_document_index(doc: DoclingDocument) -> dict:
     reference_documents: list[str] = []
     seen_refs: set[str] = set()
     current_section: str = ""
+    hierarchy_resolver = HeaderHierarchyResolver()
 
     def _add_ref(ref_str: str) -> None:
         normalized = ref_str.strip()
@@ -166,10 +168,13 @@ def build_document_index(doc: DoclingDocument) -> dict:
         prov: ProvenanceItem = item.prov[0]
 
         if label in ("section_header", "section_heading"):
-            current_section = getattr(item, "text", "")
+            raw_heading = getattr(item, "text", "")
+            current_section = hierarchy_resolver.process_heading(raw_heading) if raw_heading else ""
+            root_section = hierarchy_resolver.get_root_heading() or current_section
             sections.append({
                 "id": item.self_ref,
                 "title": current_section,
+                "root_section": root_section,
                 "page": prov.page_no,
             })
         elif label == "picture":
@@ -185,7 +190,7 @@ def build_document_index(doc: DoclingDocument) -> dict:
                 "page": prov.page_no,
                 "section": current_section,
             })
-            # Harvest reference documents from reference tables
+            # harvest reference documents from reference tables
             if _is_reference_section(current_section):
                 grid = getattr(getattr(item, "data", None), "grid", None)
                 if grid and _is_reference_table(grid):

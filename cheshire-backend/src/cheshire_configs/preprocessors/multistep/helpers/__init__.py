@@ -19,6 +19,14 @@ from .chunking import (
     build_chunks,
     merge_chunks,
 )
+from .hierarchy import (
+    HeaderHierarchyResolver,
+    HeaderToken,
+    ScopeLevel,
+    Segment,
+    SeqType,
+    parse_header_token,
+)
 from .constants import (
     COLUMN_SPLIT_RATIO,
     DEFAULT_COL_WIDTH_PX,
@@ -142,4 +150,11 @@ __all__ = [
     "build_chunks",
     # Indexing
     "build_document_index",
+    # hierarchy
+    "HeaderHierarchyResolver",
+    "HeaderToken",
+    "ScopeLevel",
+    "Segment",
+    "SeqType",
+    "parse_header_token",
 ]
