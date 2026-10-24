@@ -52,7 +52,8 @@ SSE_HEADERS = {
 KEEPALIVE_INTERVAL = 30  # seconds — well under Cloudflare's 100s free-plan limit
 
 class ChatBody(BaseModel):
-    message: str
+    message: str = ""
+    regenerate: bool = False
 
 class RenameBody(BaseModel):
     new_title: str
@@ -184,11 +185,35 @@ async def chat(
     # All DB work before the executor happens on the main async thread.
     setup_db, setup_repo = _open_db(history_db_path)
     try:
-        setup_repo.save(Event(
-            session_id=session_id,
-            event_type=EventType.USER_MESSAGE,
-            content=body.message,
-        ))
+        if body.regenerate:
+            running = _session_agent_tasks.get(session_id)
+            if running is not None and not running.done():
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A response is still being generated.")
+
+            chat_events = setup_repo.get_recent(
+                session_id, 1000,
+                event_types=[EventType.USER_MESSAGE, EventType.RESPONSE, EventType.TOOL_CALL, EventType.TOOL_CALL_RESULT],
+            )  # newest first
+            stale_ids: list[int] = []
+            last_user: Optional[Event] = None
+            for e in chat_events:
+                if e.event_type == EventType.USER_MESSAGE:
+                    last_user = e
+                    break
+                if e.event_id is not None:
+                    stale_ids.append(e.event_id)
+            if last_user is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nothing to regenerate.")
+
+            setup_repo.delete_events(stale_ids)  # old answer, plus its tool calls/results
+        else:
+            if not body.message.strip():
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Message must not be empty.")
+            setup_repo.save(Event(
+                session_id=session_id,
+                event_type=EventType.USER_MESSAGE,
+                content=body.message,
+            ))
 
         event_repo, knowledge_repo = KnowledgeRepositoryFactory.create_repositories(
             RepositoryType.QDRANT, storage_path=DATA_PATH, username=user_id,
@@ -262,6 +287,10 @@ PROTOCOL:
                     tools=Toolset([cast(Tool, tool) for tool in knowledge_tools]),
                     streaming_callback=enqueue_chunk,
                 )
+                agent_input = (
+                    messages if body.regenerate
+                    else [*messages, ChatMessage.from_user(body.message)]
+                ),
                 ctx = copy_context()
                 await loop.run_in_executor(
                     None,

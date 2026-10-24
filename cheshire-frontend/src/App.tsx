@@ -637,7 +637,7 @@ export default function App({ user, onLogout }: AppProps) {
                     collapsible
                     collapsedSize="0%"
                     defaultSize="0%"
-                    minSize="30%"
+                    minSize="40%"
                     onResize={() => setChatOpen(!chatPanelRef.current?.isCollapsed())}
                     className="min-w-0 overflow-hidden"
                   >
