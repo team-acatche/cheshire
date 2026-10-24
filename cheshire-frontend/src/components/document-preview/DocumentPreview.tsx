@@ -1,7 +1,7 @@
 // cheshire-frontend/src/components/document-preview/DocumentPreview.tsx
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { Document, pdfjs } from "react-pdf";
 import {
   FileText,
   Search,
@@ -27,16 +27,15 @@ import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import type { PageMeta, ActiveGroup } from "./types";
 import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./searchHelpers";
 import { SearchBar } from "./SearchBar";
-import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
 import { PdfPageSkeleton } from "./PdfPageSkeleton";
 import { isUnanchored } from "./helpers";
 import { DocumentLevelFindings } from "./DocumentLevelFindings";
 import { SeverityLegend } from "./SeverityLegend";
 import { TONES, bySeverity, countByTone, dominantTone, getTone, toneColor, type Tone } from "./severity";
-import { AnalysisProgressPill, ScanOverlay } from "./AnalysisProgress";
+import { AnalysisProgressPill } from "./AnalysisProgress";
 import type { EvaluationProgress, ProgressEvent } from "@/lib/helpers/evaluate_document";
-
+import { PdfPageItem } from "./PdfPageItem";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -287,6 +286,38 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   const closeSearch = useCallback(() => {
     clearAllMarks(); setMatchPages([]); setMatchIdx(0);
     setSearchOpen(false); setSearchQuery("");
+  }, []);
+
+  // Debounced search query (see Step 4)
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const searchQueryRef = useRef("");
+  useEffect(() => { searchQueryRef.current = debouncedQuery; }, [debouncedQuery]);
+
+  const registerPageEl = useCallback((n: number, el: HTMLDivElement | null) => {
+    pageEls.current[n] = el;
+  }, []);
+
+  const handlePageRendered = useCallback((n: number, meta: PageMeta) => {
+    setPageMetaMap((prev) => {
+      const old = prev[n];
+      // Skip the state update (and the re-render) if nothing changed
+      if (
+        old &&
+        old.renderedWidth === meta.renderedWidth &&
+        old.renderedHeight === meta.renderedHeight &&
+        old.originalWidth === meta.originalWidth &&
+        old.originalHeight === meta.originalHeight
+      ) return prev;
+      return { ...prev, [n]: meta };
+    });
+    const q = searchQueryRef.current.trim();
+    const el = pageEls.current[n];
+    if (q && el) applyPageHighlights(el, q);
   }, []);
 
   // severity filter (driven by the legend chips)
@@ -586,51 +617,21 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               }
             >
               {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNumber) => (
-                <div
+                <PdfPageItem
                   key={pageNumber}
-                  ref={(el) => { pageEls.current[pageNumber] = el; }}
-                  data-page-number={pageNumber}
-                  className="flex justify-center py-4"
-                >
-                  <div className="bg-white shadow-lg border border-gray-200" style={{ position: "relative" }}>
-                    <Page
-                      pageNumber={pageNumber}
-                      width={pageWidth}
-                      renderTextLayer
-                      renderAnnotationLayer={false}
-                      onRenderSuccess={(page) => {
-                        setPageMetaMap((prev) => ({
-                          ...prev,
-                          [pageNumber]: {
-                            renderedWidth:  page.width,
-                            renderedHeight: page.height,
-                            originalWidth:  page.originalWidth,
-                            originalHeight: page.originalHeight,
-                          },
-                        }));
-                        if (searchQuery.trim() && pageEls.current[pageNumber]) {
-                          applyPageHighlights(pageEls.current[pageNumber]!, searchQuery);
-                        }
-                      }}
-                    />
-                    {findingsLoading && progress && (
-                      <ScanOverlay
-                        active={progress.active_pages.includes(pageNumber)}
-                        scanned={progress.scanned_pages.includes(pageNumber)}
-                      />
-                    )}
-                    {pageMetaMap[pageNumber] && (
-                      <HighlightLayer
-                        pageNumber={pageNumber}
-                        pageMeta={pageMetaMap[pageNumber]}
-                        findings={anchored}
-                        activeFindings={active?.findings ?? null}
-                        focusedFinding={active?.focused ?? null}
-                        onClick={handleClick}
-                      />
-                    )}
-                  </div>
-                </div>
+                  pageNumber={pageNumber}
+                  pageWidth={pageWidth}
+                  meta={pageMetaMap[pageNumber]}
+                  anchored={anchored}
+                  activeFindings={active?.findings ?? null}
+                  focusedFinding={active?.focused ?? null}
+                  onHighlightClick={handleClick}
+                  onRendered={handlePageRendered}
+                  registerEl={registerPageEl}
+                  showScan={findingsLoading && !!progress}
+                  scanActive={!!progress?.active_pages.includes(pageNumber)}
+                  scanned={!!progress?.scanned_pages.includes(pageNumber)}
+                />
               ))}
             </Document>
           </div>
