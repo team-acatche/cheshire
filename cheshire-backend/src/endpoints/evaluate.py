@@ -21,7 +21,7 @@ from fastapi import (
     Query,
     status,
 )
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response, JSONResponse
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -35,6 +35,7 @@ from knowledge_base.session_manager import Session, SessionStatus, SqliteSession
 from knowledge_base.history import Event, EventType, SqliteEventRepository
 from knowledge_base.repository import RepositoryType, KnowledgeRepositoryFactory
 from knowledge_base.job_store import job_store, JobStatus, EvaluationCancelled
+from knowledge_base.progress import current_progress
 from auth.models import User
 from auth.dependencies import get_current_user
 from dependencies.sessions import get_user_path, get_user_db_path
@@ -96,6 +97,7 @@ def _run_evaluation(
     """
 
     job = job_store.get(session_id)
+    progress_token = current_progress.set(job.progress) if job is not None else None
 
     def is_cancelled() -> bool:
         return job is not None and job.cancel_event.is_set()
@@ -114,6 +116,7 @@ def _run_evaluation(
     def _finish_cancelled() -> None:
         _mark_terminal(SessionStatus.CANCELLED)
         if job is not None:
+            job.progress.finish("cancelled")
             job.status = JobStatus.CANCELLED
             job_store.update(job)
         logger.info(f"session({session_id}): evaluation cancelled.")
@@ -161,6 +164,7 @@ def _run_evaluation(
             raise EvaluationCancelled()
 
         if job is not None:
+            job.progress.finish("done")
             job.status = JobStatus.DONE
             job.session_id = session_id
             job.result = results
@@ -178,6 +182,7 @@ def _run_evaluation(
         logger.exception(f"session({session_id}): evaluation failed — {exc}")
         _mark_terminal(SessionStatus.FAILED)
         if job is not None:
+            job.progress.finish("failed") 
             job.status = JobStatus.FAILED
             job.error = str(exc)
             job_store.update(job)
@@ -185,6 +190,8 @@ def _run_evaluation(
         # lets /rerun know this worker has fully exited
         if job is not None:
             job.worker_done.set()
+        if progress_token is not None:
+            current_progress.reset(progress_token)
 
 
 # ── POST /evaluate ─────────────────────────────────────────────────────────────
@@ -356,6 +363,23 @@ def get_evaluation_status(
 
     body = StatusResponse(status=session.status.upper())
     return Response(content=body.model_dump_json(), media_type="application/json")
+
+
+# ── POST /{session_id}/progress ──────────────────────────────────────────────────
+
+@evaluate_router.get(
+    "/{session_id}/progress",
+    responses={status.HTTP_204_NO_CONTENT: {"description": "No live progress (finished or server restarted)."}},
+)
+def get_evaluation_progress(
+    session_id: Annotated[str, PathParam()],
+    current_user: Annotated[User, Depends(get_current_user)],
+    since: Annotated[int, Query(ge=0, description="Only return events with seq > since")] = 0,
+) -> Response:
+    job = job_store.get(session_id)
+    if job is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return JSONResponse(job.progress.snapshot(since))
 
 
 # ── POST /{session_id}/cancel ──────────────────────────────────────────────────

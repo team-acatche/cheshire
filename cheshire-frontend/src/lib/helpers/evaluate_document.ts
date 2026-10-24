@@ -1,4 +1,4 @@
-import type { VulnerabilityFinding } from "../../types/VulnerabilityFinding"
+import type { VulnerabilityFinding, Severity } from "../../types/VulnerabilityFinding"
 import { authFetch } from "@/lib/auth"
 import { PROVIDER } from "@/globals"
 
@@ -21,6 +21,14 @@ export interface EvaluateResponse {
 }
 
 export type EvaluationStatus = "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "DONE" | "CANCELLED"
+
+export interface ProgressEvent {
+  seq: number
+  t: number
+  kind: "stage" | "section" | "finding" | "info"
+  message: string
+  severity?: Severity
+}
 
 // ── Polling config ────────────────────────────────────────────────────────────
 
@@ -159,6 +167,41 @@ export async function cancelEvaluation(sessionId: string): Promise<CancelResult>
     return "error"
   }
 }
+
+
+export interface EvaluationProgress {
+  stage: string
+  stage_index: number
+  stages: { key: string; label: string }[]
+  message: string
+  percent: number
+  completed: number
+  total: number
+  heading: string | null
+  page_count: number
+  active_pages: number[]
+  scanned_pages: number[]
+  counts: Record<Severity, number>
+  eta_seconds: number | null
+  elapsed_seconds: number
+  terminal: string | null
+  events: ProgressEvent[]
+  last_seq: number
+}
+
+export async function fetchEvaluationProgress(
+  sessionId: string,
+  since: number,
+): Promise<EvaluationProgress | null> {
+  try {
+    const res = await authFetch(`/api/v1/${sessionId}/progress?since=${since}`)
+    if (res.status === 204 || !res.ok) return null
+    return (await res.json()) as EvaluationProgress
+  } catch {
+    return null
+  }
+}
+
 
 // ── Rerun Evaluation ──────────────────────────────────────────────────────────
 export type RerunResult = "started" | "busy" | "error"

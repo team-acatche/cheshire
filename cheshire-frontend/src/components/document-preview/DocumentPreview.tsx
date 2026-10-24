@@ -34,6 +34,8 @@ import { isUnanchored } from "./helpers";
 import { DocumentLevelFindings } from "./DocumentLevelFindings";
 import { SeverityLegend } from "./SeverityLegend";
 import { TONES, bySeverity, countByTone, dominantTone, getTone, toneColor, type Tone } from "./severity";
+import { AnalysisProgressPill, ScanOverlay } from "./AnalysisProgress";
+import type { EvaluationProgress, ProgressEvent } from "@/lib/helpers/evaluate_document";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -63,9 +65,11 @@ interface DocumentPreviewProps {
   onToggleChat?: () => void;
   onCancelAnalysis?: () => void;
   onRerunAnalysis?: () => void;
+  progress?: EvaluationProgress | null;
+  progressEvents?: ProgressEvent[];
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis, progress = null, progressEvents = [] }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -224,6 +228,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     setCurrentPage(pageNum);
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  const [followAlong, setFollowAlong] = useState(false);
+
+  const activeFirst = progress?.active_pages[0];
+  useEffect(() => {
+    if (followAlong && findingsLoading && activeFirst) scrollToPageNumber(activeFirst);
+  }, [followAlong, findingsLoading, activeFirst, scrollToPageNumber]);
 
   const goToNextPage = useCallback(() => {
     if (currentPage < numPages) scrollToPageNumber(currentPage + 1);
@@ -403,6 +414,17 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           {/* Left — findings badge OR loading indicator */}
           <div className="justify-self-start flex items-center gap-2">
             {findingsLoading ? (
+              progress ? (
+                <AnalysisProgressPill
+                  progress={progress}
+                  events={progressEvents}
+                  follow={followAlong}
+                  onFollowChange={setFollowAlong}
+                  onJumpToPage={scrollToPageNumber}
+                  onCancel={onCancelAnalysis}
+                  container={portalEl}
+                />
+            ) : (
               <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Analyzing document…
@@ -418,6 +440,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                 </button>
                 )}
               </div>
+              )
             ) : onRerunAnalysis ? (
               <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
                 <Ban className="h-3.5 w-3.5" />
@@ -590,6 +613,12 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         }
                       }}
                     />
+                    {findingsLoading && progress && (
+                      <ScanOverlay
+                        active={progress.active_pages.includes(pageNumber)}
+                        scanned={progress.scanned_pages.includes(pageNumber)}
+                      />
+                    )}
                     {pageMetaMap[pageNumber] && (
                       <HighlightLayer
                         pageNumber={pageNumber}

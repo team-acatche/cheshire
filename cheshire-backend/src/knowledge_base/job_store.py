@@ -6,6 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Callable, Optional
 from uuid import uuid4
+from knowledge_base.progress import ProgressTracker
 
 
 class JobStatus(StrEnum):
@@ -38,6 +39,7 @@ class Job:
     error:      Optional[str]        = None
     cancel_event: threading.Event = field(default_factory=threading.Event)
     worker_done: threading.Event = field(default_factory=threading.Event)
+    progress: ProgressTracker = field(default_factory=ProgressTracker)
 
     def touch(self) -> None:
         self.updated_at = datetime.now().isoformat()

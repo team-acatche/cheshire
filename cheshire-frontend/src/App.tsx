@@ -17,6 +17,7 @@ import {
   cancelEvaluation,
   rerunEvaluation,
 } from "./lib/helpers/evaluate_document"
+import { useEvaluationProgress } from "@/hooks/use-evaluation-progress"
 import { validatePdf } from "./lib/helpers/validate_pdf"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import { sortChatsByLatest } from "@/lib/sortChatsByLatest"
@@ -463,6 +464,11 @@ export default function App({ user, onLogout }: AppProps) {
 
   const currentChat = chats.find(c => c.session_id === currentSessionId)
 
+  const { progress, events: progressEvents } = useEvaluationProgress(
+    currentSessionId,
+    currentChat?.status === "processing",
+  )
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -621,6 +627,8 @@ export default function App({ user, onLogout }: AppProps) {
                         onToggleChat={toggleChat}
                         onCancelAnalysis={currentChat?.status === "processing" ? () => setChatToCancel(currentChat) : undefined}
                         onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
+                        progress={progress}
+                        progressEvents={progressEvents}
                       />
                     </CardContent>
                   </ResizablePanel>
