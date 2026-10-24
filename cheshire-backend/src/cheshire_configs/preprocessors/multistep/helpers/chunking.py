@@ -13,19 +13,22 @@ from docling_core.types.doc import DoclingDocument
 
 from .constants import DEFAULT_IMAGE_SCALE, DEFAULT_MAX_CHUNK_CHARS
 from .elements import _build_element_lookup, _build_figure_lookup
+from .hierarchy import HeaderHierarchyResolver, parse_header_token
 from .models import ElementRef, EvaluationChunk, FigureRef
 
 
 def _extract_section_key(heading: str) -> str | None:
-    """
-    Extracts the major section identifier (e.g. 'F' from 'F. System Considerations'
-    or 'F.1 Availability', '1' from '1. Overview' or '1.1 Modules').
-    """
+    # extracts the major section identifier using the hierarchy token parser
     h: str = heading.strip()
-    m = re.match(r'^([A-Z]|\d+)\b(?:\.|\s|$)', h)
+    if not h:
+        return None
+    tok = parse_header_token(h)
+    if tok.root_key:
+        return tok.root_key
+    m = re.match(r"^([A-Za-z]|\d+)\b(?:\.|\s|$)", h)
     if m:
         return m.group(1)
-    m2 = re.match(r'^Section\s+([A-Z]|\d+)\b', h, re.IGNORECASE)
+    m2 = re.match(r"^section\s+([A-Za-z]|\d+)\b", h, re.IGNORECASE)
     if m2:
         return m2.group(1)
     return None
@@ -36,15 +39,18 @@ def _merge_chunk_pair(
     next_chunk: EvaluationChunk,
     current_key: str | None,
 ) -> None:
-    """
-    Merges next_chunk into current_chunk in-place.
-    Concatenates text, combines element refs, deduplicates figures, and updates page range.
-    """
+    # merges next_chunk into current_chunk in-place.
+    # concatenates text, combines element refs, deduplicates figures, and updates page range.
     if current_key is not None and current_chunk.heading != next_chunk.heading:
-        # If current heading is a parent heading (e.g. "F. System Considerations"), preserve it.
-        is_parent: bool = bool(re.match(rf'^{current_key}\.\s+[A-Za-z]', current_chunk.heading))
-        if not is_parent:
-            current_chunk.heading = f"Section {current_key} Subsections"
+        # if chunks have breadcrumbs under a common parent section, preserve the parent heading
+        if " - " in current_chunk.heading:
+            parent_heading: str = current_chunk.heading.split(" - ")[0].strip()
+            current_chunk.heading = parent_heading
+        else:
+            # if current heading is a parent heading (e.g. "f. system considerations"), preserve it.
+            is_parent: bool = bool(re.match(rf"^{current_key}\.\s+[A-Za-z]", current_chunk.heading, re.IGNORECASE))
+            if not is_parent:
+                current_chunk.heading = f"Section {current_key} Subsections"
 
     current_chunk.structured_text = (
         current_chunk.structured_text + "\n\n" + next_chunk.structured_text
@@ -204,6 +210,7 @@ def build_chunks(
     element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, result, figure_lookup, scale)
 
     chunks: list[EvaluationChunk] = []
+    hierarchy_resolver = HeaderHierarchyResolver()
 
     for i, chunk in enumerate(chunker.chunk(doc)):
         text_lines: list[str] = []
@@ -220,7 +227,7 @@ def build_chunks(
                 text_lines.append(elem.text_excerpt)
                 text_lines.append("")  # forces an extra newline when joined
 
-                # If this element was a table with an image crop, attach the crop figure directly
+                # if this element was a table with an image crop, attach the crop figure directly
                 table_fig_id: str = f"table_crop_{ref_id}"
                 if table_fig_id in figure_lookup:
                     crop_fig: FigureRef = figure_lookup[table_fig_id]
@@ -238,7 +245,14 @@ def build_chunks(
             | {f.page_number for f in chunk_figures}
         )
         page_range: tuple[int, int] = (min(all_pages), max(all_pages)) if all_pages else (0, 0)
-        heading: str = (chunk.meta.headings or [f"Section {i + 1}"])[0]
+        
+        # resolve hierarchical heading using active scope stack
+        heading: str = f"Section {i + 1}"
+        if chunk.meta.headings:
+            for h in chunk.meta.headings:
+                heading = hierarchy_resolver.process_heading(h)
+        else:
+            heading = f"Section {i + 1}"
 
         chunks.append(EvaluationChunk(
             chunk_id=f"chunk_{i}",
