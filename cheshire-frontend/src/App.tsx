@@ -14,7 +14,10 @@ import {
   submitEvaluation,
   pollEvaluation,
   getSessionResults,
+  cancelEvaluation,
+  rerunEvaluation,
 } from "./lib/helpers/evaluate_document"
+import { useEvaluationProgress } from "@/hooks/use-evaluation-progress"
 import { validatePdf } from "./lib/helpers/validate_pdf"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import { sortChatsByLatest } from "@/lib/sortChatsByLatest"
@@ -30,6 +33,7 @@ import {
 import Account from "./components/account"
 import SettingsModal from "./components/settings-modal"
 import { toast } from "sonner"
+import { CancelEvaluationDialog } from "@/components/chat/CancelEvaluationDialog"
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
@@ -86,7 +90,7 @@ interface AppProps {
 function toFrontendStatus(backendStatus: string): ChatStatus {
   if (backendStatus === "done") return "done"
   if (backendStatus === "failed") return "failed"
-  // "pending" | "processing" → both treated as "processing" in the UI
+  if (backendStatus === "cancelled") return "cancelled"
   return "processing"
 }
 
@@ -100,6 +104,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [chatToCancel, setChatToCancel] = useState<Chat | null>(null)
 
   // ── Chat panel state ─────────────────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false)
@@ -140,6 +145,14 @@ export default function App({ user, onLogout }: AppProps) {
           if (current === session_id) setFindingsLoading(false)
           return current
         })
+        return
+      }
+
+      if (response.cancelled) {
+        setChats(prev =>
+          prev.map(c => c.session_id === session_id ? { ...c, status: "cancelled" } : c)
+        )
+        if (currentSessionIdRef.current === session_id) setFindingsLoading(false)
         return
       }
 
@@ -217,13 +230,14 @@ export default function App({ user, onLogout }: AppProps) {
     setFindingsLoading(false)
     setPage("chat")
     setCurrentSessionId(null)
+    selectSession(null)
     setFile(null)
     closeChat()
   }
 
   const handleSelectChat = async (chat: Chat) => {
     setPage("chat")
-    setCurrentSessionId(chat.session_id)
+    selectSession(chat.session_id)
     setCurrentFileName(chat.title)
     closeChat()
 
@@ -345,7 +359,7 @@ export default function App({ user, onLogout }: AppProps) {
     setFile(fileInput)
     setFindings([])
     setFindingsLoading(true)
-    setCurrentSessionId(session_id)
+    selectSession(session_id)
     setCurrentFileName(fileInput.name)
     setPage("chat")
 
@@ -362,6 +376,13 @@ export default function App({ user, onLogout }: AppProps) {
           if (current === session_id) setFindingsLoading(false)
           return current
         })
+        return
+      }
+      if (response.cancelled) {
+        setChats(prev =>
+          prev.map(c => c.session_id === session_id ? { ...c, status: "cancelled" } : c)
+        )
+        if (currentSessionIdRef.current === session_id) setFindingsLoading(false)
         return
       }
 
@@ -384,10 +405,69 @@ export default function App({ user, onLogout }: AppProps) {
     })
   }
 
+  // Ref kept in sync atomically with state, so async poll callbacks never read a stale session id.
+  const currentSessionIdRef = useRef<string | null>(null)
+  const selectSession = (id: string | null) => {
+    currentSessionIdRef.current = id
+    setCurrentSessionId(id)
+  }
+
+  const handleConfirmCancel = async (sessionId: string) => {
+    const result = await cancelEvaluation(sessionId)
+
+    if (result === "cancelled") {
+      setChats(prev =>
+        sortChatsByLatest(prev.map(c => c.session_id === sessionId ? { ...c, status: "cancelled" } : c))
+      )
+      if (currentSessionIdRef.current === sessionId) setFindingsLoading(false)
+      toast.info("Analysis cancelled")
+    } else if (result === "finished") {
+      toast.info("Already finished", { description: "This analysis completed before it could be cancelled." })
+    } else {
+      toast.error("Couldn't cancel the analysis", { description: "Please try again." })
+    }
+  }
+
+  const handleRerunChat = async (chat: Chat) => {
+    const result = await rerunEvaluation(chat.session_id)
+
+    if (result === "busy") {
+      toast.info("Still stopping", { description: "The cancelled run is wrapping up. Try again in a moment." })
+      return
+    }
+    if (result === "error") {
+      toast.error("Couldn't re-run the analysis", { description: "Please try again." })
+      return
+    }
+
+    setChats(prev =>
+      sortChatsByLatest(
+        prev.map(c =>
+          c.session_id === chat.session_id
+            ? { ...c, status: "processing", findings: [], latestTimestamp: new Date().toISOString() }
+            : c
+        )
+      )
+    )
+    if (currentSessionIdRef.current === chat.session_id) {
+      setFindings([])
+      setFindingsLoading(true) // also disables the chatbot input until findings land
+    }
+    resumePolling(chat.session_id)
+    toast.info("Re-running analysis")
+  }
+
   const handleLogout = () => {
     clearAuth()
     onLogout()
   }
+
+  const currentChat = chats.find(c => c.session_id === currentSessionId)
+
+  const { progress, events: progressEvents } = useEvaluationProgress(
+    currentSessionId,
+    currentChat?.status === "processing",
+  )
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -406,6 +486,8 @@ export default function App({ user, onLogout }: AppProps) {
         onRenameChat={handleRenameChat}
         onLogout={handleLogout}
         onOpenSettings={() => setSettingsOpen(true)}
+        onCancelChat={(chat) => setChatToCancel(chat)}
+        onRerunChat={handleRerunChat}
       />
 
       <SettingsModal
@@ -413,6 +495,12 @@ export default function App({ user, onLogout }: AppProps) {
         onClose={() => setSettingsOpen(false)}
         chats={chats}
         onDeleteAllChats={handleDeleteAllChats}
+      />
+
+      <CancelEvaluationDialog
+        chat={chatToCancel}
+        onClose={() => setChatToCancel(null)}
+        onConfirm={handleConfirmCancel}
       />
 
       <SidebarTrigger />
@@ -537,6 +625,10 @@ export default function App({ user, onLogout }: AppProps) {
                         findingsLoading={findingsLoading}
                         chatOpen={chatOpen}
                         onToggleChat={toggleChat}
+                        onCancelAnalysis={currentChat?.status === "processing" ? () => setChatToCancel(currentChat) : undefined}
+                        onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
+                        progress={progress}
+                        progressEvents={progressEvents}
                       />
                     </CardContent>
                   </ResizablePanel>
@@ -553,7 +645,7 @@ export default function App({ user, onLogout }: AppProps) {
                     collapsible
                     collapsedSize="0%"
                     defaultSize="0%"
-                    minSize="30%"
+                    minSize="40%"
                     onResize={() => setChatOpen(!chatPanelRef.current?.isCollapsed())}
                     className="min-w-0 overflow-hidden"
                   >

@@ -4,8 +4,9 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from uuid import uuid4
+from knowledge_base.progress import ProgressTracker
 
 
 class JobStatus(StrEnum):
@@ -13,6 +14,18 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     DONE    = "done"
     FAILED  = "failed"
+    CANCELLED = "cancelled"
+
+class EvaluationCancelled(Exception):
+    """Raised inside the evaluation pipeline when the user cancelled the run."""
+
+
+CancelCheck = Callable[[], bool]
+
+
+def raise_if_cancelled(should_cancel: Optional[CancelCheck]) -> None:
+    if should_cancel is not None and should_cancel():
+        raise EvaluationCancelled()
 
 
 @dataclass
@@ -24,6 +37,9 @@ class Job:
     session_id: Optional[str]        = None
     result:     Optional[list[Any]]  = None
     error:      Optional[str]        = None
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+    worker_done: threading.Event = field(default_factory=threading.Event)
+    progress: ProgressTracker = field(default_factory=ProgressTracker)
 
     def touch(self) -> None:
         self.updated_at = datetime.now().isoformat()

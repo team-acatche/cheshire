@@ -24,6 +24,9 @@ import {
   PenLine,
   LogOut,
   Loader2,
+  X,
+  Ban,
+  RotateCw,
 } from "lucide-react"
 
 import { BadgeQuestionMark } from "lucide-react"
@@ -36,7 +39,7 @@ import { formatTimestamp } from "./lib/helpers/format_timestamps"
 import { Skeleton } from "@/components/ui/skeleton"
 
 const SKELETON_TITLE_WIDTHS = ["w-32", "w-40", "w-28", "w-36", "w-24", "w-32"]
-export type ChatStatus = "processing" | "done" | "failed"
+export type ChatStatus = "processing" | "done" | "failed" | "cancelled"
 
 export type Chat = {
   session_id: string
@@ -58,6 +61,8 @@ interface ChatPageProps {
   onRenameChat?: (sessionId: string, newTitle: string) => void
   onLogout: () => void
   onOpenSettings: () => void
+  onCancelChat?: (chat: Chat) => void
+  onRerunChat?: (chat: Chat) => void
 }
 
 
@@ -74,6 +79,8 @@ export default function ChatPage({
   onRenameChat,
   onLogout,
   onOpenSettings,
+  onCancelChat,
+  onRerunChat,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
 
@@ -124,7 +131,7 @@ export default function ChatPage({
           </div>
           <div>
             <div className="font-medium text-foreground">{userName}</div>
-            <div className="text-xs text-muted-foreground">account settings</div>
+            <div className="text-xs text-muted-foreground">Account settings</div>
           </div>
         </div>
 
@@ -165,17 +172,18 @@ export default function ChatPage({
             {!isLoading &&safeChats.map((chat) => {
               const isProcessing = chat.status === "processing"
               const isFailed     = chat.status === "failed"
-
+              const isCancelled  = chat.status === "cancelled"
+              const isUnavailable = isFailed
               return (
                 <div
                   key={chat.session_id}
                   className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
-                    ${isFailed
+                    ${isUnavailable
                       ? "opacity-60 cursor-default"
                       : "hover:bg-muted cursor-pointer"
                     }`}
                   onClick={() => {
-                    if (!isFailed && renamingId !== chat.session_id) {
+                    if (!isUnavailable && renamingId !== chat.session_id) {
                       onSelectChat(chat)
                     }
                   }}
@@ -183,10 +191,12 @@ export default function ChatPage({
                   {/* Icon */}
                   {isProcessing ? (
                     <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin" />
+                  ) : isCancelled ? (
+                    <Ban className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
-                    <FileText className={`h-4 w-4 shrink-0 ${isFailed ? "text-destructive" : "text-muted-foreground"}`} />
+                    <FileText className={`h-4 w-4 shrink-0 ${isUnavailable ? "text-destructive" : "text-muted-foreground"}`} />
                   )}
-
+                  
                   {/* Title / rename input */}
                   {renamingId === chat.session_id ? (
                     <input
@@ -203,7 +213,7 @@ export default function ChatPage({
                     />
                   ) : (
                     <div className="flex-1 min-w-0">
-                      <span className={`block truncate leading-none ${isFailed ? "text-destructive" : "text-foreground"}`}>
+                      <span className={`block truncate leading-none ${isUnavailable ? "text-destructive" : "text-foreground"}`}>
                         {chat.title}
                       </span>
                       {isProcessing && (
@@ -215,6 +225,9 @@ export default function ChatPage({
                         <span className="block text-[10px] text-destructive mt-0.5">
                           Evaluation failed
                         </span>
+                      )}
+                      {isCancelled && (
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">Cancelled</span>
                       )}
                     </div>
                   )}
@@ -233,20 +246,34 @@ export default function ChatPage({
                         </button>
                       </DropdownMenuTrigger>
 
+
                       <DropdownMenuContent align="end" className="w-52">
                         <DropdownMenuGroup>
                           <div className="px-2 py-2">
                             <p className="truncate text-sm font-medium text-foreground">
                               {chat.title}
                             </p>
-                              {chat.latestTimestamp && (
-                                <span className="mt-1 truncate text-[10px] text-gray-400">
-                                  Last Activity: {formatTimestamp(chat.latestTimestamp)}
-                                </span>
-                              )}
+                            {chat.latestTimestamp && (
+                              <span className="mt-1 truncate text-[10px] text-gray-400">
+                                Last Activity: {formatTimestamp(chat.latestTimestamp)}
+                              </span>
+                            )}
                           </div>
 
                           <DropdownMenuSeparator />
+
+                          {isCancelled && onRerunChat && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); onRerunChat(chat) }}
+                                className="cursor-pointer"
+                              >
+                                <RotateCw className="mr-2 h-4 w-4" />
+                                Re-run analysis
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
 
                           <DropdownMenuItem
                             onClick={(e) => { e.stopPropagation(); startRename(chat) }}
@@ -269,6 +296,18 @@ export default function ChatPage({
                         </DropdownMenuGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                  )}
+                  
+                  {isProcessing && onCancelChat && renamingId !== chat.session_id && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onCancelChat(chat) }}
+                      className="ml-auto shrink-0 rounded p-1.5 transition hover:bg-muted"
+                      aria-label="Cancel analysis"
+                      title="Cancel analysis"
+                    >
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
                   )}
                 </div>
               )

@@ -14,6 +14,9 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Square,
+  Ban,
+  RotateCw,
 } from "lucide-react";
 import {
   Popover,
@@ -31,6 +34,8 @@ import { isUnanchored } from "./helpers";
 import { DocumentLevelFindings } from "./DocumentLevelFindings";
 import { SeverityLegend } from "./SeverityLegend";
 import { TONES, bySeverity, countByTone, dominantTone, getTone, toneColor, type Tone } from "./severity";
+import { AnalysisProgressPill, ScanOverlay } from "./AnalysisProgress";
+import type { EvaluationProgress, ProgressEvent } from "@/lib/helpers/evaluate_document";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -58,9 +63,13 @@ interface DocumentPreviewProps {
   findingsLoading?: boolean;
   chatOpen?: boolean;
   onToggleChat?: () => void;
+  onCancelAnalysis?: () => void;
+  onRerunAnalysis?: () => void;
+  progress?: EvaluationProgress | null;
+  progressEvents?: ProgressEvent[];
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis, progress = null, progressEvents = [] }: DocumentPreviewProps) {
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -219,6 +228,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     setCurrentPage(pageNum);
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  const [followAlong, setFollowAlong] = useState(false);
+
+  const activeFirst = progress?.active_pages[0];
+  useEffect(() => {
+    if (followAlong && findingsLoading && activeFirst) scrollToPageNumber(activeFirst);
+  }, [followAlong, findingsLoading, activeFirst, scrollToPageNumber]);
 
   const goToNextPage = useCallback(() => {
     if (currentPage < numPages) scrollToPageNumber(currentPage + 1);
@@ -398,11 +414,48 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
           {/* Left — findings badge OR loading indicator */}
           <div className="justify-self-start flex items-center gap-2">
             {findingsLoading ? (
+              progress ? (
+                <AnalysisProgressPill
+                  progress={progress}
+                  events={progressEvents}
+                  follow={followAlong}
+                  onFollowChange={setFollowAlong}
+                  onJumpToPage={scrollToPageNumber}
+                  onCancel={onCancelAnalysis}
+                  container={portalEl}
+                />
+            ) : (
               <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Analyzing document…
+                {onCancelAnalysis && (
+                  <button
+                  type="button"
+                  onClick={onCancelAnalysis}
+                  className="-mr-1 rounded-full border border-red-600 p-1 hover:bg-red-100 dark:border-red-400 dark:hover:bg-red-950"
+                  aria-label="Cancel analysis"
+                  title="Cancel analysis"
+                >
+                  <Square className="h-3 w-3 text-red-600 dark:text-red-400" />
+                </button>
+                )}
               </div>
-            ) : (
+              )
+            ) : onRerunAnalysis ? (
+              <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm text-xs text-muted-foreground">
+                <Ban className="h-3.5 w-3.5" />
+                Analysis cancelled
+                <button
+                  type="button"
+                  onClick={onRerunAnalysis}
+                  className="-mr-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-foreground hover:bg-muted transition-colors"
+                  title="Re-run analysis"
+                >
+                  <RotateCw className="h-3 w-3" />
+                  Re-run
+                </button>
+              </div>
+            ) :(
               <Popover>
                 <PopoverTrigger asChild>
                   <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
@@ -560,6 +613,12 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         }
                       }}
                     />
+                    {findingsLoading && progress && (
+                      <ScanOverlay
+                        active={progress.active_pages.includes(pageNumber)}
+                        scanned={progress.scanned_pages.includes(pageNumber)}
+                      />
+                    )}
                     {pageMetaMap[pageNumber] && (
                       <HighlightLayer
                         pageNumber={pageNumber}

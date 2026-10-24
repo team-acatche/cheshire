@@ -3,6 +3,7 @@ import json
 import logging
 import shutil
 import sqlite3
+import threading
 from contextvars import copy_context
 from pathlib import Path
 from typing import Annotated, AsyncGenerator, Optional, cast
@@ -51,7 +52,8 @@ SSE_HEADERS = {
 KEEPALIVE_INTERVAL = 30  # seconds — well under Cloudflare's 100s free-plan limit
 
 class ChatBody(BaseModel):
-    message: str
+    message: str = ""
+    regenerate: bool = False
 
 class RenameBody(BaseModel):
     new_title: str
@@ -60,6 +62,11 @@ class RenameBody(BaseModel):
 # Works per-process only. Use Redis for multi-replica deployments.
 _session_token_buffers: dict[str, list[tuple[int, str]]] = {}
 _session_agent_tasks: dict[str, asyncio.Task] = {}
+
+class ChatCancelled(Exception):
+    """Raised inside the streaming callback when the user stops generation."""
+
+_session_cancel_events: dict[str, threading.Event] = {}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -178,11 +185,35 @@ async def chat(
     # All DB work before the executor happens on the main async thread.
     setup_db, setup_repo = _open_db(history_db_path)
     try:
-        setup_repo.save(Event(
-            session_id=session_id,
-            event_type=EventType.USER_MESSAGE,
-            content=body.message,
-        ))
+        if body.regenerate:
+            running = _session_agent_tasks.get(session_id)
+            if running is not None and not running.done():
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A response is still being generated.")
+
+            chat_events = setup_repo.get_recent(
+                session_id, 1000,
+                event_types=[EventType.USER_MESSAGE, EventType.RESPONSE, EventType.TOOL_CALL, EventType.TOOL_CALL_RESULT],
+            )  # newest first
+            stale_ids: list[int] = []
+            last_user: Optional[Event] = None
+            for e in chat_events:
+                if e.event_type == EventType.USER_MESSAGE:
+                    last_user = e
+                    break
+                if e.event_id is not None:
+                    stale_ids.append(e.event_id)
+            if last_user is None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nothing to regenerate.")
+
+            setup_repo.delete_events(stale_ids)  # old answer, plus its tool calls/results
+        else:
+            if not body.message.strip():
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Message must not be empty.")
+            setup_repo.save(Event(
+                session_id=session_id,
+                event_type=EventType.USER_MESSAGE,
+                content=body.message,
+            ))
 
         event_repo, knowledge_repo = KnowledgeRepositoryFactory.create_repositories(
             RepositoryType.QDRANT, storage_path=DATA_PATH, username=user_id,
@@ -219,6 +250,8 @@ async def chat(
     token_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
     _session_token_buffers[session_id] = []
     response_parts: list[str] = []
+    cancel_event = threading.Event()
+    _session_cancel_events[session_id] = cancel_event
 
     async def event_stream() -> AsyncGenerator[dict, None]:
         loop = asyncio.get_running_loop()
@@ -226,6 +259,8 @@ async def chat(
 
         def enqueue_chunk(chunk: StreamingChunk) -> None:
             """Called from executor thread — must use call_soon_threadsafe."""
+            if cancel_event.is_set():
+                raise ChatCancelled()
             if chunk.content:
                 response_parts.append(chunk.content)
                 loop.call_soon_threadsafe(token_queue.put_nowait, chunk.content)
@@ -252,20 +287,26 @@ PROTOCOL:
                     tools=Toolset([cast(Tool, tool) for tool in knowledge_tools]),
                     streaming_callback=enqueue_chunk,
                 )
+                agent_input = (
+                    messages if body.regenerate
+                    else [*messages, ChatMessage.from_user(body.message)]
+                )
                 ctx = copy_context()
                 await loop.run_in_executor(
                     None,
-                    lambda: ctx.run(
-                        agent.run,
-                        messages=[*messages, ChatMessage.from_user(body.message)],
-                    ),
+                    lambda: ctx.run( agent.run, messages=agent_input),
                 )
             except Exception as exc:
-                import traceback
-                logger.error("Agent error: %s\n%s", exc, traceback.format_exc())
-                raise
+                if cancel_event.is_set():
+                    # user stopped generation — keep the partial text, not an error
+                    logger.info("session(%s): chat generation stopped by user.", session_id)
+                else:
+                    import traceback
+                    logger.error("Agent error: %s\n%s", exc, traceback.format_exc())
+                    raise
             finally:
                 current_knowledge_state.reset(knowledge_token)
+                _session_cancel_events.pop(session_id, None)
 
                 final_text = "".join(response_parts)
                 if final_text:
@@ -388,3 +429,14 @@ def rename_session(
         if updated:
             return updated
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+
+@chat_router.post("/{session_id}/stop", status_code=status.HTTP_204_NO_CONTENT)
+async def stop_chat(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session_id: str,
+) -> Response:
+    event = _session_cancel_events.get(session_id)
+    if event is not None:
+        event.set()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

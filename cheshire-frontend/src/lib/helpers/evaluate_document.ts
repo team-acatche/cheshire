@@ -1,4 +1,4 @@
-import type { VulnerabilityFinding } from "../../types/VulnerabilityFinding"
+import type { VulnerabilityFinding, Severity } from "../../types/VulnerabilityFinding"
 import { authFetch } from "@/lib/auth"
 import { PROVIDER } from "@/globals"
 
@@ -10,16 +10,25 @@ interface SubmitResponse {
 }
 
 interface StatusResponse {
-  status: "PENDING" | "RUNNING" | "PROCESSING" |"FAILED"
+  status: "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "CANCELLED"
   error?: string
 }
 
 export interface EvaluateResponse {
   session_id: string
   vulnerabilities: VulnerabilityFinding[]
+  cancelled?: boolean
 }
 
-export type EvaluationStatus = "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "DONE"
+export type EvaluationStatus = "PENDING" | "RUNNING" | "PROCESSING" | "FAILED" | "DONE" | "CANCELLED"
+
+export interface ProgressEvent {
+  seq: number
+  t: number
+  kind: "stage" | "section" | "finding" | "info"
+  message: string
+  severity?: Severity
+}
 
 // ── Polling config ────────────────────────────────────────────────────────────
 
@@ -106,6 +115,10 @@ export async function pollEvaluation(
 
     // Still in progress
     const body = await pollRes.json() as StatusResponse
+    if (body.status === "CANCELLED") {
+      onProgress?.("CANCELLED")
+      return { session_id, vulnerabilities: [], cancelled: true }
+    }
     if (body.status === "FAILED") {
       console.error("evaluate job failed:", body.error)
       return null
@@ -141,4 +154,65 @@ export async function getSessionDocumentUrl(sessionId: string): Promise<string |
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export type CancelResult = "cancelled" | "finished" | "error"
+export async function cancelEvaluation(sessionId: string): Promise<CancelResult> {
+  try {
+    const res = await authFetch(`/api/v1/${sessionId}/cancel`, { method: "POST" })
+    if (res.ok) return "cancelled"
+    if (res.status === 409) return "finished" // completed before the cancel landed
+    return "error"
+  } catch {
+    return "error"
+  }
+}
+
+
+export interface EvaluationProgress {
+  stage: string
+  stage_index: number
+  stages: { key: string; label: string }[]
+  message: string
+  percent: number
+  completed: number
+  total: number
+  heading: string | null
+  page_count: number
+  active_pages: number[]
+  scanned_pages: number[]
+  counts: Record<Severity, number>
+  eta_seconds: number | null
+  elapsed_seconds: number
+  terminal: string | null
+  events: ProgressEvent[]
+  last_seq: number
+}
+
+export async function fetchEvaluationProgress(
+  sessionId: string,
+  since: number,
+): Promise<EvaluationProgress | null> {
+  try {
+    const res = await authFetch(`/api/v1/${sessionId}/progress?since=${since}`)
+    if (res.status === 204 || !res.ok) return null
+    return (await res.json()) as EvaluationProgress
+  } catch {
+    return null
+  }
+}
+
+
+// ── Rerun Evaluation ──────────────────────────────────────────────────────────
+export type RerunResult = "started" | "busy" | "error"
+
+export async function rerunEvaluation(sessionId: string): Promise<RerunResult> {
+  try {
+    const res = await authFetch(`/api/v1/${sessionId}/rerun`, { method: "POST" })
+    if (res.ok) return "started"
+    if (res.status === 409) return "busy" // previous run still stopping, or no longer cancelled
+    return "error"
+  } catch {
+    return "error"
+  }
 }

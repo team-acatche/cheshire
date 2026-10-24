@@ -113,6 +113,10 @@ class EventRepository(Protocol):
         """Returns the timestamp of the last event for the given session."""
         ...
 
+    def delete_events(self, event_ids: list[int]) -> None:
+        """Deletes the events with the given ids."""
+        ...
+
 class SqliteEventRepository(EventRepository):
     def __init__(self, history: sqlite.Connection):
         self.history = history
@@ -177,6 +181,13 @@ class SqliteEventRepository(EventRepository):
     def delete_messages_from_session(self, session_id: str):
         """Deletes all messages from a given session."""
         self.cursor.execute("DELETE FROM event WHERE session_id = ?", (session_id,))
+        self.history.commit()
+
+    def delete_events(self, event_ids: list[int]) -> None:
+        if not event_ids:
+            return
+        placeholders = ",".join("?" * len(event_ids))
+        self.cursor.execute(f"DELETE FROM event WHERE event_id IN ({placeholders})", event_ids)
         self.history.commit()
     
 @dataclass(frozen=True, kw_only=True)

@@ -11,7 +11,9 @@ from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails, C
 from docling_core.types.doc import BoundingBox
 
 import logging
-from typing import Any
+from typing import Any, Optional
+from knowledge_base.job_store import CancelCheck, raise_if_cancelled
+from knowledge_base.progress import get_progress
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -22,15 +24,26 @@ class PreprocessingPassResults:
     chunks: list[EvaluationChunk]
 
 
-def run_pass1(pdf_path: str) -> PreprocessingPassResults:
+def run_pass1(pdf_path: str, should_cancel: Optional[CancelCheck] = None) -> PreprocessingPassResults:
+    raise_if_cancelled(should_cancel)
+    progress = get_progress()
+    progress.set_stage("parsing", "Reading the PDF layout, tables and diagrams…")
+
     preprocessing_pipeline: Pipeline = build_preprocessing_pipeline()
 
-    logger.info("[1/2] Preprocessing document with Docling...")
+    logger.info("[1/2] Preprocessing document with Docling…")
     prep_result: dict = preprocessing_pipeline.run({
         "docling_converter": {"pdf_path": pdf_path}
     })
+    raise_if_cancelled(should_cancel)
     chunks: list[EvaluationChunk] = prep_result["docling_converter"]["chunks"]
     document_index: dict = prep_result["docling_converter"]["document_index"]
+    progress.set_document(
+        page_count=max((c.page_range[1] for c in chunks), default=0),
+        sections=len(document_index["sections"]),
+        figures=len(document_index["figures"]),
+    )
+    progress.set_stage("auditing", f"Auditing {len(chunks)} sections against company standards…")
     logger.info(
         f"      {len(chunks)} chunks, "
         f"{len(document_index['sections'])} sections, "
@@ -43,6 +56,8 @@ def run_pass1(pdf_path: str) -> PreprocessingPassResults:
     all_findings: list[LocalFinding] = []
 
     for i, chunk in enumerate(chunks):
+        raise_if_cancelled(should_cancel)
+        progress.begin_chunk(i, len(chunks), chunk.heading, chunk.page_range, len(chunk.figures))
         i: int
         chunk: EvaluationChunk
         logger.info(
@@ -79,6 +94,7 @@ def run_pass1(pdf_path: str) -> PreprocessingPassResults:
         )
 
         all_findings.extend(state_findings)
+        progress.end_chunk(chunk.page_range, state_findings)
         logger.info(
             f"      to {len(state_findings)} finding(s) recorded."
         )
@@ -89,11 +105,14 @@ def run_pass1(pdf_path: str) -> PreprocessingPassResults:
         chunks=chunks
     )
 
-def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
+def run_pass2(results: PreprocessingPassResults, should_cancel: Optional[CancelCheck] = None) -> list[VulnerabilityDetails]:
+    progress = get_progress()
     all_findings: list[LocalFinding] = results.findings
     document_index: dict = results.document_index
+    progress.set_stage("dedup", f"Merging duplicates across {len(all_findings)} findings…")
 
     # ---- Step 1: Deduplication & contradiction resolution ----
+    raise_if_cancelled(should_cancel)
     logger.info("[Pass 2a] Deduplicating findings...")
     dedup_pipeline: Pipeline = build_dedup_pipeline()
 
@@ -137,9 +156,12 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
                 deduped.append(f)
                 seen.add(key)
         accepted_local = deduped
+        progress.log("info", f"{len(all_findings)} findings → {len(accepted_local)} after merging")
         logger.info(f"  Programmatic dedup: {len(all_findings)} to {len(accepted_local)}.")
 
     # ---- Step 2: Global standards checklist audit (fresh context) ----
+    raise_if_cancelled(should_cancel)
+    progress.set_stage("global", "Checking required sections, diagrams and references…")
     logger.info("[Pass 2b] Global standards audit...")
     audit_pipeline: Pipeline = build_global_audit_pipeline()
 
@@ -154,6 +176,9 @@ def run_pass2(results: PreprocessingPassResults) -> list[VulnerabilityDetails]:
         audit_result.get("agent", {}).get("audit_findings") or []
     )
     logger.info(f"  {len(audit_findings)} global finding(s) recorded.")
+    progress.log("info", f"{len(audit_findings)} document-wide finding(s) added")
+    progress.set_stage("finalizing", "Locating findings on the page…")
+    raise_if_cancelled(should_cancel)
 
     # Merge dedup-accepted findings with new global audit findings
     audit_ids = {id(f) for f in audit_findings}

@@ -14,6 +14,7 @@ class SessionStatus(StrEnum):
     PROCESSING = "processing"
     DONE = "done"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 @dataclass(frozen=True, kw_only=True)
 class Session:
@@ -56,6 +57,10 @@ class SessionRepository(Protocol):
     
     def delete_session(self, session_id: str):
         """Deletes a session from the repository."""
+        ...
+
+    def update_status_if(self, session_id: str, status: SessionStatus, *, expected: tuple[SessionStatus, ...]) -> Optional[Session]:
+        """Compare-and-set: only updates if the current status is in `expected`."""
         ...
     
 class SqliteSessionRepository(SessionRepository):
@@ -127,6 +132,17 @@ class SqliteSessionRepository(SessionRepository):
         self.cursor.execute(
             "UPDATE session SET status = ? WHERE session_id = ? RETURNING session_id, title, status, created_at",
             (status.value, session_id),
+        )
+        row = self.cursor.fetchone()
+        self.db.commit()
+        return Session.from_row(row) if row else None
+
+    def update_status_if(self, session_id: str, status: SessionStatus, *, expected: tuple[SessionStatus, ...]) -> Optional[Session]:
+        placeholders = ",".join("?" * len(expected))
+        self.cursor.execute(
+            f"UPDATE session SET status = ? WHERE session_id = ? AND status IN ({placeholders}) "
+            "RETURNING session_id, title, status, created_at",
+            (status.value, session_id, *[e.value for e in expected]),
         )
         row = self.cursor.fetchone()
         self.db.commit()
