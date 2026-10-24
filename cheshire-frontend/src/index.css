@@ -217,7 +217,7 @@
 /* Show a subtle scrollbar on hover */
 .documents-scroll:hover {
     scrollbar-width: thin;
-    scrollbar-color: var(--muted-foreground / 45%) transparent;
+    scrollbar-color: var(--muted-foreground) transparent;
 }
 
 .documents-scroll:hover::-webkit-scrollbar-thumb {
