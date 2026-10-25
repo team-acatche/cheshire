@@ -61,12 +61,12 @@ const markdownComponents = {
     </thead>
   ),
   th: ({ children }: { children?: ReactNode }) => (
-    <th className="border border-border px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+    <th className="border border-border px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide md:px-4">
       {children}
     </th>
   ),
   td: ({ children }: { children?: ReactNode }) => (
-    <td className="border border-border px-4 py-2 text-sm align-top">
+    <td className="border border-border px-3 py-2 text-sm align-top md:px-4">
       {children}
     </td>
   ),
@@ -195,7 +195,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                   text === "" ||
                   msg._role === "system"
                 ) return null
-                
+
                 return { role: msg._role === "user" ? "user" : "bot1", text }
               })
               .filter((m): m is Message => m !== null)
@@ -485,15 +485,15 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-6 pb-0 shadow-sm">
+    <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-3 pb-0 shadow-sm md:pt-6">
 
       {/* Chat area */}
       <div
         ref={scrollContainerRef}
         onScroll={checkScrollPosition}
-        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent md:p-4"
       >
-        <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
+        <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full md:gap-8">
           {messages.map((msg, i) => {
             // Bot copy button: not on finding cards, empty placeholders,
             // or the message that is still streaming.
@@ -507,20 +507,20 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               <div
                 key={i}
                 className={`
-                  flex items-start gap-4
+                  flex items-start gap-2 md:gap-4
                   animate-in fade-in slide-in-from-bottom-2 duration-300
                   ${msg.role === "user" ? "justify-end" : "justify-start"}
                 `}
               >
                 {msg.role !== "user" && (
-                  <div className="w-8 h-8 mt-1 overflow-hidden shrink-0 opacity-80">
+                  <div className="w-7 h-7 mt-1 overflow-hidden shrink-0 opacity-80 md:w-8 md:h-8">
                     <img src="/cheshire-black.png" className="w-full h-full object-cover dark:invert" alt="agent" />
                   </div>
                 )}
 
                 {msg.role === "user" ? (
-                  <div className="group flex max-w-[80%] flex-col items-end gap-1">
-                    <div className="btn-gradient px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90">
+                  <div className="group flex min-w-0 max-w-[85%] flex-col items-end gap-1 md:max-w-[80%]">
+                    <div className="btn-gradient max-w-full px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 wrap-break-word [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90">
                       <MessageBody text={msg.text} role={msg.role} />
                     </div>
 
@@ -577,7 +577,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 )}
 
                 {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 ring-1 ring-border">
+                  <div className="hidden w-8 h-8 rounded-full overflow-hidden shrink-0 ring-1 ring-border sm:block">
                     <img
                       src={profileImage || "/User.png"}
                       onError={(e) => { e.currentTarget.src = "/User.png" }}
@@ -612,8 +612,9 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
         </div>
       </div>
 
-      {/* Input area — position relative so the scroll button can be anchored to it */}
-      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
+      {/* Input area — position relative so the scroll button can be anchored to it.
+          The bottom padding respects the iPhone home-indicator safe area. */}
+      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 md:px-4 md:pb-4 md:pt-6">
 
         {/* Scroll-to-bottom button */}
         {showScrollDown && (
@@ -636,11 +637,11 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
           <div
             className="
               relative
-              flex items-end gap-3
-              rounded-[28px]
+              flex items-end gap-2 md:gap-3
+              rounded-[24px] md:rounded-[28px]
               border border-border/60
               bg-background/80
-              px-5 py-4
+              px-4 py-3 md:px-5 md:py-4
               shadow-[0_8px_30px_rgba(0,0,0,0.06)]
               backdrop-blur-xl
               transition-all duration-200
@@ -648,7 +649,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.10)]
             "
           >
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/5" />
+            <div className="pointer-events-none absolute inset-0 rounded-[24px] ring-1 ring-white/5 md:rounded-[28px]" />
 
             <TextareaAutosize
               value={input}
@@ -658,14 +659,16 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               disabled={typing || evaluationPending}
               minRows={1}
               maxRows={8}
+              // 16px on mobile prevents iOS Safari from zooming into the field on focus
               className="
                 max-h-52
+                min-w-0
                 flex-1
                 resize-none
                 border-0
                 bg-transparent
                 p-0
-                text-[15px]
+                text-base
                 leading-7
                 text-foreground
                 shadow-none
@@ -674,6 +677,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 focus-visible:ring-0
                 disabled:opacity-50
                 placeholder:text-muted-foreground/70
+                md:text-[15px]
               "
             />
             {typing ? (
@@ -690,6 +694,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               <button
                 onClick={sendMessage}
                 disabled={typing || evaluationPending || !input.trim()}
+                aria-label="Send message"
                 className="
                   flex h-10 w-10 shrink-0 items-center justify-center
                   rounded-full
@@ -705,12 +710,12 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 "
               >
                 <SentIcon size={18} color="currentColor" />
-              </button> 
+              </button>
             )}
 
           </div>
 
-          <p className="mt-2 text-center text-xs text-muted-foreground/60">
+          <p className="mt-2 text-center text-[11px] text-muted-foreground/60 md:text-xs">
             Cheshire can make mistakes. Verify important security findings.
           </p>
         </div>

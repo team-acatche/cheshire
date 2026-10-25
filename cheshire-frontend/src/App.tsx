@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Upload } from "lucide-react"
+import { Upload, FileText, MessageSquareText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
 import { Card, CardAction, CardContent } from "./components/ui/card"
@@ -18,10 +18,12 @@ import {
   rerunEvaluation,
 } from "./lib/helpers/evaluate_document"
 import { useEvaluationProgress } from "@/hooks/use-evaluation-progress"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { validatePdf } from "./lib/helpers/validate_pdf"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import { sortChatsByLatest } from "@/lib/sortChatsByLatest"
 import { parseTimestamp } from "@/lib/helpers/format_timestamps"
+import { cn } from "@/lib/utils"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
@@ -103,6 +105,13 @@ interface AppProps {
   onLogout: () => void
 }
 
+type MobileTab = "document" | "chat"
+
+const MOBILE_TABS: { id: MobileTab; label: string; icon: typeof FileText }[] = [
+  { id: "document", label: "Document", icon: FileText },
+  { id: "chat", label: "Chat", icon: MessageSquareText },
+]
+
 /**
  * Maps the backend status string to the frontend ChatStatus union.
  * "pending" and "processing" both show a loading spinner in the sidebar.
@@ -115,6 +124,8 @@ function toFrontendStatus(backendStatus: string): ChatStatus {
 }
 
 export default function App({ user, onLogout }: AppProps) {
+  const isMobile = useIsMobile()
+
   const [file, setFile] = useState<File | string | null>(null)
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [findingsLoading, setFindingsLoading] = useState(false)
@@ -125,6 +136,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [page, setPage] = useState<"chat" | "account">("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [chatToCancel, setChatToCancel] = useState<Chat | null>(null)
+  const [mobileTab, setMobileTab] = useState<MobileTab>("document")
 
   // Refs kept in sync with state so async callbacks never read stale values.
   const currentSessionIdRef = useRef<string | null>(null)
@@ -147,12 +159,14 @@ export default function App({ user, onLogout }: AppProps) {
   useEffect(() => () => revokeIfBlob(fileRef.current), [])
 
   // ── Chat panel state ─────────────────────────────────────────────────────────
+  // Desktop: a collapsible resizable panel. Mobile: a "Chat" tab.
   const [chatOpen, setChatOpen] = useState(false)
   const chatPanelRef = usePanelRef()
 
   const closeChat = () => {
     chatPanelRef.current?.collapse()
     setChatOpen(false)
+    setMobileTab("document")
   }
 
   const toggleChat = () => {
@@ -409,6 +423,7 @@ export default function App({ user, onLogout }: AppProps) {
     selectSession(session_id)
     setCurrentFileName(fileInput.name)
     setPage("chat")
+    setMobileTab("document")
 
     // 4. Poll in the background
     trackEvaluation(session_id)
@@ -471,6 +486,39 @@ export default function App({ user, onLogout }: AppProps) {
     currentChat?.status === "processing",
   )
 
+  const mobileTitle =
+    page === "account" ? "Account" : file ? currentFileName : "Cheshire"
+
+  // Shared props for the document viewer (desktop panel and mobile tab)
+  const documentPreview = (
+    <DocumentPreview
+      src={file as File | string}
+      findings={findings}
+      fileName={currentFileName}
+      findingsLoading={findingsLoading}
+      chatOpen={chatOpen}
+      // On mobile the chat lives in its own tab, so the toggle button is hidden
+      onToggleChat={isMobile ? undefined : toggleChat}
+      onCancelAnalysis={currentChat?.status === "processing" ? () => setChatToCancel(currentChat) : undefined}
+      onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
+      progress={progress}
+      progressEvents={progressEvents}
+    />
+  )
+
+  const chatbot = currentSessionId ? (
+    <Chatbot
+      key={currentSessionId}
+      findings={findings}
+      sessionId={currentSessionId}
+      username={user.user_id}
+      profileImage={profileImage}
+      onOpenSettings={() => setSettingsOpen(true)}
+      onActivity={() => touchChat(currentSessionId)}
+      evaluationPending={findingsLoading}
+    />
+  ) : null
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -505,114 +553,165 @@ export default function App({ user, onLogout }: AppProps) {
         onConfirm={handleConfirmCancel}
       />
 
-      <SidebarTrigger />
+      {/* Desktop: floating trigger next to the sidebar */}
+      <SidebarTrigger className="hidden md:inline-flex" />
 
-      <SidebarInset className="min-w-0 overflow-hidden">
+      <SidebarInset className="h-dvh min-w-0 overflow-hidden md:h-auto">
+        {/* Mobile top bar: sidebar toggle + current title */}
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-2 md:hidden">
+          <SidebarTrigger />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{mobileTitle}</span>
+        </header>
+
         {page === "account" ? (
-          <Account
-            setProfileImage={setProfileImage}
-            user={user}
-            chats={chats}
-            onSelectChat={handleSelectChat}
-            onClose={() => setPage("chat")}
-          />
+          <div className="min-h-0 flex-1 overflow-hidden md:h-dvh md:flex-none">
+            <Account
+              setProfileImage={setProfileImage}
+              user={user}
+              chats={chats}
+              onSelectChat={handleSelectChat}
+              onClose={() => setPage("chat")}
+            />
+          </div>
         ) : (
-          <main className={`h-dvh w-full min-w-0 overflow-hidden ${!file ? "p-8" : "p-0"}`}>
+          <main
+            className={cn(
+              "min-h-0 w-full min-w-0 flex-1 overflow-hidden md:h-dvh md:flex-none",
+              !file ? "p-4 md:p-8" : "p-0"
+            )}
+          >
             {!file ? (
-              <div className="flex h-full flex-col items-center justify-center gap-14">
-                <motion.section
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, ease: "easeOut" }}
-                  className="flex w-full max-w-3xl flex-col items-center text-center"
-                >
-                  <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">
-                    Hi, {user.full_name ?? user.username ?? ""}!
-                  </h1>
+              <div className="h-full overflow-y-auto">
+                <div className="flex min-h-full flex-col items-center justify-center gap-10 py-4 md:gap-14">
+                  <motion.section
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, ease: "easeOut" }}
+                    className="flex w-full max-w-3xl flex-col items-center text-center"
+                  >
+                    <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-slate-50 sm:text-4xl md:text-5xl">
+                      Hi, {user.full_name ?? user.username ?? ""}!
+                    </h1>
 
-                  <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
-                    <CardContent className="space-y-4 p-2 text-center">
-                      <p className="text-lg text-muted-foreground text-center">
-                        Welcome to Cheshire. Please upload a PDF document to start the evaluation.
-                      </p>
+                    <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
+                      <CardContent className="space-y-4 p-2 text-center">
+                        <p className="text-center text-base text-muted-foreground md:text-lg">
+                          Welcome to Cheshire. Please upload a PDF document to start the evaluation.
+                        </p>
 
-                      <CardAction className="w-full flex items-center justify-center">
-                        <Button
-                          asChild
-                          className="w-40 mx-auto block"
-                        >
-                          <label className="flex items-center justify-center gap-2 cursor-pointer">
-                            <Upload className="h-4 w-4" />
-                            Upload
-                            <input
-                              type="file"
-                              accept=".pdf"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0]
-                                if (f) handleFileUpload(f)
-                                e.target.value = ""
-                              }}
-                            />
-                          </label>
-                        </Button>
-                      </CardAction>
-                    </CardContent>
-                  </Card>
-                </motion.section>
+                        <CardAction className="flex w-full items-center justify-center">
+                          <Button
+                            asChild
+                            className="mx-auto block w-40"
+                          >
+                            <label className="flex cursor-pointer items-center justify-center gap-2">
+                              <Upload className="h-4 w-4" />
+                              Upload
+                              <input
+                                type="file"
+                                accept=".pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0]
+                                  if (f) handleFileUpload(f)
+                                  e.target.value = ""
+                                }}
+                              />
+                            </label>
+                          </Button>
+                        </CardAction>
+                      </CardContent>
+                    </Card>
+                  </motion.section>
 
-                <motion.section
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
-                  className="flex w-full max-w-6xl flex-col items-center justify-center gap-10 md:flex-row"
-                >
-                  <div className="flex flex-col items-center gap-8 md:flex-row">
-                    <img
-                      src="/cheshire-black.png"
-                      alt="Cheshire Logo"
-                      className="h-44 w-44 object-contain md:h-52 md:w-52 dark:invert"
-                    />
+                  <motion.section
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
+                    className="flex w-full max-w-6xl flex-col items-center justify-center gap-8 md:flex-row md:gap-10"
+                  >
+                    <div className="flex flex-col items-center gap-6 md:flex-row md:gap-8">
+                      <img
+                        src="/cheshire-black.png"
+                        alt="Cheshire Logo"
+                        className="h-32 w-32 object-contain dark:invert md:h-52 md:w-52"
+                      />
 
-                    <div className="max-w-md text-center md:text-left">
-                      <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
-                        About Cheshire
-                      </h2>
-                      <p className="text-base leading-relaxed text-muted-foreground md:text-justify">
-                        Cheshire is an assessment tool designed to identify vulnerabilities
-                        in your Technical Document Specification (TDS) using AI analysis.
-                        It streamlines the review process by highlighting potential security
-                        gaps and ensuring your documentation adheres to industry standards.
-                      </p>
+                      <div className="max-w-md text-center md:text-left">
+                        <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
+                          About Cheshire
+                        </h2>
+                        <p className="text-sm leading-relaxed text-muted-foreground md:text-justify md:text-base">
+                          Cheshire is an assessment tool designed to identify vulnerabilities
+                          in your Technical Document Specification (TDS) using AI analysis.
+                          It streamlines the review process by highlighting potential security
+                          gaps and ensuring your documentation adheres to industry standards.
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="hidden h-56 w-px bg-slate-100 md:block" />
+                    <div className="hidden h-56 w-px bg-slate-100 md:block" />
 
-                  <div className="w-full max-w-sm">
-                    <h3 className="mb-6 text-lg font-semibold uppercase tracking-wider text-slate-400">
-                      Features
-                    </h3>
+                    <div className="w-full max-w-sm">
+                      <h3 className="mb-4 text-center text-lg font-semibold uppercase tracking-wider text-slate-400 md:mb-6 md:text-left">
+                        Features
+                      </h3>
 
-                    <div className="grid gap-6">
-                      {[
-                        ["01", "Document Review", "A preview of your uploaded technical document."],
-                        ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
-                        ["03", "Chatbot", "Discuss findings directly with the AI."],
-                      ].map(([number, title, description]) => (
-                        <div key={number} className="flex gap-4">
-                          <div className="font-bold text-slate-400">{number}</div>
-                          <div>
-                            <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
-                            <p className="text-base text-muted-foreground">{description}</p>
+                      <div className="grid gap-5 md:gap-6">
+                        {[
+                          ["01", "Document Review", "A preview of your uploaded technical document."],
+                          ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
+                          ["03", "Chatbot", "Discuss findings directly with the AI."],
+                        ].map(([number, title, description]) => (
+                          <div key={number} className="flex gap-4">
+                            <div className="font-bold text-slate-400">{number}</div>
+                            <div>
+                              <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
+                              <p className="text-sm text-muted-foreground md:text-base">{description}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </motion.section>
+                  </motion.section>
+                </div>
               </div>
+            ) : isMobile ? (
+              // ── Mobile: Document / Chat tabs (both stay mounted to keep state) ──
+              <Card className="size-full min-w-0 gap-0 overflow-hidden rounded-none border-0 py-0 shadow-none ring-0">
+                <div role="tablist" className="flex shrink-0 border-b bg-background">
+                  {MOBILE_TABS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={mobileTab === id}
+                      onClick={() => setMobileTab(id)}
+                      className={cn(
+                        "flex min-h-11 flex-1 items-center justify-center gap-2 border-b-2 px-4 text-sm font-medium transition-colors",
+                        mobileTab === id
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className={cn("min-h-0 flex-1", mobileTab !== "document" && "hidden")}>
+                  <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden px-2 pb-2 pt-2">
+                    {documentPreview}
+                  </CardContent>
+                </div>
+
+                <div className={cn("min-h-0 flex-1", mobileTab !== "chat" && "hidden")}>
+                  {chatbot}
+                </div>
+              </Card>
             ) : (
+              // ── Desktop: resizable document | chat panels ──
               <Card className="size-full min-w-0 overflow-hidden shadow-none">
                 <ResizablePanelGroup
                   orientation="horizontal"
@@ -620,18 +719,7 @@ export default function App({ user, onLogout }: AppProps) {
                 >
                   <ResizablePanel id="doc" defaultSize="100%" minSize="30%" className="min-w-0 overflow-hidden">
                     <CardContent className="flex size-full min-w-0 flex-col gap-3 overflow-hidden">
-                      <DocumentPreview
-                        src={file}
-                        findings={findings}
-                        fileName={currentFileName}
-                        findingsLoading={findingsLoading}
-                        chatOpen={chatOpen}
-                        onToggleChat={toggleChat}
-                        onCancelAnalysis={currentChat?.status === "processing" ? () => setChatToCancel(currentChat) : undefined}
-                        onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
-                        progress={progress}
-                        progressEvents={progressEvents}
-                      />
+                      {documentPreview}
                     </CardContent>
                   </ResizablePanel>
 
@@ -651,18 +739,7 @@ export default function App({ user, onLogout }: AppProps) {
                     onResize={() => setChatOpen(!chatPanelRef.current?.isCollapsed())}
                     className="min-w-0 overflow-hidden"
                   >
-                    {currentSessionId && (
-                      <Chatbot
-                        key={currentSessionId}
-                        findings={findings}
-                        sessionId={currentSessionId}
-                        username={user.user_id}
-                        profileImage={profileImage}
-                        onOpenSettings={() => setSettingsOpen(true)}
-                        onActivity={() => touchChat(currentSessionId)}
-                        evaluationPending={findingsLoading}
-                      />
-                    )}
+                    {chatbot}
                   </ResizablePanel>
                 </ResizablePanelGroup>
               </Card>

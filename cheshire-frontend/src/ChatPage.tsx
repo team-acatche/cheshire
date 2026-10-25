@@ -4,6 +4,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  useSidebar,
 } from "@/components/ui/sidebar"
 
 import {
@@ -83,6 +84,7 @@ export default function ChatPage({
   onRerunChat,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
+  const { isMobile, setOpenMobile } = useSidebar()
 
   const [renamingId, setRenamingId]   = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState("")
@@ -90,6 +92,11 @@ export default function ChatPage({
   const [showHowToUse, setShowHowToUse] = useState(
     () => !localStorage.getItem("cheshire_howto_seen")
   )
+
+  // On mobile the sidebar is a slide-over sheet: close it once the user picks something.
+  const closeOnMobile = () => {
+    if (isMobile) setOpenMobile(false)
+  }
 
   const startRename = (chat: Chat) => {
     setRenamingId(chat.session_id)
@@ -118,235 +125,246 @@ export default function ChatPage({
 
 
   return (
-    <Sidebar>
-      <SidebarContent className="flex flex-col overflow-hidden p-4">
+    <>
+      <Sidebar>
+        <SidebarContent className="flex flex-col overflow-hidden p-4">
 
-        {/* ACCOUNT */}
-        <div
-          onClick={onGoAccount}
-          className="flex items-center gap-3 cursor-pointer hover:bg-muted p-2 rounded-md transition-colors"
-        >
-          <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-border shrink-0">
-            <img src={profileImage} className="h-full w-full object-cover" alt="profile" />
-          </div>
-          <div>
-            <div className="font-medium text-foreground">{userName}</div>
-            <div className="text-xs text-muted-foreground">Account settings</div>
-          </div>
-        </div>
-
-        {/* NEW CHAT */}
-        <div
-          onClick={onNewChat}
-          className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors"
-        >
-          <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="leading-none text-foreground">New Chat</span>
-        </div>
-
-        {/* CHAT HISTORY */}
-        <div className="mt-4 shrink-0 text-xs text-muted-foreground px-1 uppercase tracking-wide">
-          Your Documents
-        </div>
-        <div className="documents-scroll mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-          <div className="flex flex-col gap-1">
-            {isLoading && (
+          {/* ACCOUNT */}
+          <div
+            onClick={() => { onGoAccount(); closeOnMobile() }}
+            className="flex items-center gap-3 cursor-pointer hover:bg-muted p-2 rounded-md transition-colors"
+          >
+            <div className="h-9 w-9 rounded-full overflow-hidden border-2 border-border shrink-0">
+              <img src={profileImage} className="h-full w-full object-cover" alt="profile" />
+            </div>
+            <div className="min-w-0">
               <div
-                className="flex flex-col gap-1"
-                role="status"
-                aria-busy="true"
-                aria-label="Loading documents"
+                title={userName}
+                className="line-clamp-2 wrap-break-word font-medium leading-tight text-foreground"
               >
-                {SKELETON_TITLE_WIDTHS.map((width, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-md p-2">
-                    <Skeleton className="h-4 w-4 shrink-0" />
-                    <Skeleton className={`h-3.5 ${width}`} />
-                  </div>
-                ))}
+                {userName}
               </div>
-            )}
-            {!isLoading &&safeChats.length === 0 && (
-              <div className="text-xs text-muted-foreground px-1">No chats yet</div>
-            )}
-
-            {!isLoading &&safeChats.map((chat) => {
-              const isProcessing = chat.status === "processing"
-              const isFailed     = chat.status === "failed"
-              const isCancelled  = chat.status === "cancelled"
-              const isUnavailable = isFailed
-              return (
-                <div
-                  key={chat.session_id}
-                  className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
-                    ${isUnavailable
-                      ? "opacity-60 cursor-default"
-                      : "hover:bg-muted cursor-pointer"
-                    }`}
-                  onClick={() => {
-                    if (!isUnavailable && renamingId !== chat.session_id) {
-                      onSelectChat(chat)
-                    }
-                  }}
-                >
-                  {/* Icon */}
-                  {isProcessing ? (
-                    <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin" />
-                  ) : isCancelled ? (
-                    <Ban className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <FileText className={`h-4 w-4 shrink-0 ${isUnavailable ? "text-destructive" : "text-muted-foreground"}`} />
-                  )}
-                  
-                  {/* Title / rename input */}
-                  {renamingId === chat.session_id ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter")  commitRename(chat.session_id)
-                        if (e.key === "Escape") cancelRename()
-                      }}
-                      onBlur={() => commitRename(chat.session_id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  ) : (
-                    <div className="flex-1 min-w-0">
-                      <span className={`block truncate leading-none ${isUnavailable ? "text-destructive" : "text-foreground"}`}>
-                        {chat.title}
-                      </span>
-                      {isProcessing && (
-                        <span className="block text-[10px] text-muted-foreground mt-0.5">
-                          Analyzing…
-                        </span>
-                      )}
-                      {isFailed && (
-                        <span className="block text-[10px] text-destructive mt-0.5">
-                          Evaluation failed
-                        </span>
-                      )}
-                      {isCancelled && (
-                        <span className="block text-[10px] text-muted-foreground mt-0.5">Cancelled</span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Actions — hidden while processing */}
-                  {!isProcessing && renamingId !== chat.session_id && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={(e) => e.stopPropagation()}
-                          className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
-                          aria-label="Chat options"
-                        >
-                          <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                      </DropdownMenuTrigger>
-
-
-                      <DropdownMenuContent align="end" className="w-52">
-                        <DropdownMenuGroup>
-                          <div className="px-2 py-2">
-                            <p className="truncate text-sm font-medium text-foreground">
-                              {chat.title}
-                            </p>
-                            {chat.latestTimestamp && (
-                              <span className="mt-1 truncate text-[10px] text-gray-400">
-                                Last Activity: {formatTimestamp(chat.latestTimestamp)}
-                              </span>
-                            )}
-                          </div>
-
-                          <DropdownMenuSeparator />
-
-                          {isCancelled && onRerunChat && (
-                            <>
-                              <DropdownMenuItem
-                                onClick={(e) => { e.stopPropagation(); onRerunChat(chat) }}
-                                className="cursor-pointer"
-                              >
-                                <RotateCw className="mr-2 h-4 w-4" />
-                                Re-run analysis
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                            </>
-                          )}
-
-                          <DropdownMenuItem
-                            onClick={(e) => { e.stopPropagation(); startRename(chat) }}
-                            className="cursor-pointer"
-                          >
-                            <PenLine className="mr-2 h-4 w-4" />
-                            Rename
-                          </DropdownMenuItem>
-
-                          <DropdownMenuSeparator />
-
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={(e) => { e.stopPropagation(); setChatToDelete(chat) }}
-                            className="cursor-pointer"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                  
-                  {isProcessing && onCancelChat && renamingId !== chat.session_id && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); onCancelChat(chat) }}
-                      className="ml-auto shrink-0 rounded p-1.5 transition hover:bg-muted"
-                      aria-label="Cancel analysis"
-                      title="Cancel analysis"
-                    >
-                      <X className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+              <div className="text-xs text-muted-foreground">Account settings</div>
+            </div>
           </div>
-        </div>
 
-      </SidebarContent>
-
-      <SidebarFooter className="shrink-0 border-t border-border p-4">
-        <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-          <button
-            onClick={onOpenSettings}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
+          {/* NEW CHAT */}
+          <div
+            onClick={() => { onNewChat(); closeOnMobile() }}
+            className="cursor-pointer flex items-center gap-2 p-2 rounded-md hover:bg-muted transition-colors"
           >
-            <Settings className="h-4 w-4 shrink-0" />
-            <span>Settings</span>
-          </button>
+            <Pencil className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="leading-none text-foreground">New Chat</span>
+          </div>
 
-          <button
-            type="button"
-            onClick={() => setShowHowToUse(true)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <BadgeQuestionMark className="h-4 w-4 shrink-0" />
-            <span>How to use?</span>
-          </button>
+          {/* CHAT HISTORY */}
+          <div className="mt-4 shrink-0 text-xs text-muted-foreground px-1 uppercase tracking-wide">
+            Your Documents
+          </div>
+          <div className="documents-scroll mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+            <div className="flex flex-col gap-1">
+              {isLoading && (
+                <div
+                  className="flex flex-col gap-1"
+                  role="status"
+                  aria-busy="true"
+                  aria-label="Loading documents"
+                >
+                  {SKELETON_TITLE_WIDTHS.map((width, i) => (
+                    <div key={i} className="flex items-center gap-2 rounded-md p-2">
+                      <Skeleton className="h-4 w-4 shrink-0" />
+                      <Skeleton className={`h-3.5 ${width}`} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!isLoading &&safeChats.length === 0 && (
+                <div className="text-xs text-muted-foreground px-1">No chats yet</div>
+              )}
 
-          <button
-            type="button"
-            onClick={onLogout}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span>Sign out</span>
-          </button>
-        </div>
-      </SidebarFooter>
+              {!isLoading &&safeChats.map((chat) => {
+                const isProcessing = chat.status === "processing"
+                const isFailed     = chat.status === "failed"
+                const isCancelled  = chat.status === "cancelled"
+                const isUnavailable = isFailed
+                return (
+                  <div
+                    key={chat.session_id}
+                    className={`group flex items-center gap-2 rounded-md p-2 text-sm transition-colors
+                      ${isUnavailable
+                        ? "opacity-60 cursor-default"
+                        : "hover:bg-muted cursor-pointer"
+                      }`}
+                    onClick={() => {
+                      if (!isUnavailable && renamingId !== chat.session_id) {
+                        onSelectChat(chat)
+                        closeOnMobile()
+                      }
+                    }}
+                  >
+                    {/* Icon */}
+                    {isProcessing ? (
+                      <Loader2 className="h-4 w-4 shrink-0 text-muted-foreground animate-spin" />
+                    ) : isCancelled ? (
+                      <Ban className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <FileText className={`h-4 w-4 shrink-0 ${isUnavailable ? "text-destructive" : "text-muted-foreground"}`} />
+                    )}
 
+                    {/* Title / rename input */}
+                    {renamingId === chat.session_id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter")  commitRename(chat.session_id)
+                          if (e.key === "Escape") cancelRename()
+                        }}
+                        onBlur={() => commitRename(chat.session_id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-1 min-w-0 rounded border border-input bg-background text-foreground px-2 py-1 text-base outline-none focus:ring-1 focus:ring-ring md:text-sm"
+                      />
+                    ) : (
+                      <div className="flex-1 min-w-0">
+                        <span className={`block truncate leading-none ${isUnavailable ? "text-destructive" : "text-foreground"}`}>
+                          {chat.title}
+                        </span>
+                        {isProcessing && (
+                          <span className="block text-[10px] text-muted-foreground mt-0.5">
+                            Analyzing…
+                          </span>
+                        )}
+                        {isFailed && (
+                          <span className="block text-[10px] text-destructive mt-0.5">
+                            Evaluation failed
+                          </span>
+                        )}
+                        {isCancelled && (
+                          <span className="block text-[10px] text-muted-foreground mt-0.5">Cancelled</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actions — hidden while processing */}
+                    {!isProcessing && renamingId !== chat.session_id && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={(e) => e.stopPropagation()}
+                            // No hover on touch screens, so the menu button is always visible there
+                            className="ml-auto shrink-0 rounded p-1.5 opacity-0 transition hover:bg-muted group-hover:opacity-100 pointer-coarse:opacity-100 data-[state=open]:bg-muted data-[state=open]:opacity-100"
+                            aria-label="Chat options"
+                          >
+                            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
+                          </button>
+                        </DropdownMenuTrigger>
+
+
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuGroup>
+                            <div className="px-2 py-2">
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {chat.title}
+                              </p>
+                              {chat.latestTimestamp && (
+                                <span className="mt-1 truncate text-[10px] text-gray-400">
+                                  Last Activity: {formatTimestamp(chat.latestTimestamp)}
+                                </span>
+                              )}
+                            </div>
+
+                            <DropdownMenuSeparator />
+
+                            {isCancelled && onRerunChat && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={(e) => { e.stopPropagation(); onRerunChat(chat) }}
+                                  className="cursor-pointer"
+                                >
+                                  <RotateCw className="mr-2 h-4 w-4" />
+                                  Re-run analysis
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                              </>
+                            )}
+
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); startRename(chat) }}
+                              className="cursor-pointer"
+                            >
+                              <PenLine className="mr-2 h-4 w-4" />
+                              Rename
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={(e) => { e.stopPropagation(); setChatToDelete(chat) }}
+                              className="cursor-pointer"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+
+                    {isProcessing && onCancelChat && renamingId !== chat.session_id && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onCancelChat(chat) }}
+                        className="ml-auto shrink-0 rounded p-1.5 transition hover:bg-muted"
+                        aria-label="Cancel analysis"
+                        title="Cancel analysis"
+                      >
+                        <X className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+        </SidebarContent>
+
+        <SidebarFooter className="shrink-0 border-t border-border p-4">
+          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+            <button
+              onClick={() => { onOpenSettings(); closeOnMobile() }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+              <span>Settings</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setShowHowToUse(true); closeOnMobile() }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <BadgeQuestionMark className="h-4 w-4 shrink-0" />
+              <span>How to use?</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onLogout}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              <span>Sign out</span>
+            </button>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+
+      {/* Dialogs live outside <Sidebar>: on mobile the sidebar is a sheet that unmounts
+          its children when closed, which would otherwise destroy these dialogs. */}
       <DeleteChatDialog
         chat={chatToDelete}
         onClose={() => setChatToDelete(null)}
@@ -359,6 +377,6 @@ export default function ChatPage({
           setShowHowToUse(false)
         }}
       />
-    </Sidebar>
+    </>
   )
 }

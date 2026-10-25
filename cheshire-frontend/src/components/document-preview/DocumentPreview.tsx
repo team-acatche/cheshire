@@ -23,6 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import type { PageMeta, ActiveGroup } from "./types";
 import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./searchHelpers";
@@ -69,6 +70,8 @@ interface DocumentPreviewProps {
 }
 
 export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis, progress = null, progressEvents = [] }: DocumentPreviewProps) {
+  const isMobile = useIsMobile();
+
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -100,6 +103,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   // Stored in state too, so portals (popovers) get a real element after mount
   const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // iOS Safari can't fullscreen arbitrary elements, so hide the button there
+  const canFullscreen = typeof document !== "undefined" && !!document.fullscreenEnabled;
 
   // Stable callback ref (must not change between renders)
   const setFullscreenEl = useCallback((node: HTMLDivElement | null) => {
@@ -143,14 +148,19 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   // Snapping containerWidth to the nearest 10 px before computing pageWidth
   // means that tiny ResizeObserver jitter never triggers a cascade of re-renders.
   // In fullscreen the max page width is raised so the PDF uses the extra space.
+  // On mobile a small gutter is left so the page never touches the screen edges.
   const pageWidth = useMemo(() => {
     const snapped = Math.round(containerWidth / 10) * 10;
-    return Math.min(snapped, isFullscreen ? 1400 : 900) * zoomLevel;
-  }, [containerWidth, zoomLevel, isFullscreen]);
+    const base = Math.min(snapped, isFullscreen ? 1400 : 900) - (isMobile ? 16 : 0);
+    return Math.max(base, 120) * zoomLevel;
+  }, [containerWidth, zoomLevel, isFullscreen, isMobile]);
 
   // ── ResizeObserver — debounced + threshold gated ───────────────────────────
+  // Width 0 means the viewer is hidden (e.g. the mobile "Chat" tab is showing);
+  // ignore it so pages don't collapse and re-render when the tab is shown again.
   const debouncedSetWidth = useCallback(
     debounce((newWidth: number) => {
+      if (newWidth <= 0) return;
       setContainerWidth((prev) => (Math.abs(prev - newWidth) > 8 ? newWidth : prev));
     }, 150),
     []
@@ -162,7 +172,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
       if (!node) return;
 
       // Measure immediately on first attach (no debounce needed)
-      setContainerWidth(node.getBoundingClientRect().width);
+      const initialWidth = node.getBoundingClientRect().width;
+      if (initialWidth > 0) setContainerWidth(initialWidth);
       const ro = new ResizeObserver(([entry]) => debouncedSetWidth(entry.contentRect.width));
       ro.observe(node);
       roRef.current = ro;
@@ -379,7 +390,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   return (
     <div
       ref={setFullscreenEl}
-      className={`flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden ${
+      className={`flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden md:gap-3 ${
         isFullscreen ? "bg-background p-4" : ""
       }`}
     >
@@ -396,7 +407,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               else { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50); }
             }}
             title="Search (Ctrl+F)"
-            className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
+            aria-label="Search"
+            className={`p-1.5 md:p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
           >
             <Search className="h-4 w-4" />
           </button>
@@ -405,21 +417,25 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             <button
               onClick={onToggleChat}
               title={chatOpen ? "Hide chatbot" : "Show chatbot"}
+              aria-label={chatOpen ? "Hide chatbot" : "Show chatbot"}
               aria-pressed={chatOpen}
-              className={`p-1 rounded hover:bg-muted transition-colors ${chatOpen ? "text-foreground bg-muted" : ""}`}
+              className={`p-1.5 md:p-1 rounded hover:bg-muted transition-colors ${chatOpen ? "text-foreground bg-muted" : ""}`}
             >
               <MessageSquareText className="h-4 w-4" />
             </button>
           )}
 
-          <button
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Exit full screen (Esc)" : "Full screen"}
-            aria-pressed={isFullscreen}
-            className={`p-1 rounded hover:bg-muted transition-colors ${isFullscreen ? "text-foreground bg-muted" : ""}`}
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
+          {canFullscreen && (
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit full screen (Esc)" : "Full screen"}
+              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+              aria-pressed={isFullscreen}
+              className={`p-1.5 md:p-1 rounded hover:bg-muted transition-colors ${isFullscreen ? "text-foreground bg-muted" : ""}`}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -439,11 +455,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
         </div>
       )}
 
-      {/* Toolbar — only once the PDF has loaded */}
+      {/* Toolbar — only once the PDF has loaded.
+          Mobile: findings row on top, zoom + pagination on a second row.
+          Desktop (md+): single 3-column row (the wrapper uses `contents`). */}
       {isPdf && numPages > 0 && (
-        <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
+        <div className="flex shrink-0 flex-col gap-2 px-1 py-1 md:grid md:grid-cols-3 md:items-center md:gap-3 md:py-2">
           {/* Left — findings badge OR loading indicator */}
-          <div className="justify-self-start flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 md:justify-self-start">
             {findingsLoading ? (
               progress ? (
                 <AnalysisProgressPill
@@ -538,42 +556,51 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             )}
           </div>
 
-          {/* Center — zoom */}
-          <div className="justify-self-center">
-            <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
-              <button onClick={handleZoomOut} disabled={zoomLevel <= MIN_ZOOM}
-                className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-                <Minus className="h-4 w-4" />
-              </button>
-              <button onClick={handleResetZoom} className="min-w-14 text-xs tabular-nums px-2">
-                {zoomPercentage}%
-              </button>
-              <button onClick={handleZoomIn} disabled={zoomLevel >= MAX_ZOOM}
-                className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-                <Plus className="h-4 w-4" />
-              </button>
+          {/* Zoom + pagination (own row on mobile, grid cells on desktop) */}
+          <div className="flex w-full items-center justify-between gap-2 md:contents">
+            {/* Center — zoom */}
+            <div className="md:justify-self-center">
+              <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
+                <button onClick={handleZoomOut} disabled={zoomLevel <= MIN_ZOOM}
+                  aria-label="Zoom out"
+                  className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Minus className="h-4 w-4" />
+                </button>
+                <button onClick={handleResetZoom} className="min-w-12 text-xs tabular-nums px-1 md:min-w-14 md:px-2">
+                  {zoomPercentage}%
+                </button>
+                <button onClick={handleZoomIn} disabled={zoomLevel >= MAX_ZOOM}
+                  aria-label="Zoom in"
+                  className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Right — pagination */}
-          <div className="justify-self-end flex items-center gap-2">
-            <button onClick={goToPrevPage} disabled={currentPage === 1}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-              <ChevronLeft className="h-3.5 w-3.5" /> Previous
-            </button>
-            <div className="flex items-center gap-1 text-xs">
-              <input type="number" min={1} max={numPages} value={pageInput}
-                onChange={(e) => setPageInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handlePageInputSubmit(); }}
-                onBlur={handlePageInputSubmit}
-                className="w-14 h-7 px-2 text-center rounded border outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <span className="text-muted-foreground">/ {numPages}</span>
+            {/* Right — pagination */}
+            <div className="flex items-center gap-1.5 md:justify-self-end md:gap-2">
+              <button onClick={goToPrevPage} disabled={currentPage === 1}
+                aria-label="Previous page"
+                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed md:py-1">
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Previous</span>
+              </button>
+              <div className="flex items-center gap-1 text-xs">
+                <input type="number" min={1} max={numPages} value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handlePageInputSubmit(); }}
+                  onBlur={handlePageInputSubmit}
+                  className="w-12 h-8 px-1 text-center rounded border bg-transparent text-base outline-none focus:ring-1 focus:ring-blue-500 md:w-14 md:h-7 md:px-2 md:text-xs"
+                />
+                <span className="text-muted-foreground">/ {numPages}</span>
+              </div>
+              <button onClick={goToNextPage} disabled={currentPage === numPages}
+                aria-label="Next page"
+                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed md:py-1">
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <button onClick={goToNextPage} disabled={currentPage === numPages}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-              Next <ChevronRight className="h-3.5 w-3.5" />
-            </button>
           </div>
         </div>
       )}

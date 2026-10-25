@@ -12,7 +12,7 @@ interface AccountProps {
   user: AuthUser
   chats: Chat[]
   onSelectChat: (chat: Chat) => void
-  onClose: () => void 
+  onClose: () => void
 }
 
 export default function Account({ setProfileImage, user, chats, onSelectChat, onClose }: AccountProps) {
@@ -75,17 +75,18 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
   }
 
   return (
-    <div className="flex h-full relative">
+    // Mobile: stacked and scrollable as a whole. Desktop: side-by-side, right column scrolls.
+    <div className="relative flex h-full flex-col overflow-y-auto md:flex-row md:overflow-visible">
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 z-50 w-9 h-9 rounded-full border border-border bg-background hover:bg-muted transition flex items-center justify-center text-muted-foreground hover:text-foreground"
+        className="absolute top-3 right-3 z-50 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:bg-muted hover:text-foreground md:top-4 md:right-4"
         aria-label="Close"
       >
         <X size={18} />
       </button>
 
       {/* Left panel */}
-      <div className="w-[320px] bg-muted flex flex-col items-center justify-center relative gap-3">
+      <div className="relative flex w-full shrink-0 flex-col items-center justify-center gap-3 bg-muted px-4 py-10 md:w-[320px] md:py-0">
         <input
           type="file"
           accept="image/*"
@@ -108,7 +109,7 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
               setSelectedImage(reader.result as string)
               setShowCropper(true)
             }
-            
+
             reader.readAsDataURL(file)
 
             e.target.value = ""
@@ -123,14 +124,14 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
             src={avatarSrc}
             onError={(e) => { e.currentTarget.src = "/User.png" }}
             alt="Profile"
-            className="w-32 h-32 rounded-full object-cover mb-2 ring-2 ring-border"
+            className="mx-auto mb-2 h-28 w-28 rounded-full object-cover ring-2 ring-border md:h-32 md:w-32"
           />
           <p className="text-xs text-muted-foreground">
             {uploading ? "Uploading..." : "Change photo"}
           </p>
 
           {uploading && (
-            <div className="mt-2 w-32">
+            <div className="mx-auto mt-2 w-32">
               <div className="h-2 w-full overflow-hidden rounded-full bg-border">
                 <div
                   className="h-full rounded-full bg-foreground transition-all"
@@ -144,20 +145,20 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
           )}
         </label>
 
-        <h2 className="text-lg font-semibold text-foreground">
+        <h2 className="max-w-full truncate text-lg font-semibold text-foreground">
           {user.full_name ?? user.username ?? "—"}
         </h2>
       </div>
 
       {/* Right content */}
-      <div className="flex-1 p-10 overflow-y-auto bg-background">
+      <div className="min-w-0 flex-1 bg-background p-5 md:overflow-y-auto md:p-10">
         <h1 className="text-xl font-semibold mb-2 text-foreground">Information</h1>
         <hr className="mb-6 border-border" />
 
         <div className="space-y-4 mb-10">
           <div>
             <p className="text-sm font-medium text-muted-foreground">Email</p>
-            <p className="text-foreground">{user.email}</p>
+            <p className="break-all text-foreground">{user.email}</p>
           </div>
 
           <div>
@@ -178,12 +179,12 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
                 key={chat.session_id}
                 type="button"
                 onClick={() => onSelectChat(chat)}
-                className="w-full p-3 border border-border rounded-md text-sm flex items-center justify-between bg-card text-card-foreground text-left hover:bg-muted transition-colors cursor-pointer"
+                className="flex w-full cursor-pointer flex-col items-start gap-1 rounded-md border border-border bg-card p-3 text-left text-sm text-card-foreground transition-colors hover:bg-muted sm:flex-row sm:items-center sm:justify-between sm:gap-3"
               >
-                <span className="text-foreground">{chat.title}</span>
+                <span className="min-w-0 max-w-full truncate text-foreground">{chat.title}</span>
 
                 <span
-                  className="text-xs text-muted-foreground tabular-nums"
+                  className="shrink-0 text-xs text-muted-foreground tabular-nums"
                   title={chat.latestTimestamp ? formatChatTimestamp(chat.latestTimestamp) : ""}
                 >
                   Last Activity:{" "}
