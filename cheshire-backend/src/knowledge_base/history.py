@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Callable, Optional, Annotated, Protocol
 import os
@@ -27,7 +27,7 @@ class Event:
 
     event_id: Annotated[Optional[int], "the event id"] = None # None on insert
     content: Annotated[str, "the event content"] = ""
-    timestamp: Annotated[str, "the event timestamp"] = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: Annotated[str, "the event timestamp"] = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     ref_event_id: Annotated[Optional[int], "the reference event id"] = None
 
     def to_insert_tuple(self) -> tuple:

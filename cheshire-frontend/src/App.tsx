@@ -21,6 +21,7 @@ import { useEvaluationProgress } from "@/hooks/use-evaluation-progress"
 import { validatePdf } from "./lib/helpers/validate_pdf"
 import { authFetch, type AuthUser, clearAuth } from "./lib/auth"
 import { sortChatsByLatest } from "@/lib/sortChatsByLatest"
+import { parseTimestamp } from "@/lib/helpers/format_timestamps"
 import type { VulnerabilityFinding } from "./types/VulnerabilityFinding"
 import { Chatbot } from "./components/chatbot"
 import ChatPage from "./ChatPage"
@@ -37,7 +38,14 @@ import { CancelEvaluationDialog } from "@/components/chat/CancelEvaluationDialog
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
-async function fetchSessions(): Promise<Chat[]> {
+interface RawSession {
+  session_id: string
+  title: string
+  status?: string
+  created_at?: string | null
+}
+
+async function fetchSessions(): Promise<RawSession[]> {
   return authFetch("/api/v1/")
     .then(r => (r.ok ? r.json() : []))
     .catch(() => [])
@@ -76,6 +84,18 @@ async function fetchDocumentBlob(sessionId: string): Promise<string | null> {
     .catch(() => null)
 }
 
+const revokeIfBlob = (v: File | string | null) => {
+  if (typeof v === "string" && v.startsWith("blob:")) URL.revokeObjectURL(v)
+}
+
+/** Returns whichever timestamp is later (invalid/missing loses). */
+function laterTimestamp(a?: string | null, b?: string | null): string | null {
+  const ta = parseTimestamp(a)?.getTime() ?? -Infinity
+  const tb = parseTimestamp(b)?.getTime() ?? -Infinity
+  if (ta === -Infinity && tb === -Infinity) return null
+  return ta >= tb ? (a ?? null) : (b ?? null)
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 interface AppProps {
@@ -106,6 +126,26 @@ export default function App({ user, onLogout }: AppProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [chatToCancel, setChatToCancel] = useState<Chat | null>(null)
 
+  // Refs kept in sync with state so async callbacks never read stale values.
+  const currentSessionIdRef = useRef<string | null>(null)
+  const fileRef = useRef<File | string | null>(null)
+
+  const selectSession = (id: string | null) => {
+    currentSessionIdRef.current = id
+    setCurrentSessionId(id)
+  }
+
+  /** Swap the displayed document, revoking the previous blob URL to avoid leaks. */
+  const replaceFile = (next: File | string | null) => {
+    const prev = fileRef.current
+    if (prev !== next) revokeIfBlob(prev)
+    fileRef.current = next
+    setFile(next)
+  }
+
+  // Revoke the last blob URL on unmount
+  useEffect(() => () => revokeIfBlob(fileRef.current), [])
+
   // ── Chat panel state ─────────────────────────────────────────────────────────
   const [chatOpen, setChatOpen] = useState(false)
   const chatPanelRef = usePanelRef()
@@ -129,22 +169,20 @@ export default function App({ user, onLogout }: AppProps) {
     user.avatar_uri ? `/api/v1/${user.avatar_uri}` : "/api/v1/avatars/default.png"
   )
 
-  // ── Resume polling for any pending sessions after mount ───────────────────
-  const resumePolling = (session_id: string) => {
+  // ── Poll one evaluation to completion (used for uploads, resumes and reruns) ──
+  const trackEvaluation = (session_id: string) => {
     if (pollingRef.current.has(session_id)) return
     pollingRef.current.add(session_id)
 
-    pollEvaluation(session_id).then(response => {
+    pollEvaluation(session_id).then(async (response) => {
       pollingRef.current.delete(session_id)
+      const isCurrent = () => currentSessionIdRef.current === session_id
 
       if (response === null) {
         setChats(prev =>
           prev.map(c => c.session_id === session_id ? { ...c, status: "failed" } : c)
         )
-        setCurrentSessionId(current => {
-          if (current === session_id) setFindingsLoading(false)
-          return current
-        })
+        if (isCurrent()) setFindingsLoading(false)
         return
       }
 
@@ -152,7 +190,7 @@ export default function App({ user, onLogout }: AppProps) {
         setChats(prev =>
           prev.map(c => c.session_id === session_id ? { ...c, status: "cancelled" } : c)
         )
-        if (currentSessionIdRef.current === session_id) setFindingsLoading(false)
+        if (isCurrent()) setFindingsLoading(false)
         return
       }
 
@@ -160,66 +198,77 @@ export default function App({ user, onLogout }: AppProps) {
         sortChatsByLatest(
           prev.map(c =>
             c.session_id === session_id
-              ? { ...c, findings: response.vulnerabilities, status: "done" }
+              ? {
+                  ...c,
+                  findings: response.vulnerabilities,
+                  status: "done",
+                  latestTimestamp: new Date().toISOString(),
+                }
               : c
           )
         )
       )
 
-      // If user is still on this session, populate findings + fetch the blob
-      setCurrentSessionId(current => {
-        if (current === session_id) {
-          setFindings(response.vulnerabilities)
-          setFindingsLoading(false)
-          // Fetch the actual document blob now that evaluation is done
-          setFile((currentFile) => {
-            if (currentFile && typeof currentFile !== "string") return currentFile
-            fetchDocumentBlob(session_id).then((url) => {
-              if (url) setFile(url)
-            })
-            return currentFile
-          })
-        }
-        return current
-      })
+      if (!isCurrent()) return
+      setFindings(response.vulnerabilities)
+      setFindingsLoading(false)
+
+      // Resumed sessions may not have the document yet (an uploaded File already does)
+      if (!fileRef.current) {
+        const url = await fetchDocumentBlob(session_id)
+        if (!url) return
+        if (isCurrent() && !fileRef.current) replaceFile(url)
+        else URL.revokeObjectURL(url)
+      }
     })
   }
 
-  // Load existing sessions on mount, then merge pending sessions
+  // Load existing sessions on mount. The list renders immediately; the
+  // per-session "latest activity" timestamps are filled in afterwards.
   useEffect(() => {
-    const loadSessions = async () => {
-      try {
-        const rawSessions = await fetchSessions()
+    let cancelled = false
 
-        const chatsWithTimestamps = await Promise.all(
-          rawSessions.map(async (s: any) => {
-            const latestTimestamp = await fetchSessionTimestamp(s.session_id)
-            return {
-              session_id: s.session_id,
-              title: s.title,
-              findings: [],
-              status: toFrontendStatus(s.status ?? "done"),
-              latestTimestamp: latestTimestamp ?? s.created_at ?? null,
-            } satisfies Chat
+    const loadSessions = async () => {
+      const rawSessions = await fetchSessions()
+      if (cancelled) return
+
+      const initial: Chat[] = rawSessions.map((s) => ({
+        session_id: s.session_id,
+        title: s.title,
+        findings: [],
+        status: toFrontendStatus(s.status ?? "done"),
+        latestTimestamp: s.created_at ?? null,
+      }))
+
+      setChats(prev => {
+        // keep anything the user already did (e.g. an upload) before the list arrived
+        const known = new Set(initial.map(c => c.session_id))
+        return sortChatsByLatest([...prev.filter(c => !known.has(c.session_id)), ...initial])
+      })
+      setChatsLoading(false)
+
+      // Resume polling for any sessions that aren't done/failed/cancelled
+      for (const chat of initial) {
+        if (chat.status === "processing") trackEvaluation(chat.session_id)
+      }
+
+      // Background: fetch real latest-activity timestamps, apply in ONE state update
+      const stamps = await Promise.all(initial.map(c => fetchSessionTimestamp(c.session_id)))
+      if (cancelled) return
+      const byId = new Map(initial.map((c, i) => [c.session_id, stamps[i]]))
+
+      setChats(prev =>
+        sortChatsByLatest(
+          prev.map(c => {
+            if (!byId.has(c.session_id)) return c
+            return { ...c, latestTimestamp: laterTimestamp(byId.get(c.session_id), c.latestTimestamp) }
           })
         )
-
-        setChats(sortChatsByLatest(chatsWithTimestamps))
-
-        //Resume polling for any sessions that isn't done/failed
-        for (const chat of chatsWithTimestamps) {
-          if (chat.status === "processing") {
-            resumePolling(chat.session_id)
-          }
-        }
-      } finally {
-        setChatsLoading(false)
-      }
-      
+      )
     }
 
-
-    loadSessions()
+    loadSessions().catch(() => { if (!cancelled) setChatsLoading(false) })
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -229,9 +278,8 @@ export default function App({ user, onLogout }: AppProps) {
     setFindings([])
     setFindingsLoading(false)
     setPage("chat")
-    setCurrentSessionId(null)
     selectSession(null)
-    setFile(null)
+    replaceFile(null)
     closeChat()
   }
 
@@ -241,17 +289,22 @@ export default function App({ user, onLogout }: AppProps) {
     setCurrentFileName(chat.title)
     closeChat()
 
+    // The user may click another chat while this one is still loading
+    const isStale = () => currentSessionIdRef.current !== chat.session_id
+
     if (chat.status === "processing") {
       setFindings([])
       setFindingsLoading(true)
 
       const blobUrl = await fetchDocumentBlob(chat.session_id)
-      if (blobUrl) setFile(blobUrl)
+      if (!blobUrl) return
+      if (isStale()) URL.revokeObjectURL(blobUrl)
+      else replaceFile(blobUrl)
       return
     }
 
     // Done or unknown status — load doc + results
-    setFile(null)
+    replaceFile(null)
     setFindings([])
     setFindingsLoading(true)
 
@@ -260,10 +313,14 @@ export default function App({ user, onLogout }: AppProps) {
         fetchDocumentBlob(chat.session_id),
         getSessionResults(chat.session_id),
       ])
-      setFile(blobUrl)
+      if (isStale()) {
+        if (blobUrl) URL.revokeObjectURL(blobUrl)
+        return
+      }
+      replaceFile(blobUrl)
       setFindings(results)
     } finally {
-      setFindingsLoading(false)
+      if (!isStale()) setFindingsLoading(false)
     }
   }
 
@@ -287,28 +344,18 @@ export default function App({ user, onLogout }: AppProps) {
       return
     }
     setChats(prev => prev.filter(c => c.session_id !== sessionId))
-    if (currentSessionId === sessionId) handleNewChat()
+    if (currentSessionIdRef.current === sessionId) handleNewChat()
   }
 
   const handleDeleteAllChats = async () => {
-    const results = await Promise.allSettled(
-      chats.map(chat => deleteSession(chat.session_id))
-    )
+    const results = await Promise.all(chats.map(chat => deleteSession(chat.session_id)))
 
-    const deletedIds = new Set(
-      chats
-        .filter((_, i) => results[i].status === "fulfilled" && (results[i] as PromiseFulfilledResult<boolean>).value)
-        .map(c => c.session_id)
-    )
-
-    const anyFailed = results.some(
-      (result, _) => result.status === "rejected" || !(result as PromiseFulfilledResult<boolean>).value
-    )
-
+    const deletedIds = new Set(chats.filter((_, i) => results[i]).map(c => c.session_id))
+    const anyFailed = results.some(ok => !ok)
 
     setChats(prev => prev.filter(chat => !deletedIds.has(chat.session_id)))
 
-    if (currentSessionId && deletedIds.has(currentSessionId)) {
+    if (currentSessionIdRef.current && deletedIds.has(currentSessionIdRef.current)) {
       handleNewChat()
     }
 
@@ -326,13 +373,13 @@ export default function App({ user, onLogout }: AppProps) {
     setChats(prev => prev.map(c =>
       c.session_id === sessionId ? { ...c, title: newTitle } : c
     ))
-    if (currentSessionId === sessionId) setCurrentFileName(newTitle)
+    if (currentSessionIdRef.current === sessionId) setCurrentFileName(newTitle)
   }
 
   // Upload
   const handleFileUpload = async (fileInput: File) => {
     closeChat()
-    //Client-side validation
+    // Client-side validation
     const validation = await validatePdf(fileInput)
     if (!validation.ok) {
       toast.error("Invalid file", { description: validation.error })
@@ -356,60 +403,15 @@ export default function App({ user, onLogout }: AppProps) {
     setChats(prev => [pendingChat, ...prev])
 
     // 3. Switch main view immediately — user sees the PDF while evaluation runs
-    setFile(fileInput)
+    replaceFile(fileInput)
     setFindings([])
     setFindingsLoading(true)
     selectSession(session_id)
     setCurrentFileName(fileInput.name)
     setPage("chat")
 
-    // 5. Poll in the background
-    pollingRef.current.add(session_id)
-    pollEvaluation(session_id).then(response => {
-      pollingRef.current.delete(session_id) 
-
-      if (response === null) {
-        setChats(prev =>
-          prev.map(c => c.session_id === session_id ? { ...c, status: "failed" } : c)
-        )
-        setCurrentSessionId(current => {
-          if (current === session_id) setFindingsLoading(false)
-          return current
-        })
-        return
-      }
-      if (response.cancelled) {
-        setChats(prev =>
-          prev.map(c => c.session_id === session_id ? { ...c, status: "cancelled" } : c)
-        )
-        if (currentSessionIdRef.current === session_id) setFindingsLoading(false)
-        return
-      }
-
-      setChats(prev =>
-        prev.map(c =>
-          c.session_id === session_id
-            ? { ...c, findings: response.vulnerabilities, status: "done" }
-            : c
-        )
-      )
-
-      setCurrentSessionId(current => {
-        if (current === session_id) {
-          setFindings(response.vulnerabilities)
-          setFindingsLoading(false)
-          // The File object is already in state from upload; no need to re-fetch blob
-        }
-        return current
-      })
-    })
-  }
-
-  // Ref kept in sync atomically with state, so async poll callbacks never read a stale session id.
-  const currentSessionIdRef = useRef<string | null>(null)
-  const selectSession = (id: string | null) => {
-    currentSessionIdRef.current = id
-    setCurrentSessionId(id)
+    // 4. Poll in the background
+    trackEvaluation(session_id)
   }
 
   const handleConfirmCancel = async (sessionId: string) => {
@@ -453,7 +455,7 @@ export default function App({ user, onLogout }: AppProps) {
       setFindings([])
       setFindingsLoading(true) // also disables the chatbot input until findings land
     }
-    resumePolling(chat.session_id)
+    trackEvaluation(chat.session_id)
     toast.info("Re-running analysis")
   }
 

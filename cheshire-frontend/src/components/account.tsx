@@ -1,21 +1,11 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import type { Chat } from "@/ChatPage"
 import type { AuthUser } from "@/lib/auth"
-import { updateStoredUser, authFetch } from "@/lib/auth"
+import { updateStoredUser } from "@/lib/auth"
 import AvatarCropperModal from "@/components/avatar-cropper-modal"
-import { formatTimestamp } from "@/lib/helpers/format_timestamps"
+import { formatTimestamp, formatChatTimestamp } from "@/lib/helpers/format_timestamps"
 import { X } from "lucide-react"
 import { toast } from "sonner"
-
-async function fetchSessionTimestamp(sessionId: string): Promise<string | null> {
-  return authFetch(`/api/v1/${sessionId}/latest-timestamp`)
-    .then((r) => {
-      if (r.status === 204) return null
-      if (!r.ok) return null
-      return r.json().then((d: { latest_timestamp: string }) => d.latest_timestamp)
-    })
-    .catch(() => null)
-}
 
 interface AccountProps {
   setProfileImage: (image: string) => void
@@ -37,26 +27,6 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
 
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
-
-  const [chatTimestamps, setChatTimestamps] = useState<
-    Record<string, string | null>
-  >({})
-
-  useEffect(() => {
-    if (chats.length === 0) return
-
-    const loadTimestamps = async () => {
-      const entries = await Promise.all(
-        chats.slice(0, 5).map(async (chat) => {
-          const ts = await fetchSessionTimestamp(chat.session_id)
-          return [chat.session_id, ts] as const
-        })
-      )
-      setChatTimestamps(Object.fromEntries(entries))
-    }
-
-    loadTimestamps()
-  }, [chats])
 
   const uploadAvatar = async (file: File, previewUrl: string) => {
     setAvatarSrc(previewUrl)
@@ -88,6 +58,7 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
         setProfileImage(data.avatar_url)
         updateStoredUser({ avatar_uri: data.avatar_url.replace("/api/v1/", "") })
         setUploadProgress(100)
+        URL.revokeObjectURL(previewUrl)
       } else {
         console.error("Upload failed:", xhr.status)
         setUploadProgress(0)
@@ -213,14 +184,12 @@ export default function Account({ setProfileImage, user, chats, onSelectChat, on
 
                 <span
                   className="text-xs text-muted-foreground tabular-nums"
-                  title={chatTimestamps[chat.session_id] ?? ""}
+                  title={chat.latestTimestamp ? formatChatTimestamp(chat.latestTimestamp) : ""}
                 >
                   Last Activity:{" "}
-                  {chatTimestamps[chat.session_id] !== undefined
-                    ? chatTimestamps[chat.session_id]
-                      ? formatTimestamp(chatTimestamps[chat.session_id])
-                      : "No activity yet"
-                    : "Loading..."}
+                  {chat.latestTimestamp
+                    ? formatTimestamp(chat.latestTimestamp)
+                    : "No activity yet"}
                 </span>
               </button>
             ))
