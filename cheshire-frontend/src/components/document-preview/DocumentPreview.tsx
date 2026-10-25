@@ -578,27 +578,44 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             </div>
 
             {/* Right — pagination */}
-            <div className="flex items-center gap-1.5 md:justify-self-end md:gap-2">
-              <button onClick={goToPrevPage} disabled={currentPage === 1}
+            <div className="flex shrink-0 items-center gap-1 md:justify-self-end md:gap-2">
+              <button
+                onClick={goToPrevPage}
+                disabled={currentPage === 1}
                 aria-label="Previous page"
-                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed md:py-1">
-                <ChevronLeft className="h-3.5 w-3.5" />
+                className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 md:px-2 md:py-1"
+              >
+                <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
                 <span className="hidden sm:inline">Previous</span>
               </button>
-              <div className="flex items-center gap-1 text-xs">
-                <input type="number" min={1} max={numPages} value={pageInput}
+
+              <div className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs">
+                <input
+                  type="number"
+                  min={1}
+                  max={numPages}
+                  value={pageInput}
                   onChange={(e) => setPageInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handlePageInputSubmit(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handlePageInputSubmit();
+                  }}
                   onBlur={handlePageInputSubmit}
-                  className="w-12 h-8 px-1 text-center rounded border bg-transparent text-base outline-none focus:ring-1 focus:ring-blue-500 md:w-14 md:h-7 md:px-2 md:text-xs"
+                  aria-label="Current page"
+                  className="h-8 w-10 shrink-0 rounded border bg-transparent px-1 text-center text-sm tabular-nums outline-none focus:ring-1 focus:ring-blue-500 sm:w-12 md:h-7 md:w-14 md:text-xs"
                 />
-                <span className="text-muted-foreground">/ {numPages}</span>
+                <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+                  / {numPages}
+                </span>
               </div>
-              <button onClick={goToNextPage} disabled={currentPage === numPages}
+
+              <button
+                onClick={goToNextPage}
+                disabled={currentPage === numPages}
                 aria-label="Next page"
-                className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed md:py-1">
+                className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 md:px-2 md:py-1"
+              >
                 <span className="hidden sm:inline">Next</span>
-                <ChevronRight className="h-3.5 w-3.5" />
+                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
               </button>
             </div>
           </div>
