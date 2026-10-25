@@ -44,8 +44,14 @@ from .constants import (
     MAX_TABLE_RIGHT_GAP_PX,
     MIN_COMPOUND_COL_WIDTH_PX,
     MIN_ICON_OVERLAP_PX,
+    BOOLEAN_LITERAL_STRINGS,
+    FALLBACK_VALUE_LEN_DIVERGENCE,
+    FALLBACK_VALUE_WORD_DIVERGENCE,
+    HORIZONTAL_TABLE_MIN_ROWS,
+    HORIZONTAL_TABLE_NUM_COLS,
     MIN_TABLE_CELL_COVERAGE_RATIO,
     MIN_WIDE_TABLE_WIDTH_PX,
+    NLI_ENTAILMENT_THRESHOLD,
     WIDE_TABLE_ASPECT_RATIO,
 )
 from .elements import (
@@ -82,10 +88,14 @@ from .tables import (
     _format_table_markdown,
     _format_table_row_cells,
     _get_table_cell_bounds,
+    _is_category_divider_row,
     _is_table_footer_row,
     _sanitize_table_cell_text,
     _table_has_empty_cells,
     _table_needs_visual_crop,
+    _infer_cell_value_type,
+    _classify_with_nli_relation,
+    is_horizontal_two_column_table,
 )
 
 __all__ = [
@@ -108,7 +118,12 @@ __all__ = [
     "FOOTER_MAX_TOP_RATIO",
     "FOOTER_METADATA_PATTERN",
     "DEFAULT_MAX_CHUNK_CHARS",
-    "DEFAULT_IMAGE_SCALE",
+    "HORIZONTAL_TABLE_MIN_ROWS",
+    "HORIZONTAL_TABLE_NUM_COLS",
+    "NLI_ENTAILMENT_THRESHOLD",
+    "FALLBACK_VALUE_LEN_DIVERGENCE",
+    "FALLBACK_VALUE_WORD_DIVERGENCE",
+    "BOOLEAN_LITERAL_STRINGS",
     # Models
     "ImageBoundingBox",
     "ElementRef",
@@ -134,7 +149,11 @@ __all__ = [
     "_format_table_row_cells",
     "_extract_header_from_table_text",
     "_format_table_markdown",
+    "_is_category_divider_row",
     "_is_table_footer_row",
+    "_infer_cell_value_type",
+    "_classify_with_nli_relation",
+    "is_horizontal_two_column_table",
     # Elements
     "_build_figure_lookup",
     "_build_element_lookup",
