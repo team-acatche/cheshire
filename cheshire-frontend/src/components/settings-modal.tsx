@@ -78,7 +78,7 @@ function ThemeSelector() {
   const { theme, setTheme } = useTheme()
 
   return (
-    <div className="flex rounded-md border border-input overflow-hidden w-fit">
+    <div className="flex rounded-md border border-input overflow-hidden w-fit shrink-0">
       {THEME_OPTIONS.map((opt) => (
         <button
           key={opt.value}
@@ -116,7 +116,7 @@ function GeneralPanel() {
       <section className="space-y-4">
         <SectionHeading>Appearance</SectionHeading>
 
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:gap-4">
           <div className="min-w-0">
             <FieldLabel>Theme</FieldLabel>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -178,8 +178,8 @@ function AccountPanel({
         )}
 
         {/* Delete sessions */}
-        <div className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-          <div>
+        <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <p className="text-sm font-medium">Delete all sessions</p>
             <p className="text-xs text-muted-foreground">
               Remove all {chats.length} uploaded document{chats.length !== 1 ? "s" : ""} and their chat history.
@@ -187,7 +187,7 @@ function AccountPanel({
           </div>
 
           {confirm === "sessions" ? (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">Are you sure?</span>
               <Button
                 size="xs"
@@ -210,6 +210,7 @@ function AccountPanel({
             <Button
               size="sm"
               variant="destructive"
+              className="self-start sm:self-auto"
               onClick={() => setConfirm("sessions")}
               disabled={chats.length === 0}
             >
@@ -249,7 +250,7 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-2 backdrop-blur-[2px] md:p-0"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
       aria-modal="true"
       role="dialog"
@@ -257,21 +258,21 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
     >
       <div
         ref={modalRef}
-        className="relative flex h-162.5 max-h-[90vh] w-215 max-w-[96vw] overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/80"
+        className="relative flex h-[85dvh] max-h-[90dvh] w-215 max-w-[96vw] flex-col overflow-hidden rounded-2xl bg-background shadow-2xl ring-1 ring-foreground/80 md:h-162.5 md:flex-row"
       >
-        {/* ── Left sidebar ─────────────────────────────────────────────── */}
-        <div className="flex w-50 shrink-0 flex-col border-r border-border bg-muted/20 px-2 py-4">
+        {/* ── Navigation: top bar on mobile, left sidebar on desktop ───── */}
+        <div className="flex shrink-0 flex-row items-center gap-1 border-b border-border bg-muted/20 px-2 py-2 md:w-50 md:flex-col md:items-stretch md:gap-0 md:border-b-0 md:border-r md:py-4">
           {/* Close button */}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close settings"
-            className="mb-3 ml-1 flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="flex size-8 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring md:mb-3 md:ml-1 md:size-6"
           >
-            <X className="size-3.5" />
+            <X className="size-4 md:size-3.5" />
           </button>
 
-          <nav className="flex flex-col gap-0.5">
+          <nav className="flex gap-0.5 md:flex-col">
             {NAV_ITEMS.map((item) => (
               <NavItem
                 key={item.id}
@@ -285,7 +286,7 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
         </div>
 
         {/* ── Right content ─────────────────────────────────────────────── */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
           {activeTab === "general" && <GeneralPanel />}
           {activeTab === "account"  && (
             <AccountPanel

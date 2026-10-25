@@ -28,11 +28,11 @@ export default function AvatarCropperModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-105 rounded-xl bg-white p-4 shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-105 rounded-xl bg-white p-4 shadow-lg">
         <h2 className="mb-3 text-lg font-semibold">Crop profile photo</h2>
 
-        <div className="relative h-75 w-full overflow-hidden rounded-lg bg-gray-900">
+        <div className="relative h-64 w-full overflow-hidden rounded-lg bg-gray-900 sm:h-75">
           <Cropper
             image={imageSrc}
             crop={crop}

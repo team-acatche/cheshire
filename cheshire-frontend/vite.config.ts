@@ -21,4 +21,16 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          pdf: ["react-pdf"],
+          markdown: ["react-markdown", "remark-gfm", "remark-breaks"],
+          syntax: ["react-syntax-highlighter"],
+          motion: ["framer-motion"],
+        },
+      },
+    },
+  }
 })

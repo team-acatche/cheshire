@@ -1,7 +1,7 @@
 // cheshire-frontend/src/components/document-preview/DocumentPreview.tsx
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { Document, pdfjs } from "react-pdf";
 import {
   FileText,
   Search,
@@ -23,20 +23,20 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useIsMobile } from "@/hooks/use-mobile";
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import type { PageMeta, ActiveGroup } from "./types";
 import { applyPageHighlights, clearAllMarks, markCurrentPageMatch } from "./searchHelpers";
 import { SearchBar } from "./SearchBar";
-import { HighlightLayer } from "./HighlightLayer";
 import { FindingPopover } from "./FindingPopover";
 import { PdfPageSkeleton } from "./PdfPageSkeleton";
 import { isUnanchored } from "./helpers";
 import { DocumentLevelFindings } from "./DocumentLevelFindings";
 import { SeverityLegend } from "./SeverityLegend";
 import { TONES, bySeverity, countByTone, dominantTone, getTone, toneColor, type Tone } from "./severity";
-import { AnalysisProgressPill, ScanOverlay } from "./AnalysisProgress";
+import { AnalysisProgressPill } from "./AnalysisProgress";
 import type { EvaluationProgress, ProgressEvent } from "@/lib/helpers/evaluate_document";
-
+import { PdfPageItem } from "./PdfPageItem";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
@@ -70,6 +70,8 @@ interface DocumentPreviewProps {
 }
 
 export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis, progress = null, progressEvents = [] }: DocumentPreviewProps) {
+  const isMobile = useIsMobile();
+
   const [numPages, setNumPages]             = useState<number>(0);
   const [pageMetaMap, setPageMetaMap]       = useState<Record<number, PageMeta>>({});
   const [active, setActive]                 = useState<ActiveGroup | null>(null);
@@ -101,6 +103,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   // Stored in state too, so portals (popovers) get a real element after mount
   const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // iOS Safari can't fullscreen arbitrary elements, so hide the button there
+  const canFullscreen = typeof document !== "undefined" && !!document.fullscreenEnabled;
 
   // Stable callback ref (must not change between renders)
   const setFullscreenEl = useCallback((node: HTMLDivElement | null) => {
@@ -144,14 +148,19 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   // Snapping containerWidth to the nearest 10 px before computing pageWidth
   // means that tiny ResizeObserver jitter never triggers a cascade of re-renders.
   // In fullscreen the max page width is raised so the PDF uses the extra space.
+  // On mobile a small gutter is left so the page never touches the screen edges.
   const pageWidth = useMemo(() => {
     const snapped = Math.round(containerWidth / 10) * 10;
-    return Math.min(snapped, isFullscreen ? 1400 : 900) * zoomLevel;
-  }, [containerWidth, zoomLevel, isFullscreen]);
+    const base = Math.min(snapped, isFullscreen ? 1400 : 900) - (isMobile ? 16 : 0);
+    return Math.max(base, 120) * zoomLevel;
+  }, [containerWidth, zoomLevel, isFullscreen, isMobile]);
 
   // ── ResizeObserver — debounced + threshold gated ───────────────────────────
+  // Width 0 means the viewer is hidden (e.g. the mobile "Chat" tab is showing);
+  // ignore it so pages don't collapse and re-render when the tab is shown again.
   const debouncedSetWidth = useCallback(
     debounce((newWidth: number) => {
+      if (newWidth <= 0) return;
       setContainerWidth((prev) => (Math.abs(prev - newWidth) > 8 ? newWidth : prev));
     }, 150),
     []
@@ -163,7 +172,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
       if (!node) return;
 
       // Measure immediately on first attach (no debounce needed)
-      setContainerWidth(node.getBoundingClientRect().width);
+      const initialWidth = node.getBoundingClientRect().width;
+      if (initialWidth > 0) setContainerWidth(initialWidth);
       const ro = new ResizeObserver(([entry]) => debouncedSetWidth(entry.contentRect.width));
       ro.observe(node);
       roRef.current = ro;
@@ -289,6 +299,38 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
     setSearchOpen(false); setSearchQuery("");
   }, []);
 
+  // Debounced search query (see Step 4)
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const searchQueryRef = useRef("");
+  useEffect(() => { searchQueryRef.current = debouncedQuery; }, [debouncedQuery]);
+
+  const registerPageEl = useCallback((n: number, el: HTMLDivElement | null) => {
+    pageEls.current[n] = el;
+  }, []);
+
+  const handlePageRendered = useCallback((n: number, meta: PageMeta) => {
+    setPageMetaMap((prev) => {
+      const old = prev[n];
+      // Skip the state update (and the re-render) if nothing changed
+      if (
+        old &&
+        old.renderedWidth === meta.renderedWidth &&
+        old.renderedHeight === meta.renderedHeight &&
+        old.originalWidth === meta.originalWidth &&
+        old.originalHeight === meta.originalHeight
+      ) return prev;
+      return { ...prev, [n]: meta };
+    });
+    const q = searchQueryRef.current.trim();
+    const el = pageEls.current[n];
+    if (q && el) applyPageHighlights(el, q);
+  }, []);
+
   // severity filter (driven by the legend chips)
   const [hiddenTones, setHiddenTones] = useState<Set<Tone>>(new Set());
   const toneCounts = useMemo(() => countByTone(findings), [findings]);
@@ -348,7 +390,7 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
   return (
     <div
       ref={setFullscreenEl}
-      className={`flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden ${
+      className={`flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden md:gap-3 ${
         isFullscreen ? "bg-background p-4" : ""
       }`}
     >
@@ -365,7 +407,8 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               else { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50); }
             }}
             title="Search (Ctrl+F)"
-            className={`p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
+            aria-label="Search"
+            className={`p-1.5 md:p-1 rounded hover:bg-muted transition-colors ${searchOpen ? "text-foreground bg-muted" : ""}`}
           >
             <Search className="h-4 w-4" />
           </button>
@@ -374,21 +417,25 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             <button
               onClick={onToggleChat}
               title={chatOpen ? "Hide chatbot" : "Show chatbot"}
+              aria-label={chatOpen ? "Hide chatbot" : "Show chatbot"}
               aria-pressed={chatOpen}
-              className={`p-1 rounded hover:bg-muted transition-colors ${chatOpen ? "text-foreground bg-muted" : ""}`}
+              className={`p-1.5 md:p-1 rounded hover:bg-muted transition-colors ${chatOpen ? "text-foreground bg-muted" : ""}`}
             >
               <MessageSquareText className="h-4 w-4" />
             </button>
           )}
 
-          <button
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Exit full screen (Esc)" : "Full screen"}
-            aria-pressed={isFullscreen}
-            className={`p-1 rounded hover:bg-muted transition-colors ${isFullscreen ? "text-foreground bg-muted" : ""}`}
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
+          {canFullscreen && (
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? "Exit full screen (Esc)" : "Full screen"}
+              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+              aria-pressed={isFullscreen}
+              className={`p-1.5 md:p-1 rounded hover:bg-muted transition-colors ${isFullscreen ? "text-foreground bg-muted" : ""}`}
+            >
+              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -408,11 +455,13 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
         </div>
       )}
 
-      {/* Toolbar — only once the PDF has loaded */}
+      {/* Toolbar — only once the PDF has loaded.
+          Mobile: findings row on top, zoom + pagination on a second row.
+          Desktop (md+): single 3-column row (the wrapper uses `contents`). */}
       {isPdf && numPages > 0 && (
-        <div className="grid grid-cols-3 items-center px-1 py-2 shrink-0 gap-3">
+        <div className="flex shrink-0 flex-col gap-2 px-1 py-1 md:grid md:grid-cols-3 md:items-center md:gap-3 md:py-2">
           {/* Left — findings badge OR loading indicator */}
-          <div className="justify-self-start flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 md:justify-self-start">
             {findingsLoading ? (
               progress ? (
                 <AnalysisProgressPill
@@ -507,42 +556,68 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
             )}
           </div>
 
-          {/* Center — zoom */}
-          <div className="justify-self-center">
-            <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
-              <button onClick={handleZoomOut} disabled={zoomLevel <= MIN_ZOOM}
-                className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-                <Minus className="h-4 w-4" />
-              </button>
-              <button onClick={handleResetZoom} className="min-w-14 text-xs tabular-nums px-2">
-                {zoomPercentage}%
-              </button>
-              <button onClick={handleZoomIn} disabled={zoomLevel >= MAX_ZOOM}
-                className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-                <Plus className="h-4 w-4" />
-              </button>
+          {/* Zoom + pagination (own row on mobile, grid cells on desktop) */}
+          <div className="flex w-full items-center justify-between gap-2 md:contents">
+            {/* Center — zoom */}
+            <div className="md:justify-self-center">
+              <div className="flex items-center gap-1 rounded border px-1 py-1 bg-background">
+                <button onClick={handleZoomOut} disabled={zoomLevel <= MIN_ZOOM}
+                  aria-label="Zoom out"
+                  className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Minus className="h-4 w-4" />
+                </button>
+                <button onClick={handleResetZoom} className="min-w-12 text-xs tabular-nums px-1 md:min-w-14 md:px-2">
+                  {zoomPercentage}%
+                </button>
+                <button onClick={handleZoomIn} disabled={zoomLevel >= MAX_ZOOM}
+                  aria-label="Zoom in"
+                  className="p-1 rounded hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Right — pagination */}
-          <div className="justify-self-end flex items-center gap-2">
-            <button onClick={goToPrevPage} disabled={currentPage === 1}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-              <ChevronLeft className="h-3.5 w-3.5" /> Previous
-            </button>
-            <div className="flex items-center gap-1 text-xs">
-              <input type="number" min={1} max={numPages} value={pageInput}
-                onChange={(e) => setPageInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handlePageInputSubmit(); }}
-                onBlur={handlePageInputSubmit}
-                className="w-14 h-7 px-2 text-center rounded border outline-none focus:ring-1 focus:ring-blue-500"
-              />
-              <span className="text-muted-foreground">/ {numPages}</span>
+            {/* Right — pagination */}
+            <div className="flex shrink-0 items-center gap-1 md:justify-self-end md:gap-2">
+              <button
+                onClick={goToPrevPage}
+                disabled={currentPage === 1}
+                aria-label="Previous page"
+                className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 md:px-2 md:py-1"
+              >
+                <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Previous</span>
+              </button>
+
+              <div className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs">
+                <input
+                  type="number"
+                  min={1}
+                  max={numPages}
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handlePageInputSubmit();
+                  }}
+                  onBlur={handlePageInputSubmit}
+                  aria-label="Current page"
+                  className="h-8 w-10 shrink-0 rounded border bg-transparent px-1 text-center text-sm tabular-nums outline-none focus:ring-1 focus:ring-blue-500 sm:w-12 md:h-7 md:w-14 md:text-xs"
+                />
+                <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+                  / {numPages}
+                </span>
+              </div>
+
+              <button
+                onClick={goToNextPage}
+                disabled={currentPage === numPages}
+                aria-label="Next page"
+                className="inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-1.5 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40 md:px-2 md:py-1"
+              >
+                <span className="hidden sm:inline">Next</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+              </button>
             </div>
-            <button onClick={goToNextPage} disabled={currentPage === numPages}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
-              Next <ChevronRight className="h-3.5 w-3.5" />
-            </button>
           </div>
         </div>
       )}
@@ -586,51 +661,21 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
               }
             >
               {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNumber) => (
-                <div
+                <PdfPageItem
                   key={pageNumber}
-                  ref={(el) => { pageEls.current[pageNumber] = el; }}
-                  data-page-number={pageNumber}
-                  className="flex justify-center py-4"
-                >
-                  <div className="bg-white shadow-lg border border-gray-200" style={{ position: "relative" }}>
-                    <Page
-                      pageNumber={pageNumber}
-                      width={pageWidth}
-                      renderTextLayer
-                      renderAnnotationLayer={false}
-                      onRenderSuccess={(page) => {
-                        setPageMetaMap((prev) => ({
-                          ...prev,
-                          [pageNumber]: {
-                            renderedWidth:  page.width,
-                            renderedHeight: page.height,
-                            originalWidth:  page.originalWidth,
-                            originalHeight: page.originalHeight,
-                          },
-                        }));
-                        if (searchQuery.trim() && pageEls.current[pageNumber]) {
-                          applyPageHighlights(pageEls.current[pageNumber]!, searchQuery);
-                        }
-                      }}
-                    />
-                    {findingsLoading && progress && (
-                      <ScanOverlay
-                        active={progress.active_pages.includes(pageNumber)}
-                        scanned={progress.scanned_pages.includes(pageNumber)}
-                      />
-                    )}
-                    {pageMetaMap[pageNumber] && (
-                      <HighlightLayer
-                        pageNumber={pageNumber}
-                        pageMeta={pageMetaMap[pageNumber]}
-                        findings={anchored}
-                        activeFindings={active?.findings ?? null}
-                        focusedFinding={active?.focused ?? null}
-                        onClick={handleClick}
-                      />
-                    )}
-                  </div>
-                </div>
+                  pageNumber={pageNumber}
+                  pageWidth={pageWidth}
+                  meta={pageMetaMap[pageNumber]}
+                  anchored={anchored}
+                  activeFindings={active?.findings ?? null}
+                  focusedFinding={active?.focused ?? null}
+                  onHighlightClick={handleClick}
+                  onRendered={handlePageRendered}
+                  registerEl={registerPageEl}
+                  showScan={findingsLoading && !!progress}
+                  scanActive={!!progress?.active_pages.includes(pageNumber)}
+                  scanned={!!progress?.scanned_pages.includes(pageNumber)}
+                />
               ))}
             </Document>
           </div>

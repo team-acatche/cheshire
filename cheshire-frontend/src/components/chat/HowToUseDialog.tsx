@@ -75,7 +75,7 @@ const STEPS = [
     title: "Ask the chatbot",
     tagline: "Talk through the findings with AI.",
     points: [
-      "Open it with the chat icon at the top right of the preview.",
+      "Open it with the chat icon at the top right of the preview (or the Chat tab on mobile).",
       "Ask why something was flagged or how to fix it.",
       "Tell it your team's policies. It saves them and uses them in later answers.",
     ],
@@ -100,15 +100,16 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-4xl p-0 gap-0 overflow-hidden flex flex-col h-[min(640px,90vh)]">
-        <DialogHeader className="px-6 pt-6 pb-4 text-center gap-1">
-          <DialogTitle className="text-2xl font-bold">How to Use Cheshire</DialogTitle>
+      <DialogContent className="sm:max-w-4xl p-0 gap-0 overflow-hidden flex flex-col h-[min(640px,90dvh)]">
+        <DialogHeader className="px-4 pt-5 pb-3 text-center gap-1 md:px-6 md:pt-6 md:pb-4">
+          <DialogTitle className="text-xl font-bold md:text-2xl">How to Use Cheshire</DialogTitle>
           <DialogDescription>Four quick steps from PDF to fixes.</DialogDescription>
         </DialogHeader>
 
-        <div className="grid md:grid-cols-[250px_1fr] border-t flex-1 min-h-0">
+        {/* Mobile: step tabs on top, content fills the rest. Desktop: side list + content. */}
+        <div className="grid flex-1 min-h-0 grid-rows-[auto_minmax(0,1fr)] border-t md:grid-cols-[250px_1fr] md:grid-rows-none">
           {/* Step list */}
-          <nav className="flex md:flex-col gap-1 p-3 border-b md:border-b-0 md:border-r bg-muted/30 overflow-x-auto">
+          <nav className="flex md:flex-col gap-1 p-2 md:p-3 border-b md:border-b-0 md:border-r bg-muted/30 overflow-x-auto">
             {STEPS.map((s, i) => {
               const Icon = s.icon
               const done = i < step
@@ -128,14 +129,15 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
                     {done ? <Check className="size-3.5" /> : i + 1}
                   </span>
                   <Icon className="size-4 shrink-0 hidden md:block" />
-                  {s.title}
+                  {/* On phones the step number is enough for non-active tabs */}
+                  <span className={cn(i !== step && "hidden sm:inline")}>{s.title}</span>
                 </button>
               )
             })}
           </nav>
 
           {/* Content */}
-          <div className="p-6 min-h-0 overflow-y-auto scroll-transparent">
+          <div className="p-4 md:p-6 min-h-0 overflow-y-auto scroll-transparent">
             <AnimatePresence mode="wait">
               <motion.div
                 key={step}
@@ -190,8 +192,8 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
           </div>
         </div>
 
-        {/* Shortcuts strip */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-3 border-t bg-muted/30 text-xs text-muted-foreground">
+        {/* Shortcuts strip — keyboard shortcuts are irrelevant on touch devices */}
+        <div className="hidden flex-wrap items-center gap-x-5 gap-y-1 px-6 py-3 border-t bg-muted/30 text-xs text-muted-foreground md:flex">
           <Keyboard className="size-4" />
           {SHORTCUTS.map(([k, d]) => (
             <span key={k}><kbd className="rounded border bg-background px-1.5 py-0.5 font-mono text-[10px]">{k}</kbd> {d}</span>
@@ -199,7 +201,7 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-3 border-t">
+        <div className="flex items-center justify-between px-4 py-3 border-t md:px-6">
           <Button variant="ghost" size="sm" onClick={onClose}>Skip</Button>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={step === 0} onClick={() => setStep(step - 1)}>

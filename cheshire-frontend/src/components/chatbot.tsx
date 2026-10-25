@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo, type KeyboardEvent, type ReactNode, memo } from "react"
 import { Card } from "./ui/card"
 import TextareaAutosize from "react-textarea-autosize"
 import SentIcon from "./ui/sent-icon"
@@ -30,14 +30,110 @@ interface ChatbotProps {
   evaluationPending?: boolean
 }
 
-const isFindingMessage = (text: string) => {
+function parseFinding(text: string): VulnerabilityFinding | null {
+  if (!text.startsWith("{")) return null
   try {
     const o = JSON.parse(text)
-    return !!o && typeof o === "object" && "title" in o && "description" in o
+    return o && typeof o === "object" && "title" in o && "description" in o
+      ? (o as VulnerabilityFinding)
+      : null
   } catch {
-    return false
+    return null
   }
 }
+
+const isFindingMessage = (text: string) => parseFinding(text) !== null
+
+// ── Module-level so React keeps component identity between renders ───────────
+// (Defining these inside Chatbot remounted + re-parsed every message on every
+// token / keystroke.)
+const markdownComponents = {
+  table: ({ children }: { children?: ReactNode }) => (
+    <div className="my-4 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+      <table className="w-full border-collapse text-sm">
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }: { children?: ReactNode }) => (
+    <thead className="bg-muted text-muted-foreground">
+      {children}
+    </thead>
+  ),
+  th: ({ children }: { children?: ReactNode }) => (
+    <th className="border border-border px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide md:px-4">
+      {children}
+    </th>
+  ),
+  td: ({ children }: { children?: ReactNode }) => (
+    <td className="border border-border px-3 py-2 text-sm align-top md:px-4">
+      {children}
+    </td>
+  ),
+  tr: ({ children }: { children?: ReactNode }) => (
+    <tr className="hover:bg-muted/50">
+      {children}
+    </tr>
+  ),
+  p: ({ children }: { children?: ReactNode }) => (
+    <p className="mb-3 text-[15px] leading-7 text-foreground">
+      {children}
+    </p>
+  ),
+  ul: ({ children }: { children?: ReactNode }) => (
+    <ul className="my-3 list-disc space-y-1 pl-6 text-foreground">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }: { children?: ReactNode }) => (
+    <ol className="my-3 list-decimal space-y-1 pl-6 text-foreground">
+      {children}
+    </ol>
+  ),
+  li: ({ children }: { children?: ReactNode }) => (
+    <li className="mb-1 wrap-break-word text-foreground">{children}</li>
+  ),
+  blockquote: ({ children }: { children?: ReactNode }) => (
+    <blockquote className="my-2 border-l-4 border-border pl-4 italic text-muted-foreground">
+      {children}
+    </blockquote>
+  ),
+  hr: () => (
+    <div className="my-8 flex items-center">
+      <div className="flex-1 border-t border-border" />
+    </div>
+  ),
+  pre: ({ children }: { children?: ReactNode }) => {
+    const codeElement = children as any
+    const code = codeElement?.props?.children || ""
+    const className = codeElement?.props?.className || ""
+    const match = /language-(\w+)/.exec(className || "")
+    const language = match ? match[1] : "text"
+    return <CodeBlock language={language}>{code}</CodeBlock>
+  },
+}
+
+const remarkPlugins = [remarkGfm, remarkBreaks]
+
+const MessageBody = memo(function MessageBody({ text, role }: { text: string; role: Message["role"] }) {
+  const finding = useMemo(() => parseFinding(text), [text])
+
+  if (finding) {
+    return <VulnerabilityFindingComponent finding={finding} />
+  }
+
+  const content = (
+    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+      {text}
+    </ReactMarkdown>
+  )
+
+  return role === "user" ? content : (
+    <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden wrap-break-word">
+      {content}
+    </div>
+  )
+})
 
 export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluationPending = false }: ChatbotProps) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -53,6 +149,10 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
   const stoppedRef = useRef(false)
   const [copiedMessageIdx, setCopiedMessageIdx] = useState<number | null>(null)
 
+  // Streaming token buffer: flush at most once per animation frame
+  const pendingRef = useRef("")
+  const rafRef = useRef<number | null>(null)
+
   // ── Scroll state tracking ──────────────────────────────────────────────────
   const checkScrollPosition = useCallback(() => {
     const container = scrollContainerRef.current
@@ -61,7 +161,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight
     const atBottom = distanceFromBottom < 80
     isAtBottomRef.current = atBottom
-    setShowScrollDown(!atBottom)
+    setShowScrollDown(prev => (prev === !atBottom ? prev : !atBottom))
     if (atBottom) setUnreadCount(0)
   }, [])
 
@@ -72,12 +172,15 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
   // ── Load history on session change ────────────────────────────────────────
   useEffect(() => {
+    let cancelled = false
+
     const fetchHistory = async () => {
       try {
         const response = await authFetch(`/api/v1/${sessionId}`)
         if (!response.ok) throw new Error("Failed to fetch history")
 
         const data = await response.json() as ResponseMessages
+        if (cancelled) return
         const backendMessages = data.messages ?? []
 
         if (backendMessages.length > 0) {
@@ -92,7 +195,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                   text === "" ||
                   msg._role === "system"
                 ) return null
-                
+
                 return { role: msg._role === "user" ? "user" : "bot1", text }
               })
               .filter((m): m is Message => m !== null)
@@ -103,7 +206,9 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
           ])
         }
       } catch {
-        setMessages([{ role: "bot1", text: "Hello! I'm ready to help you with the document." }])
+        if (!cancelled) {
+          setMessages([{ role: "bot1", text: "Hello! I'm ready to help you with the document." }])
+        }
       }
     }
     fetchHistory()
@@ -111,10 +216,17 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     setShowScrollDown(false)
     setUnreadCount(0)
     isAtBottomRef.current = true
+
+    return () => { cancelled = true }
   }, [sessionId, findings])
 
+  // Cancel any pending frame on unmount
+  useEffect(() => () => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+  }, [])
+
   // ── Message update helpers ────────────────────────────────────────────────
-  const appendToLastBotMessage = (text: string) => {
+  const appendToLastBotMessage = useCallback((text: string) => {
     setMessages(prev => {
       const updated = [...prev]
       const last = updated[updated.length - 1]
@@ -129,9 +241,9 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     if (!isAtBottomRef.current) {
       setUnreadCount(prev => prev + 1)
     }
-  }
+  }, [])
 
-  const replaceLastBotMessage = (text: string) => {
+  const replaceLastBotMessage = useCallback((text: string) => {
     setMessages(prev => {
       const updated = [...prev]
       const last = updated[updated.length - 1]
@@ -142,6 +254,35 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       }
       return updated
     })
+  }, [])
+
+  const flushPending = useCallback(() => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    if (!pendingRef.current) return
+    const chunk = pendingRef.current
+    pendingRef.current = ""
+    appendToLastBotMessage(chunk)
+  }, [appendToLastBotMessage])
+
+  const queueToken = useCallback((content: string) => {
+    pendingRef.current += content
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null
+        flushPending()
+      })
+    }
+  }, [flushPending])
+
+  const discardPending = () => {
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    pendingRef.current = ""
   }
 
   const stopGenerating = () => {
@@ -180,12 +321,14 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       const parsed = JSON.parse(dataStr)
 
       if (eventType === "token" && parsed.content) {
-        appendToLastBotMessage(parsed.content)
+        queueToken(parsed.content)
       } else if (eventType === "done") {
+        flushPending()
         if (parsed.content) replaceLastBotMessage(parsed.content)
         lastEventIdRef.current = null
         onActivity?.()
       } else if (eventType === "error") {
+        discardPending()
         replaceLastBotMessage(`Error: ${parsed.message ?? "Unknown error"}`)
       }
     } catch (err) {
@@ -250,6 +393,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
         await consumeSSE(payload, lastEventIdRef.current)
         break
       } catch {
+        flushPending()
         if (stoppedRef.current) {
           // drop the empty placeholder if nothing streamed yet
           setMessages(prev => {
@@ -275,6 +419,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
       }
     }
 
+    flushPending()
     lastEventIdRef.current = null
     setTyping(false)
     abortRef.current = null
@@ -310,9 +455,10 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
   }
 
   // ── Auto-scroll only when already at bottom ───────────────────────────────
+  // Instant while streaming (smooth scrolling per frame lags and stutters).
   useEffect(() => {
     if (isAtBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+      bottomRef.current?.scrollIntoView({ behavior: typing ? "auto" : "smooth", block: "end" })
     }
   }, [messages, typing])
 
@@ -337,170 +483,112 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     await runGeneration({ regenerate: true })
   }
 
-  // ── Message content ───────────────────────────────────────────────────────
-  const renderContent = (msg: Message) => {
-    if (isFindingMessage(msg.text)) {
-      return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
-    }
-
-    const content = (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        components={{
-          table: ({ children }: { children?: ReactNode }) => (
-            <div className="my-4 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-              <table className="w-full border-collapse text-sm">
-                {children}
-              </table>
-            </div>
-          ),
-          thead: ({ children }: { children?: ReactNode }) => (
-            <thead className="bg-muted text-muted-foreground">
-              {children}
-            </thead>
-          ),
-          th: ({ children }: { children?: ReactNode }) => (
-            <th className="border border-border px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
-              {children}
-            </th>
-          ),
-          td: ({ children }: { children?: ReactNode }) => (
-            <td className="border border-border px-4 py-2 text-sm align-top">
-              {children}
-            </td>
-          ),
-          tr: ({ children }: { children?: ReactNode }) => (
-            <tr className="hover:bg-muted/50">
-              {children}
-            </tr>
-          ),
-          p: ({ children }: { children?: ReactNode }) => (
-            <p className="mb-3 text-[15px] leading-7 text-foreground">
-              {children}
-            </p>
-          ),
-          ul: ({ children }: { children?: ReactNode }) => (
-            <ul className="my-3 list-disc space-y-1 pl-6 text-foreground">
-              {children}
-            </ul>
-          ),
-          ol: ({ children }: { children?: ReactNode }) => (
-            <ol className="my-3 list-decimal space-y-1 pl-6 text-foreground">
-              {children}
-            </ol>
-          ),
-          li: ({ children }: { children?: ReactNode }) => (
-            <li className="mb-1 wrap-break-word text-foreground">{children}</li>
-          ),
-          blockquote: ({ children }: { children?: ReactNode }) => (
-            <blockquote className="my-2 border-l-4 border-border pl-4 italic text-muted-foreground">
-              {children}
-            </blockquote>
-          ),
-          hr: () => (
-            <div className="my-8 flex items-center">
-              <div className="flex-1 border-t border-border" />
-            </div>
-          ),
-          pre: ({ children }: { children?: ReactNode }) => {
-            const codeElement = children as any
-            const code = codeElement?.props?.children || ""
-            const className = codeElement?.props?.className || ""
-            const match = /language-(\w+)/.exec(className || "")
-            const language = match ? match[1] : "text"
-            return <CodeBlock language={language}>{code}</CodeBlock>
-          },
-        }}
-      >
-        {msg.text}
-      </ReactMarkdown>
-    )
-
-    return msg.role === "user" ? content : (
-      <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden wrap-break-word">
-        {content}
-      </div>
-    )
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-6 pb-0 shadow-sm">
+    <Card className="h-full w-full min-w-0 flex flex-col overflow-hidden rounded-none pt-3 pb-0 shadow-sm md:pt-6">
 
       {/* Chat area */}
       <div
         ref={scrollContainerRef}
         onScroll={checkScrollPosition}
-        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+        className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 text-sm scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent md:p-4"
       >
-        <div className="flex flex-col gap-8 max-w-4xl mx-auto w-full">
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`
-                flex items-start gap-4
-                animate-in fade-in slide-in-from-bottom-2 duration-300
-                ${msg.role === "user" ? "justify-end" : "justify-start"}
-              `}
-            >
-              {msg.role !== "user" && (
-                <div className="w-8 h-8 mt-1 overflow-hidden shrink-0 opacity-80">
-                  <img src="/cheshire-black.png" className="w-full h-full object-cover dark:invert" alt="agent" />
-                </div>
-              )}
+        <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full md:gap-8">
+          {messages.map((msg, i) => {
+            // Bot copy button: not on finding cards, empty placeholders,
+            // or the message that is still streaming.
+            const canCopyBot =
+              msg.role !== "user" &&
+              msg.text !== "" &&
+              !isFindingMessage(msg.text) &&
+              !(typing && i === lastIdx)
 
-              {msg.role === "user" ? (
-                <div className="group flex max-w-[80%] flex-col items-end gap-1">
-                  <div className="btn-gradient px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90">
-                    {renderContent(msg)}
+            return (
+              <div
+                key={i}
+                className={`
+                  flex items-start gap-2 md:gap-4
+                  animate-in fade-in slide-in-from-bottom-2 duration-300
+                  ${msg.role === "user" ? "justify-end" : "justify-start"}
+                `}
+              >
+                {msg.role !== "user" && (
+                  <div className="w-7 h-7 mt-1 overflow-hidden shrink-0 opacity-80 md:w-8 md:h-8">
+                    <img src="/cheshire-black.png" className="w-full h-full object-cover dark:invert" alt="agent" />
                   </div>
+                )}
 
-                  <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
-                    <button
-                      type="button"
-                      onClick={() => copyMessage(msg.text, i)}
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      title={copiedMessageIdx === i ? "Copied!" : "Copy message"}
-                      aria-label={copiedMessageIdx === i ? "Message copied" : "Copy message"}
-                    >
-                      {copiedMessageIdx === i ? (
-                        <Check className="size-3.5" />
-                      ) : (
-                        <Copy className="size-3.5" />
-                      )}
-                    </button>
+                {msg.role === "user" ? (
+                  <div className="group flex min-w-0 max-w-[85%] flex-col items-end gap-1 md:max-w-[80%]">
+                    <div className="btn-gradient max-w-full px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 wrap-break-word [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90">
+                      <MessageBody text={msg.text} role={msg.role} />
+                    </div>
 
-                    {canRegenerate && i === lastUserIdx && (
+                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
                       <button
                         type="button"
-                        onClick={regenerate}
+                        onClick={() => copyMessage(msg.text, i)}
                         className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        title="Regenerate response"
-                        aria-label="Regenerate response"
+                        title={copiedMessageIdx === i ? "Copied!" : "Copy message"}
+                        aria-label={copiedMessageIdx === i ? "Message copied" : "Copy message"}
                       >
-                        <RotateCw className="size-3.5" />
+                        {copiedMessageIdx === i ? (
+                          <Check className="size-3.5" />
+                        ) : (
+                          <Copy className="size-3.5" />
+                        )}
                       </button>
+
+                      {canRegenerate && i === lastUserIdx && (
+                        <button
+                          type="button"
+                          onClick={regenerate}
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title="Regenerate response"
+                          aria-label="Regenerate response"
+                        >
+                          <RotateCw className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="group flex min-w-0 flex-1 flex-col gap-1 overflow-hidden text-foreground">
+                    <MessageBody text={msg.text} role={msg.role} />
+
+                    {canCopyBot && (
+                      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => copyMessage(msg.text, i)}
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title={copiedMessageIdx === i ? "Copied!" : "Copy response"}
+                          aria-label={copiedMessageIdx === i ? "Response copied" : "Copy response"}
+                        >
+                          {copiedMessageIdx === i ? (
+                            <Check className="size-3.5" />
+                          ) : (
+                            <Copy className="size-3.5" />
+                          )}
+                        </button>
+                      </div>
                     )}
                   </div>
-                </div>
-              ) : (
-                <div className="flex-1 min-w-0 overflow-hidden text-foreground">
-                  {renderContent(msg)}
-                </div>
-              )}
+                )}
 
-              {msg.role === "user" && (
-                <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 ring-1 ring-border">
-                  <img
-                    src={profileImage || "/User.png"}
-                    onError={(e) => { e.currentTarget.src = "/User.png" }}
-                    className="w-full h-full object-cover"
-                    alt="user"
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+                {msg.role === "user" && (
+                  <div className="hidden w-8 h-8 rounded-full overflow-hidden shrink-0 ring-1 ring-border sm:block">
+                    <img
+                      src={profileImage || "/User.png"}
+                      onError={(e) => { e.currentTarget.src = "/User.png" }}
+                      className="w-full h-full object-cover"
+                      alt="user"
+                    />
+                  </div>
+                )}
+              </div>
+            )
+          })}
 
           {typing && (
             <div className="flex items-start gap-3 animate-in fade-in duration-300">
@@ -524,8 +612,9 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
         </div>
       </div>
 
-      {/* Input area — position relative so the scroll button can be anchored to it */}
-      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6">
+      {/* Input area — position relative so the scroll button can be anchored to it.
+          The bottom padding respects the iPhone home-indicator safe area. */}
+      <div className="sticky bottom-0 z-10 bg-linear-to-t from-background via-background/95 to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 md:px-4 md:pb-4 md:pt-6">
 
         {/* Scroll-to-bottom button */}
         {showScrollDown && (
@@ -548,11 +637,11 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
           <div
             className="
               relative
-              flex items-end gap-3
-              rounded-[28px]
+              flex items-end gap-2 md:gap-3
+              rounded-[24px] md:rounded-[28px]
               border border-border/60
               bg-background/80
-              px-5 py-4
+              px-4 py-3 md:px-5 md:py-4
               shadow-[0_8px_30px_rgba(0,0,0,0.06)]
               backdrop-blur-xl
               transition-all duration-200
@@ -560,7 +649,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.10)]
             "
           >
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] ring-1 ring-white/5" />
+            <div className="pointer-events-none absolute inset-0 rounded-[24px] ring-1 ring-white/5 md:rounded-[28px]" />
 
             <TextareaAutosize
               value={input}
@@ -570,14 +659,16 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               disabled={typing || evaluationPending}
               minRows={1}
               maxRows={8}
+              // 16px on mobile prevents iOS Safari from zooming into the field on focus
               className="
                 max-h-52
+                min-w-0
                 flex-1
                 resize-none
                 border-0
                 bg-transparent
                 p-0
-                text-[15px]
+                text-base
                 leading-7
                 text-foreground
                 shadow-none
@@ -586,6 +677,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 focus-visible:ring-0
                 disabled:opacity-50
                 placeholder:text-muted-foreground/70
+                md:text-[15px]
               "
             />
             {typing ? (
@@ -602,6 +694,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               <button
                 onClick={sendMessage}
                 disabled={typing || evaluationPending || !input.trim()}
+                aria-label="Send message"
                 className="
                   flex h-10 w-10 shrink-0 items-center justify-center
                   rounded-full
@@ -617,12 +710,12 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 "
               >
                 <SentIcon size={18} color="currentColor" />
-              </button> 
+              </button>
             )}
 
           </div>
 
-          <p className="mt-2 text-center text-xs text-muted-foreground/60">
+          <p className="mt-2 text-center text-[11px] text-muted-foreground/60 md:text-xs">
             Cheshire can make mistakes. Verify important security findings.
           </p>
         </div>
