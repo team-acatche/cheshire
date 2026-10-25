@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode } from "react"
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type ReactNode, memo } from "react"
 import { Card } from "./ui/card"
 import TextareaAutosize from "react-textarea-autosize"
 import SentIcon from "./ui/sent-icon"
@@ -337,91 +337,90 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
     await runGeneration({ regenerate: true })
   }
 
-  // ── Message content ───────────────────────────────────────────────────────
-  const renderContent = (msg: Message) => {
-    if (isFindingMessage(msg.text)) {
-      return <VulnerabilityFindingComponent finding={JSON.parse(msg.text) as VulnerabilityFinding} />
+  const markdownComponents = {
+    table: ({ children }: { children?: ReactNode }) => (
+      <div className="my-4 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+        <table className="w-full border-collapse text-sm">
+          {children}
+        </table>
+      </div>
+    ),
+    thead: ({ children }: { children?: ReactNode }) => (
+      <thead className="bg-muted text-muted-foreground">
+        {children}
+      </thead>
+    ),
+    th: ({ children }: { children?: ReactNode }) => (
+      <th className="border border-border px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+        {children}
+      </th>
+    ),
+    td: ({ children }: { children?: ReactNode }) => (
+      <td className="border border-border px-4 py-2 text-sm align-top">
+        {children}
+      </td>
+    ),
+    tr: ({ children }: { children?: ReactNode }) => (
+      <tr className="hover:bg-muted/50">
+        {children}
+      </tr>
+    ),
+    p: ({ children }: { children?: ReactNode }) => (
+      <p className="mb-3 text-[15px] leading-7 text-foreground">
+        {children}
+      </p>
+    ),
+    ul: ({ children }: { children?: ReactNode }) => (
+      <ul className="my-3 list-disc space-y-1 pl-6 text-foreground">
+        {children}
+      </ul>
+    ),
+    ol: ({ children }: { children?: ReactNode }) => (
+      <ol className="my-3 list-decimal space-y-1 pl-6 text-foreground">
+        {children}
+      </ol>
+    ),
+    li: ({ children }: { children?: ReactNode }) => (
+      <li className="mb-1 wrap-break-word text-foreground">{children}</li>
+    ),
+    blockquote: ({ children }: { children?: ReactNode }) => (
+      <blockquote className="my-2 border-l-4 border-border pl-4 italic text-muted-foreground">
+        {children}
+      </blockquote>
+    ),
+    hr: () => (
+      <div className="my-8 flex items-center">
+        <div className="flex-1 border-t border-border" />
+      </div>
+    ),
+    pre: ({ children }: { children?: ReactNode }) => {
+      const codeElement = children as any
+      const code = codeElement?.props?.children || ""
+      const className = codeElement?.props?.className || ""
+      const match = /language-(\w+)/.exec(className || "")
+      const language = match ? match[1] : "text"
+      return <CodeBlock language={language}>{code}</CodeBlock>
+    },
+  }
+
+  const MessageBody = memo(function MessageBody({ text, role }: { text: string; role: Message["role"] }) {
+    if (isFindingMessage(text)) {
+      return <VulnerabilityFindingComponent finding={JSON.parse(text) as VulnerabilityFinding} />
     }
 
     const content = (
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        components={{
-          table: ({ children }: { children?: ReactNode }) => (
-            <div className="my-4 overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-              <table className="w-full border-collapse text-sm">
-                {children}
-              </table>
-            </div>
-          ),
-          thead: ({ children }: { children?: ReactNode }) => (
-            <thead className="bg-muted text-muted-foreground">
-              {children}
-            </thead>
-          ),
-          th: ({ children }: { children?: ReactNode }) => (
-            <th className="border border-border px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide">
-              {children}
-            </th>
-          ),
-          td: ({ children }: { children?: ReactNode }) => (
-            <td className="border border-border px-4 py-2 text-sm align-top">
-              {children}
-            </td>
-          ),
-          tr: ({ children }: { children?: ReactNode }) => (
-            <tr className="hover:bg-muted/50">
-              {children}
-            </tr>
-          ),
-          p: ({ children }: { children?: ReactNode }) => (
-            <p className="mb-3 text-[15px] leading-7 text-foreground">
-              {children}
-            </p>
-          ),
-          ul: ({ children }: { children?: ReactNode }) => (
-            <ul className="my-3 list-disc space-y-1 pl-6 text-foreground">
-              {children}
-            </ul>
-          ),
-          ol: ({ children }: { children?: ReactNode }) => (
-            <ol className="my-3 list-decimal space-y-1 pl-6 text-foreground">
-              {children}
-            </ol>
-          ),
-          li: ({ children }: { children?: ReactNode }) => (
-            <li className="mb-1 wrap-break-word text-foreground">{children}</li>
-          ),
-          blockquote: ({ children }: { children?: ReactNode }) => (
-            <blockquote className="my-2 border-l-4 border-border pl-4 italic text-muted-foreground">
-              {children}
-            </blockquote>
-          ),
-          hr: () => (
-            <div className="my-8 flex items-center">
-              <div className="flex-1 border-t border-border" />
-            </div>
-          ),
-          pre: ({ children }: { children?: ReactNode }) => {
-            const codeElement = children as any
-            const code = codeElement?.props?.children || ""
-            const className = codeElement?.props?.className || ""
-            const match = /language-(\w+)/.exec(className || "")
-            const language = match ? match[1] : "text"
-            return <CodeBlock language={language}>{code}</CodeBlock>
-          },
-        }}
-      >
-        {msg.text}
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
+        {text}
       </ReactMarkdown>
     )
 
-    return msg.role === "user" ? content : (
+    return role === "user" ? content : (
       <div className="prose prose-neutral dark:prose-invert max-w-none min-w-0 overflow-hidden wrap-break-word">
         {content}
       </div>
     )
-  }
+  })
+
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -452,7 +451,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               {msg.role === "user" ? (
                 <div className="group flex max-w-[80%] flex-col items-end gap-1">
                   <div className="btn-gradient px-4 py-3 rounded-2xl rounded-br-sm text-white text-sm shadow-sm transition-all duration-200 [&_p]:text-white [&_li]:text-white [&_ol]:text-white [&_ul]:text-white [&_blockquote]:text-white [&_td]:text-white [&_th]:text-white [&_a]:text-white/90">
-                    {renderContent(msg)}
+                    <MessageBody text={msg.text} role={msg.role} />
                   </div>
 
                   <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
@@ -485,7 +484,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 </div>
               ) : (
                 <div className="flex-1 min-w-0 overflow-hidden text-foreground">
-                  {renderContent(msg)}
+                  <MessageBody text={msg.text} role={msg.role} />
                 </div>
               )}
 
