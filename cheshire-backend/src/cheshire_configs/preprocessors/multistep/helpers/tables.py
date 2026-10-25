@@ -6,21 +6,28 @@ and markdown table formatting.
 import base64
 from io import BytesIO
 import re
-from typing import Any
+from typing import Any, Callable
+import unicodedata
 import warnings
 
+from dateutil.parser import ParserError, parse as datetime_parse
 from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
 from tabulate import tabulate
 
 from .constants import (
+    BOOLEAN_LITERAL_STRINGS,
     COLUMN_SPLIT_RATIO,
     DEFAULT_COL_WIDTH_PX,
     DEFAULT_ROW_HEIGHT_PX,
+    FALLBACK_VALUE_LEN_DIVERGENCE,
+    FALLBACK_VALUE_WORD_DIVERGENCE,
     FOOTER_BOTTOM_MARGIN_RATIO,
     FOOTER_MAX_TOP_RATIO,
     FOOTER_METADATA_PATTERN,
+    HORIZONTAL_TABLE_MIN_ROWS,
+    HORIZONTAL_TABLE_NUM_COLS,
     INDEPENDENT_HEADER_KEYWORDS,
     LAST_COL_RIGHT_PADDING_PX,
     LAST_ROW_BOTTOM_PADDING_PX,
@@ -31,6 +38,7 @@ from .constants import (
     MIN_ICON_OVERLAP_PX,
     MIN_TABLE_CELL_COVERAGE_RATIO,
     MIN_WIDE_TABLE_WIDTH_PX,
+    NLI_ENTAILMENT_THRESHOLD,
     WIDE_TABLE_ASPECT_RATIO,
 )
 from .geometry import _compute_box_overlap, _to_topleft_dict
@@ -201,12 +209,18 @@ def _detect_compound_header_split(
     if len(space_parts) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
         return space_parts[0], space_parts[1]
 
-    # 3. Explicit pipe or slash delimiter surrounded by spaces
-    delim_parts = re.split(r'\s+[|/]\s+', cleaned)
-    if len(delim_parts) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
-        w1, w2 = delim_parts[0].lower(), delim_parts[1].lower()
+    # 3. explicit pipe delimiter surrounded by spaces
+    pipe_parts = re.split(r'\s+\|\s+', cleaned)
+    if len(pipe_parts) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+        return pipe_parts[0], pipe_parts[1]
+
+    # 3b. explicit slash delimiter surrounded by spaces - requires layout picture bias confirmation
+    slash_parts = re.split(r'\s+/\s+', cleaned)
+    if len(slash_parts) == 2 and col_width >= MIN_COMPOUND_COL_WIDTH_PX:
+        w1, w2 = slash_parts[0].lower(), slash_parts[1].lower()
         if w1 not in ("new", "class") and w2 not in ("existing", "module"):
-            return delim_parts[0], delim_parts[1]
+            if has_left_biased_picture or has_right_biased_picture:
+                return slash_parts[0], slash_parts[1]
 
     # 4. Multi-word phrase with an independent keyword suffix confirmed by layout
     words = cleaned.split()
@@ -276,6 +290,194 @@ def _detect_table_column_splits(
             col_splits[c] = split
 
     return col_splits
+
+
+def _infer_cell_value_type(text: str) -> str:
+    """infer primitive type of cell"""
+    val = text.strip()
+    if not val:
+        return "empty"
+
+    # clean currency glyphs and symbols
+    cleaned = "".join(c for c in val if unicodedata.category(c) != "Sc")
+    cleaned = cleaned.replace(",", "").rstrip("%").strip()
+    # strip iso currency code
+    toks = cleaned.split()
+    if len(toks) == 2:
+        if len(toks[0]) <= 4 and toks[0].isalpha():
+            cleaned = toks[1]
+        elif len(toks[1]) <= 4 and toks[1].isalpha():
+            cleaned = toks[0]
+
+    try:
+        float(cleaned)
+        return "numeric"
+    except ValueError:
+        pass
+
+    # check bool
+    if val.lower() in BOOLEAN_LITERAL_STRINGS:
+        return "boolean"
+
+    # parse date
+    if any(sep in val for sep in ("-", "/", ":", "T")) or any(c.isalpha() for c in val):
+        try:
+            datetime_parse(val, fuzzy=False)
+            return "datetime"
+        except (ParserError, ValueError, OverflowError):
+            pass
+
+    return "text"
+
+
+def _classify_with_nli_relation(
+    cell_0: str,
+    cell_1: str,
+    nli_evaluator: Callable[[str, str], float] | None = None,
+) -> bool | None:
+    """nli relation check"""
+    if not cell_0 or not cell_1:
+        return None
+
+    premise = f"The category is {cell_0}."
+    hypothesis = f"{cell_1} is a {cell_0}."
+
+    if nli_evaluator is not None:
+        try:
+            prob = nli_evaluator(premise, hypothesis)
+            return prob >= NLI_ENTAILMENT_THRESHOLD
+        except Exception:
+            pass
+
+    return None
+
+
+def is_horizontal_two_column_table(
+    grid: list[Any],
+    nli_evaluator: Callable[[str, str], float] | None = None,
+) -> bool:
+    """tiered check for horizontal two col table"""
+    if not grid or len(grid) < HORIZONTAL_TABLE_MIN_ROWS:
+        return False
+    if any(len(row) != HORIZONTAL_TABLE_NUM_COLS for row in grid):
+        return False
+
+    num_rows = len(grid)
+    col0_texts = [getattr(row[0], "text", str(row[0])).strip() for row in grid]
+    col1_texts = [getattr(row[1], "text", str(row[1])).strip() for row in grid]
+
+    # tier 1 docling layout
+    row_headers_count = sum(1 for row in grid if getattr(row[0], "row_header", False))
+    if row_headers_count >= 2 and row_headers_count >= (num_rows + 1) // 2:
+        return True
+
+    # tier 1 colons
+    colon_count = sum(1 for t in col0_texts if t.endswith(":") or t.endswith(" -"))
+    if (colon_count >= 1 and num_rows == 2) or (colon_count >= 2 and colon_count >= (num_rows + 1) // 2):
+        return True
+
+    # tier 1 col 0 unique
+    col0_non_empty = [t for t in col0_texts if t]
+    all_col0_unique = len(set(col0_non_empty)) == len(col0_non_empty) == num_rows
+    is_numeric_index = all(t.rstrip(".:-").isdigit() for t in col0_non_empty)
+    if not all_col0_unique or is_numeric_index:
+        return False
+
+    # tier 1 literal value in row 0
+    r0_c1 = col1_texts[0].strip()
+    r0_c1_type = _infer_cell_value_type(r0_c1)
+    if r0_c1_type in ("numeric", "datetime", "boolean"):
+        return True
+
+    # tier 1 complex instance
+    words_r0_c1 = r0_c1.split()
+    is_complex_instance = (
+        len(words_r0_c1) >= 4
+        or len(r0_c1) > 30
+        or any(m in r0_c1 for m in ("http://", "https://", "@", "v0.", "v1.", "v2."))
+        or (any(c.isdigit() for c in r0_c1) and any(c.isalpha() for c in r0_c1) and len(words_r0_c1) >= 2)
+        or r0_c1.endswith(".")
+    )
+    if is_complex_instance:
+        return True
+
+    # tier 1 body type mix
+    body_types = [_infer_cell_value_type(t) for t in col1_texts[1:] if t]
+    if len(set(body_types) - {"empty"}) >= 2:
+        return True
+
+    # tier 2 nli model
+    r0_c0 = col0_texts[0].strip()
+    nli_res = _classify_with_nli_relation(r0_c0, r0_c1, nli_evaluator=nli_evaluator)
+    if nli_res is not None:
+        return nli_res
+
+    # tier 2 fallback length spread on body rows
+    body_c1_lens = [len(t) for t in col1_texts[1:] if t]
+    body_c1_words = [len(t.split()) for t in col1_texts[1:] if t]
+    if body_c1_lens and (max(body_c1_lens) - min(body_c1_lens) >= FALLBACK_VALUE_LEN_DIVERGENCE or max(body_c1_words) - min(body_c1_words) >= FALLBACK_VALUE_WORD_DIVERGENCE):
+        return True
+
+    return False
+
+
+def _is_category_divider_row(
+    row: list[Any],
+    r_idx: int,
+    num_cols: int,
+    cell_bounds: dict[tuple[int, int], dict[str, float]] | None = None,
+    table_w: float | None = None,
+) -> bool:
+    """
+    detects if a data row is a full-width merged category divider,
+    section band, or spanning label (e.g. 'others (specify)', 'subtotals').
+    """
+    if r_idx == 0 or not row or len(row) < 2:
+        return False
+
+    cell0_text = getattr(row[0], "text", str(row[0])).strip()
+    if not cell0_text:
+        return False
+
+    # all cells after column 0 must be empty
+    trailing_cells = row[1:]
+    if any(getattr(c, "text", str(c)).strip() != "" for c in trailing_cells):
+        return False
+
+    # 1. explicit docling col_span
+    col_span = getattr(row[0], "col_span", 1) or 1
+    if col_span >= 2:
+        return True
+
+    # 2. physical bounding box span across majority of table width
+    if cell_bounds and table_w and table_w > 0.0:
+        cb0 = cell_bounds.get((r_idx, 0))
+        if cb0:
+            c0_w = cb0["r"] - cb0["l"]
+            if c0_w >= 0.65 * table_w:
+                return True
+
+    # 3. non-numeric label in tables with 3 or more columns
+    clean0 = cell0_text.rstrip(".:-").strip()
+    is_numeric_index = clean0.isdigit()
+    if len(row) >= 3 and not is_numeric_index:
+        return True
+
+    # 4. two-column table heuristics
+    if len(row) == 2 and not is_numeric_index:
+        if cell0_text.endswith(":"):
+            # trailing colon strongly suggests key-value field awaiting user input
+            return False
+        # check divider patterns or uppercase label
+        lower0 = cell0_text.lower()
+        divider_words = ("other", "others", "specify", "category", "section", "group", "part", "subtotal", "total", "division", "tier", "note")
+        if any(w in lower0 for w in divider_words) or ("(" in cell0_text and ")" in cell0_text):
+            return True
+        words = cell0_text.split()
+        if len(words) >= 2 and cell0_text.isupper():
+            return True
+
+    return False
 
 
 def _table_has_empty_cells(markdown: str) -> bool:
@@ -471,9 +673,9 @@ def _format_cell_with_icons(
                 left_txt = txt
         return [left_txt, right_txt]
 
-    # Non-split standard cell
+    # non-split standard cell
     txt = _sanitize_table_cell_text(cell_text)
-    if not is_header_row and has_cell_bounds:
+    if (not is_header_row or not txt) and has_cell_bounds:
         for p in pics:
             if not p.prov:
                 continue
@@ -493,11 +695,37 @@ def _format_table_row_cells(
     cell_bounds: dict[tuple[int, int], dict[str, float]],
     pics: list[Any],
     page_h: float,
+    table_w: float | None = None,
+    total_cols: int | None = None,
 ) -> list[str]:
     """
-    Renders all cells of a table row into a list of cell string contents,
+    renders all cells of a table row into a list of cell string contents,
     expanding any compound columns and resolving embedded icons.
     """
+    # handle full-width category divider rows
+    if not is_header_row and _is_category_divider_row(row, r_idx, len(row), cell_bounds, table_w):
+        cb = cell_bounds.get(
+            (r_idx, 0),
+            {"l": 0.0, "r": DEFAULT_COL_WIDTH_PX, "t": 0.0, "b": DEFAULT_ROW_HEIGHT_PX}
+        )
+        has_bounds = (r_idx, 0) in cell_bounds
+        split = col_splits.get(0)
+        cell_txt = getattr(row[0], "text", str(row[0]))
+        formatted = _format_cell_with_icons(
+            cell_text=cell_txt,
+            cell_box=cb,
+            has_cell_bounds=has_bounds,
+            pics=pics,
+            page_h=page_h,
+            is_header_row=False,
+            col_split=split,
+        )
+        row_cells = list(formatted)
+        expected_cols = total_cols if total_cols is not None else (len(row) + len(col_splits))
+        while len(row_cells) < expected_cols:
+            row_cells.append("[Section Divider]")
+        return row_cells
+
     row_cells: list[str] = []
     for c_idx, cell in enumerate(row):
         cb = cell_bounds.get(
@@ -598,33 +826,49 @@ def _detect_document_footer_top(doc: DoclingDocument, page_h: float) -> float:
                     if ratio >= 0.50:
                         candidates.append(ratio * page_h)
 
-    # 2. Inspect text and standalone table elements matching FOOTER_METADATA_PATTERN in lower half
-    if not candidates:
-        for collection_name in ("texts", "tables"):
-            for item in getattr(doc, collection_name, []):
-                prov = item.prov[0] if getattr(item, "prov", None) else None
-                if prov and prov.bbox:
-                    p_no = prov.page_no
-                    item_page = doc.pages.get(p_no) if hasattr(doc, "pages") else None
-                    item_page_h = item_page.size.height if item_page and item_page.size else page_h
-                    if item_page_h > 0.0:
+    # 2. Inspect text and table elements matching FOOTER_METADATA_PATTERN in lower half
+    for collection_name in ("texts", "tables"):
+        for item in getattr(doc, collection_name, []):
+            prov = item.prov[0] if getattr(item, "prov", None) else None
+            if prov and prov.bbox:
+                p_no = prov.page_no
+                item_page = doc.pages.get(p_no) if hasattr(doc, "pages") else None
+                item_page_h = item_page.size.height if item_page and item_page.size else page_h
+                if item_page_h > 0.0:
+                    if collection_name == "tables":
                         grid = getattr(getattr(item, "data", None), "grid", None)
-                        # Multi-row tables that absorbed a footer should not use the whole table's top bbox
-                        if collection_name == "tables" and grid and len(grid) > 2:
+                        if not grid:
                             continue
-                        tb = _to_topleft_dict(prov.bbox, item_page_h)
-                        ratio = tb["t"] / item_page_h
-                        if ratio >= 0.50:
-                            txt = getattr(item, "text", "")
-                            if not txt:
-                                if grid:
-                                    txt = " ".join(getattr(c, "text", str(c)) for row in grid for c in row)
-                                elif hasattr(item, "export_to_markdown"):
-                                    try:
-                                        txt = item.export_to_markdown(doc=doc)
-                                    except Exception:
-                                        txt = ""
-                            if txt and FOOTER_METADATA_PATTERN.search(txt):
+                        # If row 0 matches footer metadata, whole table is a dedicated footer table
+                        row0_txt = " ".join(getattr(c, "text", str(c)) for c in grid[0])
+                        if FOOTER_METADATA_PATTERN.search(row0_txt):
+                            tb = _to_topleft_dict(prov.bbox, item_page_h)
+                            ratio = tb["t"] / item_page_h
+                            if ratio >= 0.50:
+                                candidates.append(ratio * page_h)
+                        elif len(grid) <= 2:
+                            all_txt = " ".join(getattr(c, "text", str(c)) for row in grid for c in row)
+                            if FOOTER_METADATA_PATTERN.search(all_txt):
+                                tb = _to_topleft_dict(prov.bbox, item_page_h)
+                                ratio = tb["t"] / item_page_h
+                                if ratio >= 0.50:
+                                    candidates.append(ratio * page_h)
+                        else:
+                            # Multi-row content table: check if trailing row is an absorbed footer
+                            last_row_txt = " ".join(getattr(c, "text", str(c)) for c in grid[-1])
+                            if FOOTER_METADATA_PATTERN.search(last_row_txt):
+                                cell_bboxes = [getattr(c, "bbox", None) for c in grid[-1] if getattr(c, "bbox", None) is not None]
+                                if cell_bboxes:
+                                    last_row_t = min(_to_topleft_dict(b, item_page_h)["t"] for b in cell_bboxes)
+                                    ratio = last_row_t / item_page_h
+                                    if ratio >= 0.50:
+                                        candidates.append(ratio * page_h)
+                    else:
+                        txt = getattr(item, "text", "")
+                        if txt and FOOTER_METADATA_PATTERN.search(txt):
+                            tb = _to_topleft_dict(prov.bbox, item_page_h)
+                            ratio = tb["t"] / item_page_h
+                            if ratio >= 0.50:
                                 candidates.append(ratio * page_h)
 
     if candidates:
@@ -704,6 +948,8 @@ def _format_table_markdown(
     page = doc.pages.get(page_no) if page_no != -1 else None
     page_h = page.size.height if page and page.size else 0.0
     pics = [p for p in doc.pictures if p.prov and p.prov[0].page_no == page_no] if page_no != -1 else []
+    table_box = _to_topleft_dict(prov.bbox, page_h) if (prov and prov.bbox and page_h > 0.0) else None
+    table_w = (table_box["r"] - table_box["l"]) if table_box else None
 
     has_col_headers = any(getattr(cell, "column_header", False) for cell in grid[0])
     cell_bounds = _get_table_cell_bounds(table_item, page_h) if page_h > 0 else {}
@@ -712,11 +958,30 @@ def _format_table_markdown(
 
     footer_top = _detect_document_footer_top(doc, page_h) if doc and page_h > 0.0 else None
 
-    # Prune trailing footer rows accidentally absorbed into table
+    # prune trailing footer rows accidentally absorbed into table
     while len(grid) > 1 and _is_table_footer_row(grid[-1], len(grid) - 1, cell_bounds, page_h, footer_top=footer_top):
         grid = grid[:-1]
 
-    # Format continuation table lacking headers
+    # check if table is a horizontal property/key-value table
+    if is_horizontal_two_column_table(grid):
+        table_rows = [
+            _format_table_row_cells(
+                row=row,
+                r_idx=r_idx,
+                is_header_row=False,
+                col_splits={},
+                cell_bounds=cell_bounds,
+                pics=pics,
+                page_h=page_h,
+                table_w=table_w,
+                total_cols=2,
+            )
+            for r_idx, row in enumerate(grid)
+        ]
+        text = tabulate(table_rows, headers=["Property", "Value"], tablefmt="github", disable_numparse=True)
+        return _extract_header_from_table_text(text, last_header, is_continuation)
+
+    # format continuation table lacking headers
     if is_continuation and not has_col_headers and last_header:
         data_rows = [
             "| " + " | ".join(
@@ -728,6 +993,7 @@ def _format_table_markdown(
                     cell_bounds=cell_bounds,
                     pics=pics,
                     page_h=page_h,
+                    table_w=table_w,
                 )
             ) + " |"
             for r_idx, row in enumerate(grid)
@@ -735,8 +1001,9 @@ def _format_table_markdown(
         text = last_header + "\n" + "\n".join(data_rows)
         return text, last_header
 
-    # Standard table (or continuation with headers)
+    # standard table (or continuation with headers)
     table_rows: list[list[str]] = []
+    total_cols = len(grid[0]) + len(col_splits) if len(grid) > 0 else 0
     for r_idx, row in enumerate(grid):
         is_header = (r_idx == 0) or all(getattr(cell, "column_header", False) for cell in row)
         row_cells = _format_table_row_cells(
@@ -747,6 +1014,8 @@ def _format_table_markdown(
             cell_bounds=cell_bounds,
             pics=pics,
             page_h=page_h,
+            table_w=table_w,
+            total_cols=total_cols,
         )
         table_rows.append(row_cells)
 

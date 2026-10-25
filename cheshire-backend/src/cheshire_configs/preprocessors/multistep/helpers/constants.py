@@ -51,9 +51,27 @@ FOOTER_METADATA_PATTERN: re.Pattern[str] = re.compile(
     r"|document\s+title\s*:"
     r"|doc\s+title\s*:"
     r"|document\s+id\s*:"
+    r"|document\s+version\s*:"
+    r"|doc\s+version\s*:"
+    r"|document\s+status\s*:"
+    r"|doc\s+status\s*:"
+    r"|controlled\s+document\b"
     r"|page\s+no\.?\s*:"
-    r"|page\s+\d+\s+of\s+\d+"
+    r"|page\s+\d+(\s+of\s+\d+)?\b"
     r"|all\s+rights\s+reserved"
+    r"|copyright\b"
+    r"|©"
     r"|proprietary\b"
     r")"
 )
+
+# horizontal table classification thresholds
+HORIZONTAL_TABLE_MIN_ROWS: int = 2
+HORIZONTAL_TABLE_NUM_COLS: int = 2
+NLI_ENTAILMENT_THRESHOLD: float = 0.5
+FALLBACK_VALUE_LEN_DIVERGENCE: int = 12
+FALLBACK_VALUE_WORD_DIVERGENCE: int = 2
+BOOLEAN_LITERAL_STRINGS: frozenset[str] = frozenset({
+    "true", "false", "yes", "no", "n/a", "none",
+})
+

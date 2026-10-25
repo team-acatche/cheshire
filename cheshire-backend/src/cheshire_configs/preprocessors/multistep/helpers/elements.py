@@ -144,8 +144,8 @@ def _build_element_lookup(
 
         label: str = _get_item_label(item)
 
-        # Skip decorative page elements (headers, footers)
-        if label in ("picture", "page_header", "page_footer"):
+        # Skip decorative page elements (headers, footers, page numbers)
+        if label in ("picture", "page_header", "page_footer", "page_number", "footnote"):
             continue
 
         # Track section boundaries to scope continuation headers
