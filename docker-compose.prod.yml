@@ -1,0 +1,60 @@
+# Production stack. Run with:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Only the frontend (nginx) is published, on host port 6000 → container port 80.
+# The backend and Qdrant are reachable only on the internal Docker network.
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.4   # pin a version; avoid :latest in production
+    container_name: cheshire-qdrant
+    restart: unless-stopped
+    volumes:
+      - ~/.cheshire/qdrant:/qdrant/storage
+    networks:
+      - cheshire
+
+  cheshire-backend:
+    build:
+      context: ./cheshire-backend
+      dockerfile: Dockerfile
+    container_name: cheshire-backend
+    restart: unless-stopped
+    environment:
+      - CHESHIRE_DATA_PATH=/data
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Set to "true" ONLY when users reach the site over HTTPS
+      # (e.g. behind a Cloudflare Tunnel / TLS proxy). On plain http://host:6000
+      # a Secure cookie is dropped by the browser and login will appear to fail.
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
+    env_file:
+      - path: ./cheshire-backend/.env
+        required: true
+      - path: ./cheshire-backend/.env.user
+        required: false
+    expose:
+      - "8000"
+    volumes:
+      - ~/.cheshire:/data
+    depends_on:
+      - qdrant
+    networks:
+      - cheshire
+
+  cheshire-frontend:
+    build:
+      context: ./cheshire-frontend
+      dockerfile: Dockerfile
+      target: production
+    container_name: cheshire-frontend
+    restart: unless-stopped
+    ports:
+      - "6000:80"
+    depends_on:
+      - cheshire-backend
+    networks:
+      - cheshire
+
+networks:
+  cheshire:
+    driver: bridge
