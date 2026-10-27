@@ -74,4 +74,8 @@ FALLBACK_VALUE_WORD_DIVERGENCE: int = 2
 BOOLEAN_LITERAL_STRINGS: frozenset[str] = frozenset({
     "true", "false", "yes", "no", "n/a", "none",
 })
+# model and sim thresh for table check
+FASTEMBED_TABLE_MODEL: str = "BAAI/bge-small-en-v1.5"
+FASTEMBED_TABLE_SIMILARITY_THRESHOLD: float = 0.60
+
 

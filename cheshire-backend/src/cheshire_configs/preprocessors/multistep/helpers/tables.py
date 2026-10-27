@@ -14,6 +14,7 @@ from dateutil.parser import ParserError, parse as datetime_parse
 from docling.datamodel.document import ConversionResult
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
+import numpy as np
 from tabulate import tabulate
 
 from .constants import (
@@ -23,6 +24,8 @@ from .constants import (
     DEFAULT_ROW_HEIGHT_PX,
     FALLBACK_VALUE_LEN_DIVERGENCE,
     FALLBACK_VALUE_WORD_DIVERGENCE,
+    FASTEMBED_TABLE_MODEL,
+    FASTEMBED_TABLE_SIMILARITY_THRESHOLD,
     FOOTER_BOTTOM_MARGIN_RATIO,
     FOOTER_MAX_TOP_RATIO,
     FOOTER_METADATA_PATTERN,
@@ -330,6 +333,58 @@ def _infer_cell_value_type(text: str) -> str:
     return "text"
 
 
+_FASTEMBED_MODEL: Any = None
+
+
+def _get_fastembed_model() -> Any:
+    # load fastembed model once
+    global _FASTEMBED_MODEL
+    if _FASTEMBED_MODEL is None:
+        try:
+            from fastembed import TextEmbedding
+
+            _FASTEMBED_MODEL = TextEmbedding(model_name=FASTEMBED_TABLE_MODEL)
+        except Exception:
+            _FASTEMBED_MODEL = None
+    return _FASTEMBED_MODEL
+
+
+def _compute_cosine_similarity(v1: Any, v2: Any) -> float:
+    # cosine sim between vectors
+    vector_norms = np.linalg.norm(v1) * np.linalg.norm(v2)
+    return float(np.dot(v1, v2) / vector_norms) if vector_norms > 0 else 0.0
+
+
+def _classify_with_fastembed(
+    cell_0: str,
+    cell_1: str,
+    embedder: Any = None,
+) -> bool | None:
+    # check similarity using fastembed
+    if not cell_0 or not cell_1:
+        return None
+
+    try:
+        if embedder is not None:
+            if callable(embedder):
+                sim = float(embedder(cell_0, cell_1))
+            elif hasattr(embedder, "embed"):
+                embs = list(embedder.embed([cell_0, cell_1]))
+                sim = _compute_cosine_similarity(embs[0], embs[1])
+            else:
+                return None
+        else:
+            model = _get_fastembed_model()
+            if model is None or not hasattr(model, "embed"):
+                return None
+            embs = list(model.embed([cell_0, cell_1]))
+            sim = _compute_cosine_similarity(embs[0], embs[1])
+
+        return sim < FASTEMBED_TABLE_SIMILARITY_THRESHOLD
+    except Exception:
+        return None
+
+
 def _classify_with_nli_relation(
     cell_0: str,
     cell_1: str,
@@ -354,6 +409,7 @@ def _classify_with_nli_relation(
 
 def is_horizontal_two_column_table(
     grid: list[Any],
+    embedder: Any = None,
     nli_evaluator: Callable[[str, str], float] | None = None,
 ) -> bool:
     """tiered check for horizontal two col table"""
@@ -406,11 +462,16 @@ def is_horizontal_two_column_table(
     if len(set(body_types) - {"empty"}) >= 2:
         return True
 
-    # tier 2 nli model
+    # tier 2 model check
     r0_c0 = col0_texts[0].strip()
-    nli_res = _classify_with_nli_relation(r0_c0, r0_c1, nli_evaluator=nli_evaluator)
-    if nli_res is not None:
-        return nli_res
+    if nli_evaluator is not None:
+        nli_res = _classify_with_nli_relation(r0_c0, r0_c1, nli_evaluator=nli_evaluator)
+        if nli_res is not None:
+            return nli_res
+    else:
+        fe_res = _classify_with_fastembed(r0_c0, r0_c1, embedder=embedder)
+        if fe_res is not None:
+            return fe_res
 
     # tier 2 fallback length spread on body rows
     body_c1_lens = [len(t) for t in col1_texts[1:] if t]

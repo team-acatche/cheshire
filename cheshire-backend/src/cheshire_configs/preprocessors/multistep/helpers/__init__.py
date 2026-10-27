@@ -47,6 +47,8 @@ from .constants import (
     BOOLEAN_LITERAL_STRINGS,
     FALLBACK_VALUE_LEN_DIVERGENCE,
     FALLBACK_VALUE_WORD_DIVERGENCE,
+    FASTEMBED_TABLE_MODEL,
+    FASTEMBED_TABLE_SIMILARITY_THRESHOLD,
     HORIZONTAL_TABLE_MIN_ROWS,
     HORIZONTAL_TABLE_NUM_COLS,
     MIN_TABLE_CELL_COVERAGE_RATIO,
@@ -94,7 +96,9 @@ from .tables import (
     _table_has_empty_cells,
     _table_needs_visual_crop,
     _infer_cell_value_type,
+    _classify_with_fastembed,
     _classify_with_nli_relation,
+    _compute_cosine_similarity,
     is_horizontal_two_column_table,
 )
 
@@ -121,6 +125,8 @@ __all__ = [
     "HORIZONTAL_TABLE_MIN_ROWS",
     "HORIZONTAL_TABLE_NUM_COLS",
     "NLI_ENTAILMENT_THRESHOLD",
+    "FASTEMBED_TABLE_MODEL",
+    "FASTEMBED_TABLE_SIMILARITY_THRESHOLD",
     "FALLBACK_VALUE_LEN_DIVERGENCE",
     "FALLBACK_VALUE_WORD_DIVERGENCE",
     "BOOLEAN_LITERAL_STRINGS",
@@ -152,7 +158,9 @@ __all__ = [
     "_is_category_divider_row",
     "_is_table_footer_row",
     "_infer_cell_value_type",
+    "_classify_with_fastembed",
     "_classify_with_nli_relation",
+    "_compute_cosine_similarity",
     "is_horizontal_two_column_table",
     # Elements
     "_build_figure_lookup",
