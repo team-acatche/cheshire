@@ -16,6 +16,8 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     _table_has_empty_cells,
     _table_needs_visual_crop,
     build_document_index,
+    _classify_with_fastembed,
+    _compute_cosine_similarity,
     is_horizontal_two_column_table,
 )
 
@@ -671,6 +673,80 @@ def test_format_table_markdown_prunes_mixed_absorbed_footer_rows():
     # Both absorbed footer rows pruned
     assert "SPEC-2024" not in md
     assert "Strictly Confidential" not in md
+
+
+def test_classify_with_fastembed_unit():
+    """test fastembed similarity check"""
+    # empty cells return none
+    assert _classify_with_fastembed("", "test") is None
+    assert _classify_with_fastembed("test", "") is None
+
+    # mock callable low sim means horizontal
+    assert _classify_with_fastembed("a", "b", embedder=lambda x, y: 0.3) is True
+    # mock callable high sim means vertical
+    assert _classify_with_fastembed("a", "b", embedder=lambda x, y: 0.8) is False
+
+    # mock object with embed method
+    class MockEmbedder:
+        def embed(self, texts):
+            # return orthogonal or identical vectors
+            if texts[0] == "x":
+                return [[1.0, 0.0], [0.0, 1.0]]  # sim = 0.0
+            return [[1.0, 0.0], [1.0, 0.0]]  # sim = 1.0
+
+    assert _classify_with_fastembed("x", "y", embedder=MockEmbedder()) is True
+    assert _classify_with_fastembed("a", "b", embedder=MockEmbedder()) is False
+
+    # invalid embedder fails safely to none
+    assert _classify_with_fastembed("a", "b", embedder=123) is None
+
+
+def test_is_horizontal_two_column_table_fastembed_mock():
+    """test table orientation with mocked embedder"""
+    grid_h = [
+        [MockCell("Contributor"), MockCell("John")],
+        [MockCell("Sub-contributor"), MockCell("Alex")],
+    ]
+    # low similarity indicates horizontal
+    assert is_horizontal_two_column_table(grid_h, embedder=lambda x, y: 0.4) is True
+
+    grid_v = [
+        [MockCell("Country"), MockCell("Capital")],
+        [MockCell("France"), MockCell("Paris")],
+    ]
+    # high similarity indicates vertical
+    assert is_horizontal_two_column_table(grid_v, embedder=lambda x, y: 0.75) is False
+
+
+def test_is_horizontal_two_column_table_fastembed_real():
+    """test real fastembed model on sample tables"""
+    # horizontal property table
+    grid_h = [
+        [MockCell("Contributor"), MockCell("John")],
+        [MockCell("Sub-contributor"), MockCell("Alex")],
+    ]
+    assert is_horizontal_two_column_table(grid_h) is True
+
+    # vertical data table
+    grid_v = [
+        [MockCell("First Name"), MockCell("Last Name")],
+        [MockCell("John"), MockCell("Doe")],
+    ]
+    assert is_horizontal_two_column_table(grid_v) is False
+
+
+def test_compute_cosine_similarity():
+    """test cosine similarity helper"""
+    # identical vectors
+    assert abs(_compute_cosine_similarity([1.0, 2.0], [1.0, 2.0]) - 1.0) < 1e-5
+    # orthogonal vectors
+    assert abs(_compute_cosine_similarity([1.0, 0.0], [0.0, 1.0])) < 1e-5
+    # opposite vectors
+    assert abs(_compute_cosine_similarity([1.0, 0.0], [-1.0, 0.0]) - (-1.0)) < 1e-5
+    # zero vector returns zero
+    assert _compute_cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+
+
 
 
 
