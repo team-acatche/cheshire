@@ -28,6 +28,7 @@ import {
   X,
   Ban,
   RotateCw,
+  ClipboardList,
 } from "lucide-react"
 
 import { BadgeQuestionMark } from "lucide-react"
@@ -64,6 +65,7 @@ interface ChatPageProps {
   onOpenSettings: () => void
   onCancelChat?: (chat: Chat) => void
   onRerunChat?: (chat: Chat) => void
+  onOpenReport?: (chat: Chat) => void
 }
 
 
@@ -82,6 +84,7 @@ export default function ChatPage({
   onOpenSettings,
   onCancelChat,
   onRerunChat,
+  onOpenReport,
 }: ChatPageProps) {
   const safeChats = Array.isArray(chats) ? chats : []
   const { isMobile, setOpenMobile } = useSidebar()
@@ -186,6 +189,7 @@ export default function ChatPage({
                 const isProcessing = chat.status === "processing"
                 const isFailed     = chat.status === "failed"
                 const isCancelled  = chat.status === "cancelled"
+                const isDone       = chat.status === "done"
                 const isUnavailable = isFailed
                 return (
                   <div
@@ -276,6 +280,19 @@ export default function ChatPage({
                             </div>
 
                             <DropdownMenuSeparator />
+
+                            {isDone && onOpenReport && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={(e) => { e.stopPropagation(); onOpenReport(chat); closeOnMobile() }}
+                                  className="cursor-pointer"
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Assessment report
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                              </>
+                            )}
 
                             {isCancelled && onRerunChat && (
                               <>
