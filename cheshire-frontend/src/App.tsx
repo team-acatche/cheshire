@@ -34,6 +34,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import Account from "./components/account"
+import ReportPage from "./components/report/ReportPage"
 import SettingsModal from "./components/settings-modal"
 import { toast } from "sonner"
 import { CancelEvaluationDialog } from "@/components/chat/CancelEvaluationDialog"
@@ -106,6 +107,7 @@ interface AppProps {
 }
 
 type MobileTab = "document" | "chat"
+type AppPage = "chat" | "account" | "report"
 
 const MOBILE_TABS: { id: MobileTab; label: string; icon: typeof FileText }[] = [
   { id: "document", label: "Document", icon: FileText },
@@ -133,7 +135,7 @@ export default function App({ user, onLogout }: AppProps) {
   const [chatsLoading, setChatsLoading] = useState(true)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
-  const [page, setPage] = useState<"chat" | "account">("chat")
+  const [page, setPage] = useState<AppPage>("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [chatToCancel, setChatToCancel] = useState<Chat | null>(null)
   const [mobileTab, setMobileTab] = useState<MobileTab>("document")
@@ -338,6 +340,18 @@ export default function App({ user, onLogout }: AppProps) {
     }
   }
 
+  // Opens the assessment report for a finished document. If it isn't the open
+  // document yet, it is loaded first (the report shows a skeleton meanwhile).
+  const handleOpenReport = async (chat: Chat) => {
+    if (currentSessionIdRef.current === chat.session_id && !findingsLoading) {
+      setPage("report")
+      return
+    }
+    const loading = handleSelectChat(chat) // sets page to "chat" synchronously...
+    setPage("report")                      // ...so this must come after it
+    await loading
+  }
+
   const touchChat = (sessionId: string) => {
     const now = new Date().toISOString()
     setChats(prev =>
@@ -487,7 +501,9 @@ export default function App({ user, onLogout }: AppProps) {
   )
 
   const mobileTitle =
-    page === "account" ? "Account" : file ? currentFileName : "Cheshire"
+    page === "account" ? "Account"
+    : page === "report" ? "Assessment report"
+    : file ? currentFileName : "Cheshire"
 
   // Shared props for the document viewer (desktop panel and mobile tab)
   const documentPreview = (
@@ -538,6 +554,7 @@ export default function App({ user, onLogout }: AppProps) {
         onOpenSettings={() => setSettingsOpen(true)}
         onCancelChat={(chat) => setChatToCancel(chat)}
         onRerunChat={handleRerunChat}
+        onOpenReport={handleOpenReport}
       />
 
       <SettingsModal
@@ -570,6 +587,19 @@ export default function App({ user, onLogout }: AppProps) {
               user={user}
               chats={chats}
               onSelectChat={handleSelectChat}
+              onClose={() => setPage("chat")}
+            />
+          </div>
+        ) : page === "report" && currentSessionId ? (
+          <div className="min-h-0 flex-1 overflow-hidden md:h-dvh md:flex-none">
+            <ReportPage
+              key={currentSessionId}
+              sessionId={currentSessionId}
+              documentName={currentFileName}
+              findings={findings}
+              loading={findingsLoading}
+              user={user}
+              fallbackAssessedAt={currentChat?.latestTimestamp ?? null}
               onClose={() => setPage("chat")}
             />
           </div>
