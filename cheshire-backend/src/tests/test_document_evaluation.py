@@ -20,7 +20,7 @@ from knowledge_base.history import EventType, SqliteEventRepository
 from knowledge_base.session_manager import Session, SessionStatus, SqliteSessionRepository
 from tools.helpers.output_schema import VulnerabilityDetails
 
-# Override the registry dependencies to avoid real model initialization.
+# override the registry dependencies to avoid real model initialization.
 mock_config = PipelineConfig(
     model=MagicMock(),
     tools=[],
@@ -58,7 +58,7 @@ client = TestClient(api)
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# helpers
 # ---------------------------------------------------------------------------
 
 def _make_pdf_bytes() -> bytes:
@@ -128,7 +128,7 @@ PDF_BYTES = _make_pdf_bytes()
 
 
 # ---------------------------------------------------------------------------
-# Tests — POST /evaluate (submission)
+# tests — post /evaluate (submission)
 # ---------------------------------------------------------------------------
 
 class TestEvaluateSubmission:
@@ -168,7 +168,7 @@ class TestEvaluateSubmission:
         assert session.title == "test.pdf"
         assert session.status == SessionStatus.PENDING
 
-        # The worker receives the persisted document path
+        # the worker receives the persisted document path
         assert mock_run.call_args.kwargs["document_path"] == saved[0]
         assert mock_run.call_args.kwargs["session_id"] == session_id
 
@@ -189,11 +189,10 @@ class TestEvaluateSubmission:
     @patch("endpoints.evaluate._run_evaluation")
     def test_filename_fallback(self, mock_run, tmp_path: Path):
         """An unusual filename doesn't crash the endpoint."""
-        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path):
-            response = client.post(
-                "/api/v1/evaluate",
-                files={"uploaded_document": ("upload.pdf", PDF_BYTES, "application/pdf")},
-            )
+        response = client.post(
+            "/api/v1/evaluate",
+            files={"uploaded_document": ("upload-special !@#$.pdf", PDF_BYTES, "application/pdf")},
+        )
         assert response.status_code == status.HTTP_202_ACCEPTED
         assert response.json()["status"] == "pending"
         mock_run.assert_called_once()
@@ -248,7 +247,7 @@ class TestRequestValidation:
 
 
 # ---------------------------------------------------------------------------
-# Tests — _run_evaluation (background worker)
+# tests — _run_evaluation (background worker)
 # ---------------------------------------------------------------------------
 
 class TestBackgroundEvaluation:
@@ -400,7 +399,7 @@ class TestBackgroundEvaluation:
 
 
 # ---------------------------------------------------------------------------
-# Tests — GET /{session_id}/result (serving persisted findings)
+# tests — get /{session_id}/result (serving persisted findings)
 # ---------------------------------------------------------------------------
 
 class TestGetResults:
@@ -432,7 +431,7 @@ class TestGetResults:
         titles = {item["title"] for item in data}
         assert titles == {"Vuln A", "Vuln B"}
 
-        # Verify all expected fields are present
+        # verify all expected fields are present
         for item in data:
             assert "title" in item
             assert "description" in item
@@ -460,7 +459,7 @@ class TestGetResults:
 
 
 # ---------------------------------------------------------------------------
-# Tests — GET /{session_id}/status
+# tests — get /{session_id}/status
 # ---------------------------------------------------------------------------
 
 @pytest.fixture

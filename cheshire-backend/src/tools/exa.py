@@ -30,13 +30,13 @@ web_search = ComponentTool(
         type="auto",
     ),
     name="web_search",
-    description="Search the web using Exa for software deprecation status, release dates, and official documentation.",
+    description="Search the web using Exa for external facts, industry classifications, standards, regulations, software deprecation status, and official documentation.",
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query to verify software deprecation or documentation.",
+                "description": "The search query to verify external facts, classifications, standards, regulations, or documentation.",
             },
         },
         "required": ["query"],

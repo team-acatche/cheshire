@@ -108,6 +108,16 @@ def add_local_finding(
         _finding = LocalFinding.model_validate(finding)
     else:
         _finding = finding
+
+    finding_recs = getattr(_finding, "recommendations", None)
+    if finding_recs is None and isinstance(_finding, dict):
+        finding_recs = _finding.get("recommendations")
+    if not finding_recs or not any(str(r).strip() for r in finding_recs):
+        raise ValueError(
+            "Field 'recommendations' is mandatory when recording findings. "
+            "Please provide at least one concrete, actionable recommendation."
+        )
+
     return {"finding": _finding}
 
 def accept_local_finding(
@@ -164,6 +174,16 @@ def accept_local_finding(
         _finding = LocalFinding.model_validate(finding)
     else:
         _finding = finding
+
+    finding_recs = getattr(_finding, "recommendations", None)
+    if finding_recs is None and isinstance(_finding, dict):
+        finding_recs = _finding.get("recommendations")
+    if not finding_recs or not any(str(r).strip() for r in finding_recs):
+        raise ValueError(
+            "Field 'recommendations' is mandatory when accepting findings. "
+            "Please provide at least one concrete, actionable recommendation."
+        )
+
     return {"finding": _finding}
 
 SEVERITY_ORDER = {
