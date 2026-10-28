@@ -78,4 +78,19 @@ BOOLEAN_LITERAL_STRINGS: frozenset[str] = frozenset({
 FASTEMBED_TABLE_MODEL: str = "BAAI/bge-small-en-v1.5"
 FASTEMBED_TABLE_SIMILARITY_THRESHOLD: float = 0.60
 
+# ==============================================================================
+# EVALUATOR COMPLIANCE & ATTACHMENT POLICIES
+# ==============================================================================
+# Controls whether figures or content referenced via file attachments or external
+# links are assumed to be compliant without opening or auditing external sources.
+# - Set to True (default): Evaluator assumes external attachments/links are perfectly
+#   compliant, and does not open them. Only figures embedded directly in the document
+#   are scrutinized.
+# - Set to False: Evaluator is instructed to inspect external attachments/links or
+#   flag unverified external references.
+# NOTE FOR DEVELOPERS: Adjust this setting if policy changes to require inspecting
+# external attachments.
+ASSUME_EXTERNAL_ATTACHMENTS_COMPLIANT: bool = True
+
+
 
