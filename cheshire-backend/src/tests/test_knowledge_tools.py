@@ -58,7 +58,85 @@ class TestUpsertFact:
         UUID(doc.id)  # raises if not valid
         assert "knowledge_id" not in doc.meta
         assert doc.meta["session_id"] == str(mock_state.session_id)
-        assert doc.meta["is_global"] is False
+        assert doc.meta["is_global"] is True
+        assert doc.meta["source"] == "user_asserted"
+
+    def test_new_fact_with_explicit_rule_nature_global(self, mock_state):
+        # explicit global rule nature
+        mock_state.knowledge_base.search.return_value = []
+        upsert_fact.invoke(facts=["custom global requirement"], rule_nature="global")
+
+        save_call = mock_state.knowledge_base.save.call_args
+        docs = save_call.args[0] if save_call.args else save_call.kwargs.get("documents", [])
+        assert len(docs) == 1
+        assert docs[0].meta["rule_nature"] == "global"
+        assert docs[0].meta["source"] == "user_asserted"
+        assert docs[0].meta["is_global"] is True
+
+    def test_new_fact_with_explicit_rule_nature_local(self, mock_state):
+        # explicit local rule nature
+        mock_state.knowledge_base.search.return_value = []
+        upsert_fact.invoke(facts=["custom local requirement"], rule_nature="local")
+
+        save_call = mock_state.knowledge_base.save.call_args
+        docs = save_call.args[0] if save_call.args else save_call.kwargs.get("documents", [])
+        assert len(docs) == 1
+        assert docs[0].meta["rule_nature"] == "local"
+        assert docs[0].meta["source"] == "user_asserted"
+        assert docs[0].meta["is_global"] is True
+
+    def test_new_fact_inferred_rule_nature_when_omitted(self, mock_state):
+        # rule nature inferred from content when omitted
+        mock_state.knowledge_base.search.return_value = []
+        upsert_fact.invoke(facts=[
+            "The document must contain an Architecture Overview",
+            "All passwords must be hashed with Argon2id",
+        ])
+
+        save_call = mock_state.knowledge_base.save.call_args
+        docs = save_call.args[0] if save_call.args else save_call.kwargs.get("documents", [])
+        assert len(docs) == 2
+        assert docs[0].meta["rule_nature"] == "global"
+        assert docs[1].meta["rule_nature"] == "local"
+
+    def test_update_similar_fact_sets_user_asserted_source_and_global(self, mock_state):
+        # updating similar fact should set source to user_asserted
+        existing = Document(
+            id="existing-1",
+            content="The sky is somewhat blue",
+            score=0.85,
+            meta={"source": "global_rules.json", "is_global": True},
+        )
+        mock_state.knowledge_base.search.return_value = [existing]
+
+        upsert_fact.invoke(facts=["The sky is very blue"], rule_nature="local")
+
+        save_call = mock_state.knowledge_base.save.call_args
+        docs = save_call.args[0] if save_call.args else save_call.kwargs.get("documents", [])
+        assert len(docs) == 1
+        assert docs[0].meta["source"] == "user_asserted"
+        assert docs[0].meta["is_global"] is True
+        assert docs[0].meta["rule_nature"] == "local"
+        assert docs[0].content == "The sky is very blue"
+
+    def test_correct_known_incorrect_doc_sets_user_asserted_source_and_global(self, mock_state):
+        # replacing by id should set source to user_asserted
+        existing = Document(
+            id="abc-123",
+            content="old content",
+            meta={"source": "global_rules.json", "is_global": True},
+        )
+        mock_state.knowledge_base.query.return_value = [existing]
+
+        upsert_fact.invoke(facts=["corrected content"], incorrect_fact_knowledge_id="abc-123", rule_nature="global")
+
+        save_call = mock_state.knowledge_base.save.call_args
+        docs = save_call.args[0] if save_call.args else save_call.kwargs.get("documents", [])
+        assert len(docs) == 1
+        assert docs[0].meta["source"] == "user_asserted"
+        assert docs[0].meta["is_global"] is True
+        assert docs[0].meta["rule_nature"] == "global"
+        assert docs[0].content == "corrected content"
 
     def test_incorrect_fact_lookup_uses_id_field(self, mock_state):
         """When incorrect_fact_knowledge_id is given, the filter should use 'id'."""

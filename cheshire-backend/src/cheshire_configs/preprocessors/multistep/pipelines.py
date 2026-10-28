@@ -18,14 +18,107 @@ from cheshire_configs.preprocessors.multistep.components.findings_parser import 
 
 from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding, merge_findings
 
-from typing import cast
+import re
+from typing import cast, Optional, Any
 from tools.exa import web_search
 from cheshire_configs.preprocessors.multistep.tools import query_other_section
 from tools.helpers.output_schema import VulnerabilityDetails
-from globals import STANDARDS_DIR
+from globals import DATA_PATH, STANDARDS_DIR
+from knowledge_base.repository import KnowledgeRepository
+from knowledge_base.qdrant import QdrantRepositoryManager
 
 from dotenv import load_dotenv
 load_dotenv("../../../.env.user")
+
+# regex patterns matching document-level rules
+GLOBAL_RULE_PATTERNS = [
+    re.compile(r"(?i)\bthe document must (contain|include|have)\b"),
+    re.compile(r"(?i)\bthe document should (contain|include|have)\b"),
+    re.compile(r"(?i)\bdocument must (contain|include|have)\b"),
+    re.compile(r"(?i)\bdocument should (contain|include|have)\b"),
+    re.compile(r"(?i)\bshould be present as a reference document\b"),
+    re.compile(r"(?i)\bmust be present as a reference document\b"),
+    re.compile(r"(?i)\b(table|diagram|section|reference document) should exist\b"),
+    re.compile(r"(?i)\b(table|diagram|section|reference document) must exist\b"),
+    re.compile(r"(?i)\bmust be present in the document\b"),
+    re.compile(r"(?i)\bmust be included in the document\b"),
+    re.compile(r"(?i)\bshould be present in the document\b"),
+    re.compile(r"(?i)\bshould be included in the document\b"),
+    re.compile(r"(?i)\bdocument-level\b"),
+]
+
+_SEEDED_EMBEDDINGS: dict[str, Any] = {}
+
+def classify_rule_nature(rule: str, embedder: Any = None) -> str:
+    # check regex patterns for global rules
+    for pattern in GLOBAL_RULE_PATTERNS:
+        if pattern.search(rule):
+            return "global"
+
+    # check semantic similarity against seeded rules
+    try:
+        from cheshire_configs.preprocessors.multistep.helpers.tables import _get_fastembed_model, _compute_cosine_similarity
+        g_path = STANDARDS_DIR / "global_rules.json"
+        l_path = STANDARDS_DIR / "local_rules.json"
+        if not g_path.is_file() or not l_path.is_file():
+            return "local"
+        model = embedder if embedder is not None else _get_fastembed_model()
+        if model is not None and hasattr(model, "embed"):
+            if embedder is not None:
+                g_rules = json.loads(g_path.read_text(encoding="utf-8"))
+                l_rules = json.loads(l_path.read_text(encoding="utf-8"))
+                g_embs = list(embedder.embed(g_rules))
+                l_embs = list(embedder.embed(l_rules))
+            else:
+                if "global" not in _SEEDED_EMBEDDINGS or "local" not in _SEEDED_EMBEDDINGS:
+                    g_rules = json.loads(g_path.read_text(encoding="utf-8"))
+                    l_rules = json.loads(l_path.read_text(encoding="utf-8"))
+                    _SEEDED_EMBEDDINGS["global"] = list(model.embed(g_rules))
+                    _SEEDED_EMBEDDINGS["local"] = list(model.embed(l_rules))
+                g_embs = _SEEDED_EMBEDDINGS["global"]
+                l_embs = _SEEDED_EMBEDDINGS["local"]
+            rule_emb = list(model.embed([rule]))[0]
+            max_g = max(_compute_cosine_similarity(rule_emb, g) for g in g_embs)
+            max_l = max(_compute_cosine_similarity(rule_emb, l) for g in l_embs)
+            if max_g > max_l and max_g >= 0.70:
+                return "global"
+    except Exception:
+        pass
+
+    # fallback to local
+    return "local"
+
+
+def _load_user_asserted_rules(
+    knowledge_repo: Optional[KnowledgeRepository] = None,
+    rule_nature: Optional[str] = None,
+) -> list[str]:
+    # get knowledge repo from qdrant if not provided
+    if knowledge_repo is None:
+        _, knowledge_repo = QdrantRepositoryManager.get_repositories(DATA_PATH)
+
+    # query facts with user_asserted source
+    docs = knowledge_repo.query(filters={
+        "field": "meta.source",
+        "operator": "==",
+        "value": "user_asserted",
+    })
+
+    rules: list[str] = []
+    seen: set[str] = set()
+    for doc in docs:
+        content = (doc.content or "").strip()
+        if not content or content in seen:
+            continue
+        seen.add(content)
+        # filter by rule nature, checking metadata first with classifier fallback
+        if rule_nature is not None:
+            nature = doc.meta.get("rule_nature") or classify_rule_nature(content)
+            if nature != rule_nature:
+                continue
+        rules.append(content)
+
+    return rules
 
 
 def _load_standards_as_list(filename: str) -> str:
@@ -42,8 +135,17 @@ def _load_standards_as_list(filename: str) -> str:
     return "No specific rules configured."
 
 
-def build_pass1_system_prompt() -> str:
+def build_pass1_system_prompt(knowledge_repo: Optional[KnowledgeRepository] = None) -> str:
     local_rules = _load_standards_as_list("local_rules.json")
+
+    # load and append user asserted local rules
+    user_rules = _load_user_asserted_rules(knowledge_repo, rule_nature="local")
+    if user_rules:
+        user_rules_str = "\n".join(f"- {r}" for r in user_rules)
+        if local_rules and local_rules != "No specific rules configured.":
+            local_rules = f"{local_rules}\n{user_rules_str}"
+        else:
+            local_rules = user_rules_str
 
     if ASSUME_EXTERNAL_ATTACHMENTS_COMPLIANT:
         attachment_figure_policy = (
@@ -211,7 +313,8 @@ AUDIT RULES & CONSTRAINTS
 """
 
 
-PASS1_SYSTEM_PROMPT = build_pass1_system_prompt()
+# pass1 system prompt placeholder
+PASS1_SYSTEM_PROMPT: Optional[str] = None
 
 
 def _make_tools() -> list[Tool]:
@@ -259,7 +362,7 @@ def merge_findings_tool(state_key: str) -> Tool:
 
 
 
-def build_evaluation_pipeline() -> Pipeline:
+def build_evaluation_pipeline(knowledge_repo: Optional[KnowledgeRepository] = None) -> Pipeline:
     generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
         api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
         model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
@@ -270,7 +373,7 @@ def build_evaluation_pipeline() -> Pipeline:
     agent: Agent = Agent(
         chat_generator=generator,
         tools=agent_tools,
-        system_prompt=build_pass1_system_prompt(),
+        system_prompt=build_pass1_system_prompt(knowledge_repo=knowledge_repo),
         max_agent_steps=10,
         exit_conditions=["text", "add_local_finding"],
         state_schema={
@@ -364,8 +467,17 @@ CONSTRAINTS
 """
 
 
-def build_global_audit_system_prompt() -> str:
+def build_global_audit_system_prompt(knowledge_repo: Optional[KnowledgeRepository] = None) -> str:
     global_rules = _load_standards_as_list("global_rules.json")
+
+    # load and append user asserted global rules
+    user_rules = _load_user_asserted_rules(knowledge_repo, rule_nature="global")
+    if user_rules:
+        user_rules_str = "\n".join(f"- {r}" for r in user_rules)
+        if global_rules and global_rules != "No specific rules configured.":
+            global_rules = f"{global_rules}\n{user_rules_str}"
+        else:
+            global_rules = user_rules_str
 
     if ASSUME_EXTERNAL_ATTACHMENTS_COMPLIANT:
         attachment_clause = (
@@ -529,7 +641,7 @@ def build_dedup_pipeline() -> Pipeline:
     return pipeline
 
 
-def build_global_audit_pipeline() -> Pipeline:
+def build_global_audit_pipeline(knowledge_repo: Optional[KnowledgeRepository] = None) -> Pipeline:
     """Pipeline for TASK 2: global standards checklist audit.
     Receives the document index + compact accepted-findings summary
     in a fresh context with no prior tool-call history."""
@@ -541,7 +653,7 @@ def build_global_audit_pipeline() -> Pipeline:
             accept_local_finding_tool("audit_findings"),
             cast(Tool, web_search),
         ],
-        system_prompt=build_global_audit_system_prompt(),
+        system_prompt=build_global_audit_system_prompt(knowledge_repo=knowledge_repo),
         max_agent_steps=30,
         exit_conditions=["text"],
         state_schema={

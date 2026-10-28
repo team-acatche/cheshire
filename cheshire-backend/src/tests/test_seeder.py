@@ -120,10 +120,26 @@ class TestSeedKnowledgeBaseWithInMemoryQdrant:
         assert "Argon2id" in password_results[0].content
         assert password_results[0].meta["source"] == "in_memory_test.json"
         assert password_results[0].meta["is_global"] is True
+        assert password_results[0].meta["rule_nature"] == "unknown"
 
         upload_results = repo.search(query="file upload size limit", top_k=1)
         assert len(upload_results) == 1
         assert "10MB" in upload_results[0].content
+
+    def test_seeding_sets_rule_nature_by_filename(self, in_memory_knowledge_repo):
+        # verify rule_nature inferred from source filename
+        repo = in_memory_knowledge_repo
+
+        seed_knowledge_base(repo, ["Global requirement"], source="global_rules.json")
+        seed_knowledge_base(repo, ["Local requirement"], source="local_rules.json")
+
+        global_docs = repo.query(filters={"field": "meta.source", "operator": "==", "value": "global_rules.json"})
+        assert len(global_docs) == 1
+        assert global_docs[0].meta["rule_nature"] == "global"
+
+        local_docs = repo.query(filters={"field": "meta.source", "operator": "==", "value": "local_rules.json"})
+        assert len(local_docs) == 1
+        assert local_docs[0].meta["rule_nature"] == "local"
 
     def test_in_memory_seeding_idempotency_does_not_duplicate(self, in_memory_knowledge_repo):
         repo = in_memory_knowledge_repo

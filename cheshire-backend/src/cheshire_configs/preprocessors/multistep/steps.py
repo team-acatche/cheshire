@@ -14,6 +14,7 @@ import logging
 from typing import Any, Optional
 from knowledge_base.job_store import CancelCheck, raise_if_cancelled
 from knowledge_base.progress import get_progress
+from knowledge_base.repository import KnowledgeRepository
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -24,7 +25,11 @@ class PreprocessingPassResults:
     chunks: list[EvaluationChunk]
 
 
-def run_pass1(pdf_path: str, should_cancel: Optional[CancelCheck] = None) -> PreprocessingPassResults:
+def run_pass1(
+    pdf_path: str,
+    should_cancel: Optional[CancelCheck] = None,
+    knowledge_repo: Optional[KnowledgeRepository] = None,
+) -> PreprocessingPassResults:
     raise_if_cancelled(should_cancel)
     progress = get_progress()
     progress.set_stage("parsing", "Reading the PDF layout, tables and diagrams…")
@@ -50,7 +55,7 @@ def run_pass1(pdf_path: str, should_cancel: Optional[CancelCheck] = None) -> Pre
         f"{len(document_index['figures'])} figures."
     )
 
-    evaluation_pipeline: Pipeline = build_evaluation_pipeline()
+    evaluation_pipeline: Pipeline = build_evaluation_pipeline(knowledge_repo=knowledge_repo)
 
     logger.info("[2/2] Evaluating sections...")
     all_findings: list[LocalFinding] = []
@@ -105,7 +110,11 @@ def run_pass1(pdf_path: str, should_cancel: Optional[CancelCheck] = None) -> Pre
         chunks=chunks
     )
 
-def run_pass2(results: PreprocessingPassResults, should_cancel: Optional[CancelCheck] = None) -> list[VulnerabilityDetails]:
+def run_pass2(
+    results: PreprocessingPassResults,
+    should_cancel: Optional[CancelCheck] = None,
+    knowledge_repo: Optional[KnowledgeRepository] = None,
+) -> list[VulnerabilityDetails]:
     progress = get_progress()
     all_findings: list[LocalFinding] = results.findings
     document_index: dict = results.document_index
@@ -163,7 +172,7 @@ def run_pass2(results: PreprocessingPassResults, should_cancel: Optional[CancelC
     raise_if_cancelled(should_cancel)
     progress.set_stage("global", "Checking required sections, diagrams and references…")
     logger.info("[Pass 2b] Global standards audit...")
-    audit_pipeline: Pipeline = build_global_audit_pipeline()
+    audit_pipeline: Pipeline = build_global_audit_pipeline(knowledge_repo=knowledge_repo)
 
     audit_result: dict = audit_pipeline.run({
         "global_audit_message_builder": {
