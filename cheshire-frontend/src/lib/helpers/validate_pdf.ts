@@ -1,3 +1,5 @@
+import { pdfjs } from "react-pdf"
+
 const MAX_SIZE_BYTES = 100 * 1024 * 1024 // 100 MB
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d] // "%PDF-"
 
@@ -29,6 +31,19 @@ export async function validatePdf(file: File): Promise<PdfValidation> {
         return {
             ok: false,
             error: "This file isn't a valid PDF.",
+        }
+    }
+
+    try {
+        const task = pdfjs.getDocument({ data: await file.arrayBuffer() })
+        await task.promise
+        await task.destroy()
+    } catch (err) {
+        if ((err as { name?: string })?.name === "PasswordException") {
+            return {
+                ok: false,
+                error: "This PDF is password-protected. Remove the password and upload it again.",
+            }
         }
     }
 
