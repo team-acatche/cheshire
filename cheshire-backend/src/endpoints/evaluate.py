@@ -1,5 +1,6 @@
 import asyncio
 import json
+import pypdfium2 as pdfium
 import os
 from pathlib import Path
 from typing import Annotated, Literal, Optional
@@ -218,6 +219,20 @@ async def is_true_pdf(file: UploadFile) -> bool:
     return file.filename.endswith(".pdf") and mime_type == "application/pdf"
 
 
+async def is_password_protected(file: UploadFile) -> bool:
+    """True if the PDF needs a password to open."""
+    data = await file.read()
+    await file.seek(0)
+
+    def _check() -> bool:
+        try:
+            pdfium.PdfDocument(data).close()
+            return False
+        except pdfium.PdfiumError as exc:
+            return "password" in str(exc).lower()
+
+    return await asyncio.to_thread(_check)
+
 @evaluate_router.post("/evaluate",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=SubmitResponse,
@@ -241,6 +256,13 @@ async def evaluate_document(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file type. Only PDF files are supported.",
+        )
+
+    # reject PDFs that need a password to open
+    if await is_password_protected(uploaded_document):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This PDF is password-protected. Remove the password and upload it again.",
         )
 
     user_id = current_user.user_id

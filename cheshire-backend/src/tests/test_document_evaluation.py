@@ -3,6 +3,7 @@ import sqlite3
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+import pypdfium2 as pdfium
 
 import pytest
 from docling_core.types.doc import BoundingBox
@@ -233,6 +234,19 @@ class TestEvaluateSubmission:
                 files={"uploaded_document": ("report.txt", PDF_BYTES, "application/pdf")},
             )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_run.assert_not_called()
+
+    @patch("endpoints.evaluate._run_evaluation")
+    def test_password_protected_pdf_is_rejected(self, mock_run, tmp_path: Path):
+        err = pdfium.PdfiumError("Failed to load document (PDFium: Incorrect password error).")
+        with patch("dependencies.sessions.SESSIONS_PATH", tmp_path), \
+            patch("endpoints.evaluate.pdfium.PdfDocument", side_effect=err):
+            response = client.post(
+                "/api/v1/evaluate",
+                files={"uploaded_document": ("locked.pdf", PDF_BYTES, "application/pdf")},
+            )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "password" in response.json()["detail"].lower()
         mock_run.assert_not_called()
 
 
