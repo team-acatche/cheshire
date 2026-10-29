@@ -502,7 +502,12 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               msg.text !== "" &&
               !isFindingMessage(msg.text) &&
               !(typing && i === lastIdx)
-
+            
+              const canRetryBot =
+              msg.role !== "user" &&
+              i === lastIdx &&
+              canRegenerate &&
+              !isFindingMessage(msg.text)
             return (
               <div
                 key={i}
@@ -556,21 +561,35 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                   <div className="group flex min-w-0 flex-1 flex-col gap-1 overflow-hidden text-foreground">
                     <MessageBody text={msg.text} role={msg.role} />
 
-                    {canCopyBot && (
+                    {(canCopyBot || canRetryBot) && (
                       <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => copyMessage(msg.text, i)}
-                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          title={copiedMessageIdx === i ? "Copied!" : "Copy response"}
-                          aria-label={copiedMessageIdx === i ? "Response copied" : "Copy response"}
-                        >
-                          {copiedMessageIdx === i ? (
-                            <Check className="size-3.5" />
-                          ) : (
-                            <Copy className="size-3.5" />
-                          )}
-                        </button>
+                        {canCopyBot && (
+                          <button
+                            type="button"
+                            onClick={() => copyMessage(msg.text, i)}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title={copiedMessageIdx === i ? "Copied!" : "Copy response"}
+                            aria-label={copiedMessageIdx === i ? "Response copied" : "Copy response"}
+                          >
+                            {copiedMessageIdx === i ? (
+                              <Check className="size-3.5" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </button>
+                        )}
+
+                        {canRetryBot && (
+                          <button
+                            type="button"
+                            onClick={regenerate}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title="Retry response"
+                            aria-label="Retry response"
+                          >
+                            <RotateCw className="size-3.5" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
