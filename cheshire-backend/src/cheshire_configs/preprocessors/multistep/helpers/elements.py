@@ -12,10 +12,11 @@ from docling_core.types.doc.document import ProvenanceItem
 
 from .constants import FOOTER_BOTTOM_MARGIN_RATIO, FOOTER_MAX_TOP_RATIO, FOOTER_METADATA_PATTERN, MAX_CONTINUATION_PAGE_GAP
 from .geometry import _get_item_label, _to_topleft_dict
-from .models import ElementRef, FigureRef, ImageBoundingBox
+from .models import ElementRef, FigureRef, ImageBoundingBox, TableCellRef
 from .tables import (
     _crop_table_as_figure,
     _detect_document_footer_top,
+    _extract_table_cells_ref,
     _format_table_markdown,
     _table_has_empty_cells,
     _table_needs_visual_crop,
@@ -170,6 +171,7 @@ def _build_element_lookup(
         bbox_px: ImageBoundingBox = ImageBoundingBox.from_docling_bbox(prov.bbox, page_h, scale)
 
         text: str = ""
+        table_cells_ref: list[TableCellRef] = []
         if label == "table":
             # Detect continuation table status based on adjacent page in same section
             is_adjacent_page: bool = (
@@ -179,11 +181,12 @@ def _build_element_lookup(
                 item, doc, _last_table_header, is_adjacent_page
             )
             _last_table_page = prov.page_no
+            table_cells_ref = _extract_table_cells_ref(item, page.size.height, prov.bbox)
 
             # Selective table cropping for tables with empty cells or extraction clipping
             if _table_needs_visual_crop(item, text, page.size.height):
                 fig_id: str | None = _crop_table_as_figure(
-                    result, prov, item.self_ref, scale, figure_lookup
+                    result, prov, item.self_ref, scale, figure_lookup, table_cells=table_cells_ref
                 )
                 if fig_id:
                     text += f"\n[Table Image: {fig_id}]"
@@ -200,6 +203,7 @@ def _build_element_lookup(
             bbox_image_px=bbox_px,
             bbox_pdf=prov.bbox,
             text_excerpt=text,
+            table_cells=table_cells_ref,
         )
 
     return lookup

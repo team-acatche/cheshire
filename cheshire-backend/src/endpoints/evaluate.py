@@ -70,7 +70,7 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-# ── Background worker ──────────────────────────────────────────────────────────
+# background worker
 
 def _format_user_friendly_error(exc: Exception) -> str:
     # clean user-facing error message

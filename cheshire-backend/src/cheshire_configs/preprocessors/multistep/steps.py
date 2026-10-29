@@ -3,7 +3,13 @@ from dataclasses import dataclass
 from haystack import Pipeline
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessing_pipeline, build_evaluation_pipeline
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding, ElementRef, FigureRef
+from cheshire_configs.preprocessors.multistep.helpers import (
+    EvaluationChunk,
+    LocalFinding,
+    ElementRef,
+    FigureRef,
+    _snap_table_finding_bboxes,
+)
 from cheshire_configs.preprocessors.multistep.components.findings_parser import clamp
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_dedup_pipeline, build_global_audit_pipeline
@@ -241,6 +247,7 @@ def run_pass2(
         if confidence is not None:
             confidence = min(1.0, max(0.0, float(confidence)))
 
+        final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         page_no: int = 1
         bboxes: list[PageBoundingBox] = []
 
@@ -284,16 +291,42 @@ def run_pass2(
             if not bboxes:  # no usable sub_bbox: highlight the whole figure
                 bboxes = [PageBoundingBox(**fig.bbox_pdf.model_dump(), page_no=fig.page_number)]
 
+            # Snap table findings to deterministic cell geometry
+            table_cells = getattr(fig, "table_cells", None)
+            if not table_cells and figure_id.startswith("table_crop_"):
+                parent_elem = element_by_id.get(figure_id.removeprefix("table_crop_"))
+                table_cells = getattr(parent_elem, "table_cells", None) if parent_elem else None
+
+            if table_cells:
+                bboxes = _snap_table_finding_bboxes(
+                    finding_text=finding,
+                    title=final_title,
+                    table_cells=table_cells,
+                    raw_bboxes=bboxes,
+                    table_bbox=fig.bbox_pdf,
+                    page_number=page_no,
+                )
+
         elif element_id:
             elem_ids = [element_id] if isinstance(element_id, str) else element_id
             for eid in elem_ids:
                 elem = element_by_id.get(eid)
                 if elem:
-                    bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
+                    if getattr(elem, "table_cells", None):
+                        snapped = _snap_table_finding_bboxes(
+                            finding_text=finding,
+                            title=final_title,
+                            table_cells=elem.table_cells,
+                            raw_bboxes=[],
+                            table_bbox=elem.bbox_pdf,
+                            page_number=elem.page_number,
+                        )
+                        bboxes.extend(snapped)
+                    else:
+                        bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
             if bboxes:
                 page_no = bboxes[0].page_no or 1  # finding.page_no = first box's page
 
-        final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         final_vulnerabilities.append(
             VulnerabilityDetails(
                 title=final_title,

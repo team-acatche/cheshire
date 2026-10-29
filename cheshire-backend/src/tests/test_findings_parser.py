@@ -4,7 +4,13 @@ from haystack.dataclasses import ChatMessage
 from docling_core.types.doc import BoundingBox
 
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, ElementRef, FigureRef, ImageBoundingBox
+from cheshire_configs.preprocessors.multistep.helpers import (
+    EvaluationChunk,
+    ElementRef,
+    FigureRef,
+    ImageBoundingBox,
+    TableCellRef,
+)
 from tools.helpers.output_schema import VulnerabilityDetails
 
 # A dummy ImageBoundingBox for ElementRef initialization
@@ -324,3 +330,128 @@ def test_findings_parser_none_message_text():
     
     result = parser.run(last_message=message, chunk=chunk)
     assert result == {"vulnerabilities": []}
+
+
+def test_findings_parser_table_cell_snapping_subline_text():
+    """
+    Verify that an imprecise vision sub_bbox on a multi-line table cell snaps
+    strictly to the column boundaries and the targeted bullet text line.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Operational & System Telemetry: Outdated GC pause specifications",
+            "description": "Specifications reference JVM/Go GC pause times during large XML serialization cycles.",
+            "figure_id": "table_crop_#/tables/0",
+            # Imprecise sub_bbox shifted down and to the right into the next column
+            "sub_bbox": [400.0, 500.0, 850.0, 750.0],
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    desc_cell_bbox = BoundingBox(l=200.0, t=500.0, r=450.0, b=300.0)
+    col3_cell_bbox = BoundingBox(l=450.0, t=500.0, r=550.0, b=300.0)
+
+    table_cells = [
+        TableCellRef(
+            text="Operational & System Telemetry",
+            bbox_pdf=BoundingBox(l=50.0, t=500.0, r=180.0, b=300.0),
+            row_idx=1,
+            col_idx=0,
+        ),
+        TableCellRef(
+            text="E",
+            bbox_pdf=BoundingBox(l=180.0, t=500.0, r=200.0, b=300.0),
+            row_idx=1,
+            col_idx=1,
+        ),
+        TableCellRef(
+            text=(
+                "Specifications:\n"
+                "• JVM/Go GC pause times during large XML serialization cycles.\n"
+                "• Streaming XML buffer memory allocation counters."
+            ),
+            bbox_pdf=desc_cell_bbox,
+            row_idx=1,
+            col_idx=2,
+        ),
+        TableCellRef(
+            text="AWVTelemetry&PerformanceLogs_10-20-2026.xlsx",
+            bbox_pdf=col3_cell_bbox,
+            row_idx=1,
+            col_idx=3,
+        ),
+    ]
+
+    fig = FigureRef(
+        figure_id="table_crop_#/tables/0",
+        page_number=8,
+        bbox_image_px=[0.0, 0.0, 1000.0, 400.0],
+        bbox_pdf=BoundingBox(l=50.0, t=550.0, r=550.0, b=300.0),
+        base64_png="dummy_base64",
+        table_cells=table_cells,
+    )
+    chunk = create_test_chunk(figures=[fig])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    v = vulns[0]
+
+    # The snapped box must be strictly within the description column (l=200.0, r=450.0)
+    # It must NOT bleed into the Excel icon column (r <= 450.0)
+    assert v.bbox.l == 200.0
+    assert v.bbox.r == 450.0
+    # Vertically it must target segment 1 ("JVM/Go GC pause times")
+    # cell_h = 200.0; segment 1 of 3 lines spans top_frac = 1/3 to bottom_frac = 2/3
+    # t = 500 - (1/3)*200 = 433.333, b = 500 - (2/3)*200 = 366.667
+    assert v.bbox.t < desc_cell_bbox.t  # below "Specifications:"
+    assert v.bbox.b > desc_cell_bbox.b  # above "Streaming XML"
+
+
+def test_findings_parser_table_element_id_cell_snapping():
+    """
+    Verify that findings anchored to element_id on a table snap to the matching cell.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Reports: Missing Attachment Format",
+            "description": "Attachment AWVTransportLogs_10-25-2026.pdf is missing Class/Module field.",
+            "element_id": "#/tables/0",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    target_cell_bbox = BoundingBox(l=450.0, t=500.0, r=550.0, b=300.0)
+    table_cells = [
+        TableCellRef(
+            text="Internet & Perimeter Egress",
+            bbox_pdf=BoundingBox(l=50.0, t=500.0, r=180.0, b=300.0),
+            row_idx=1,
+            col_idx=0,
+        ),
+        TableCellRef(
+            text="AWVTransportLogs_10-25-2026.pdf",
+            bbox_pdf=target_cell_bbox,
+            row_idx=1,
+            col_idx=3,
+        ),
+    ]
+
+    elem = ElementRef(
+        element_id="#/tables/0",
+        label="table",
+        page_number=8,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=BoundingBox(l=50.0, t=550.0, r=550.0, b=300.0),
+        text_excerpt="table content",
+        table_cells=table_cells,
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    # Bbox snaps directly to the target cell
+    assert vulns[0].bbox == target_cell_bbox

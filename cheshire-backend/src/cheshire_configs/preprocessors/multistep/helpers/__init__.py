@@ -67,6 +67,7 @@ from .elements import (
 from .geometry import (
     _compute_box_overlap,
     _get_item_label,
+    _snap_table_finding_bboxes,
     _to_topleft_dict,
 )
 from .indexing import (
@@ -78,6 +79,7 @@ from .models import (
     FigureRef,
     ImageBoundingBox,
     LocalFinding,
+    TableCellRef,
 )
 from .tables import (
     _calculate_extended_col_bounds,
@@ -87,6 +89,7 @@ from .tables import (
     _detect_document_footer_top,
     _detect_table_column_splits,
     _extract_header_from_table_text,
+    _extract_table_cells_ref,
     _format_cell_with_icons,
     _format_table_markdown,
     _format_table_row_cells,
@@ -137,11 +140,13 @@ __all__ = [
     "ElementRef",
     "FigureRef",
     "LocalFinding",
+    "TableCellRef",
     "EvaluationChunk",
     # Geometry
     "_get_item_label",
     "_to_topleft_dict",
     "_compute_box_overlap",
+    "_snap_table_finding_bboxes",
     # Tables
     "_calculate_extended_row_bounds",
     "_calculate_extended_col_bounds",
