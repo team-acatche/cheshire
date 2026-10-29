@@ -16,7 +16,7 @@ export interface ToneStyle {
 export const TONES: Record<Tone, ToneStyle> = {
   major:       { label: "Major",       hint: "Major: Blocks approval. Resolve the issue before approval.",       rank: 3, rgb: "220 38 38",  text: "text-red-600 dark:text-red-400",       onSolid: "#fff",    icon: OctagonAlert },
   minor:       { label: "Minor",       hint: "Minor: Compliance gap. Resolve the issue before development.",  rank: 2, rgb: "234 179 8",  text: "text-yellow-700 dark:text-yellow-400", onSolid: "#422006", icon: TriangleAlert },
-  missing:     { label: "Missing",     hint: "Missing: Required content is absent.",       rank: 2, rgb: "234 179 8",  text: "text-yellow-700 dark:text-yellow-400", onSolid: "#422006", icon: FileWarning },
+  missing:     { label: "Missing",     hint: "Missing: Required content is absent.",       rank: 2, rgb: "249 115 22", text: "text-orange-700 dark:text-orange-400", onSolid: "#431407", icon: FileWarning },
   observation: { label: "Observation", hint: "Observation: Advisory. Resolution is optional, but recommended.",        rank: 1, rgb: "0 51 178",   text: "text-blue-700 dark:text-blue-400",     onSolid: "#fff",    icon: Info },
 };
 
