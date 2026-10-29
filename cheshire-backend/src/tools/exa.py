@@ -30,13 +30,13 @@ web_search = ComponentTool(
         type="auto",
     ),
     name="web_search",
-    description="Search the web using Exa for external facts, industry classifications, standards, regulations, software deprecation status, and official documentation.",
+    description="Search the web using Exa as a security knowledge base to verify external facts, industry security standards, known CVEs, attack patterns, technology-specific security requirements, classifications, regulations, software deprecation status, and official documentation.",
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query to verify external facts, classifications, standards, regulations, or documentation.",
+                "description": "The search query to verify external facts, security standards, CVEs, classifications, regulations, or documentation.",
             },
         },
         "required": ["query"],

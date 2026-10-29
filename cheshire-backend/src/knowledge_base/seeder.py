@@ -56,6 +56,8 @@ def seed_knowledge_base(
     for standard in standards:
         # Deterministic UUID based on item content to prevent duplication on restarts
         standard_id = str(uuid5(NAMESPACE_OID, f"standard:{standard}"))
+        # determine rule nature from source
+        rule_nature = "global" if "global" in source else ("local" if "local" in source else "unknown")
         standard_documents.append(
             Document(
                 id=standard_id,
@@ -63,6 +65,7 @@ def seed_knowledge_base(
                 meta={
                     "source": source,
                     "is_global": True,
+                    "rule_nature": rule_nature,
                 },
             )
         )

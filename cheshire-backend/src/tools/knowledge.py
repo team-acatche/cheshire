@@ -1,6 +1,6 @@
 from datetime import datetime
 from dataclasses import dataclass, replace, field
-from typing import Annotated, Any, Callable, Optional, cast
+from typing import Annotated, Any, Callable, Literal, Optional, cast
 from uuid import UUID, uuid4
 from contextvars import ContextVar
 
@@ -9,6 +9,7 @@ from haystack.tools import tool
 from lancedb_haystack import LanceDBDocumentStore # type: ignore
 
 from knowledge_base.repository import KnowledgeRepository
+from cheshire_configs.preprocessors.multistep.pipelines import classify_rule_nature
     
 import logging
 logger = logging.getLogger("uvicorn.error")
@@ -28,14 +29,31 @@ current_knowledge_state: ContextVar[KnowledgeState] = ContextVar("current_knowle
 def upsert_fact(
     facts: Annotated[list[str], "The facts to assert."],
     incorrect_fact_knowledge_id: Annotated[Optional[str], "(Optional) the knowledge UUID of the incorrect fact, if known."] = None,
+    rule_nature: Annotated[
+        Optional[Literal["global", "local"]],
+        "(Optional) whether this is a document-level structural requirement ('global') or a section/technical specification ('local'). If omitted, inferred automatically.",
+    ] = None,
 ) -> dict[str, str]:
     """
     REQUIRED: Call this tool IMMEDIATELY whenever the user provides new information, organizational details, 
     preferences, or policy constraints that should be remembered across sessions. 
     Do not wait for the user to ask you to save it. If the information is worth knowing, it is worth saving.
 
+    When asserting policies or audit rules, format facts using strict canonical templates:
+    - Global (document-level requirements, missing sections, diagrams, tables, reference documents):
+        * "The document must contain [Section/Diagram/Table/Reference Document]..."
+        * "[Section/Diagram/Table/Reference Document] should exist"
+        * "[Doc Name] should be present as a Reference Document"
+      Set rule_nature="global".
+    - Local (section-level or technical specifications, constraints, coding/formatting standards):
+        * "[Component/Subject] must [requirement]"
+        * "[Component/Subject] should not contain [prohibited item]"
+        * "The [Section Name] section must [requirement]"
+      Set rule_nature="local".
+
     :param facts: the facts to upsert.
     :param incorrect_fact_knowledge_id: (Optional) the knowledge UUID of the incorrect fact, if known.
+    :param rule_nature: (Optional) "global" for document-level rules or "local" for section-level rules.
 
     :return: a dict indicating the number of facts added or updated.
     """
@@ -57,29 +75,44 @@ def upsert_fact(
             return {"result": f"Fact with id {incorrect_fact_knowledge_id} not found."}
 
     for fact in facts:
-        # 1. Check if we have an explicit doc to replace
+        # determine rule nature
+        assigned_nature = rule_nature or classify_rule_nature(fact)
+
+        # check if explicit doc to replace exists
         if known_incorrect_doc:
             from dataclasses import replace
             fact_documents.append(replace(
                 known_incorrect_doc,
                 content=fact,
-                meta={**known_incorrect_doc.meta, "last_modified": datetime.now().isoformat()},
+                meta={
+                    **known_incorrect_doc.meta,
+                    "source": "user_asserted",
+                    "is_global": True,
+                    "rule_nature": assigned_nature,
+                    "last_modified": datetime.now().isoformat(),
+                },
             ))
             updated += 1
             logger.info(f"Correcting fact via explicit ID {incorrect_fact_knowledge_id}: {fact[:50]}...")
-            known_incorrect_doc = None # Only use once
+            known_incorrect_doc = None # only use once
             continue
 
-        # 2. Otherwise check for similar facts to avoid duplicates
+        # check for similar facts to avoid duplicates
         if similar_facts := state.knowledge_base.search(query=fact, top_k=1):
             most_similar_fact: Document = similar_facts[0]
-            # If the most similar fact is close enough, we update it
+            # update existing fact if score is high enough
             if (most_similar_fact.score or 0) >= state.similarity_threshold:
                 from dataclasses import replace
                 fact_documents.append(replace(
                     most_similar_fact,
                     content=fact,
-                    meta={**most_similar_fact.meta, "last_modified": datetime.now().isoformat()},
+                    meta={
+                        **most_similar_fact.meta,
+                        "source": "user_asserted",
+                        "is_global": True,
+                        "rule_nature": assigned_nature,
+                        "last_modified": datetime.now().isoformat(),
+                    },
                 ))
                 updated += 1
                 logger.info(f"Updating existing fact (score: {most_similar_fact.score}): {fact[:50]}...")
@@ -87,12 +120,14 @@ def upsert_fact(
             else:
                 logger.info(f"Top match score {most_similar_fact.score} below threshold {state.similarity_threshold}. Adding as new.")
 
-        # If not similar enough, or no facts exist, add as new
+        # add as new user asserted fact
         fact_documents.append(Document(
             id=str(uuid4()),
             content=fact,
             meta = {
-                "is_global": False,
+                "source": "user_asserted",
+                "is_global": True,
+                "rule_nature": assigned_nature,
                 "session_id": str(state.session_id),
                 "created_at": datetime.now().isoformat(),
                 "last_modified": datetime.now().isoformat(),

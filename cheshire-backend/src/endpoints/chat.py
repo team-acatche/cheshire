@@ -282,7 +282,9 @@ HIERARCHY OF TRUTH (Top=Authority):
 PROTOCOL:
 - SEARCH: Call `get_relevant_facts` FIRST. Result = Current Reality.
 - EVALUATE: If history contradicts KB, KB WINS. State KB fact as authority.
-- MEMORIZE: Call `upsert_fact` INSTANTLY for new policies/standards or corrections to wrong facts.
+- MEMORIZE: Call `upsert_fact` INSTANTLY for new policies/standards or corrections to wrong facts. Follow canonical templates:
+  * Global (missing sections, diagrams, tables, reference documents): Use template "The document must contain <X>", "[X] table should exist", or "[X] should be present as a Reference Document", and set rule_nature="global".
+  * Local (technical specifications, coding constraints, section rules): Use template "<Subject> must <requirement>" or "<Subject> should not contain <prohibition>", and set rule_nature="local".
 - ADVISE: Technical advice must follow KB policy.""",
                     tools=Toolset([cast(Tool, tool) for tool in knowledge_tools]),
                     streaming_callback=enqueue_chunk,

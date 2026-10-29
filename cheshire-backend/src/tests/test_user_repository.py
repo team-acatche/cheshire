@@ -1,3 +1,4 @@
+import sqlite3
 import pytest
 from fastapi import HTTPException, status
 
@@ -78,10 +79,12 @@ def test_login_disabled_user(repo):
 
 @pytest.fixture
 def sqlite_repo(hasher):
-    # Testing with :memory:
+    # keep shared memory connection open during test
+    conn = sqlite3.connect("file::memory:?cache=shared", uri=True)
     repo = SqliteUserRepository("file::memory:?cache=shared", hasher=hasher)
     repo.create_table_if_not_exists()
-    return repo
+    yield repo
+    conn.close()
 
 def test_sqlite_register_success(sqlite_repo):
     user_entity = sqlite_repo.register(email="alice@example.com", username="alice", password="password123", full_name="Alice Liddell")
