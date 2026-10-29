@@ -6,6 +6,7 @@ from haystack.utils import Secret
 from haystack.tools import Tool, create_tool_from_function
 
 from haystack_integrations.components.generators.openrouter import OpenRouterChatGenerator
+from cheshire_configs.resilient_generator import make_resilient_openrouter_generator
 
 from cheshire_configs.preprocessors.multistep.helpers import (
     EvaluationChunk,
@@ -363,10 +364,8 @@ def merge_findings_tool(state_key: str) -> Tool:
 
 
 def build_evaluation_pipeline(knowledge_repo: Optional[KnowledgeRepository] = None) -> Pipeline:
-    generator: OpenRouterChatGenerator = OpenRouterChatGenerator(
-        api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
-        model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
-    )
+    # resilient generator with exponential retry and timeout
+    generator: OpenRouterChatGenerator = make_resilient_openrouter_generator()
 
     agent_tools: list[Tool] = _make_tools() + [add_local_finding_tool("findings_list")]
 
@@ -603,10 +602,8 @@ CONSTRAINTS
 
 
 def _make_generator() -> OpenRouterChatGenerator:
-    return OpenRouterChatGenerator(
-        api_key=Secret.from_env_var("OPENROUTER_API_KEY"),
-        model=os.getenv("OPENROUTER_MODEL", "ServiceNow-AI/Apriel-1.6-15b-Thinker"),
-    )
+    # resilient generator with exponential retry and timeout
+    return make_resilient_openrouter_generator()
 
 
 def build_dedup_pipeline() -> Pipeline:

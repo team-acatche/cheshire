@@ -82,16 +82,31 @@ def run_pass1(
             for f in all_findings
         ]
 
-        result: dict = evaluation_pipeline.run({
-            "chunk_message_builder": {
-                "chunk": chunk,
-                "document_index": document_index,
-                "previous_findings": previous_findings
-            },
-            "agent": {
-                "chunks_cache": chunks
-            }
-        })
+        # evaluate chunk with retry
+        max_chunk_retries = 2
+        result: dict = {}
+        for attempt in range(max_chunk_retries):
+            try:
+                result = evaluation_pipeline.run({
+                    "chunk_message_builder": {
+                        "chunk": chunk,
+                        "document_index": document_index,
+                        "previous_findings": previous_findings
+                    },
+                    "agent": {
+                        "chunks_cache": chunks
+                    }
+                })
+                break
+            except EvaluationCancelled:
+                raise
+            except Exception as e:
+                # retry chunk once on transient pipeline crash
+                if attempt < max_chunk_retries - 1:
+                    logger.warning(f"chunk {i + 1} attempt {attempt + 1} failed, retrying chunk: {e}")
+                else:
+                    logger.error(f"chunk {i + 1} failed after {max_chunk_retries} attempts: {e}")
+                    raise
 
         # findings recorded via add_local_finding tool
         state_findings: list[LocalFinding] = (

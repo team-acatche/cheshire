@@ -72,6 +72,18 @@ class ErrorResponse(BaseModel):
 
 # ── Background worker ──────────────────────────────────────────────────────────
 
+def _format_user_friendly_error(exc: Exception) -> str:
+    # clean user-facing error message
+    err_str = str(exc)
+    if "JSONDecodeError" in err_str or "Expecting value" in err_str:
+        return "Upstream LLM provider returned a malformed response. Please retry."
+    if "RateLimitError" in err_str or "rate limit" in err_str.lower():
+        return "LLM rate limit reached. Please wait a moment and retry."
+    if "APITimeoutError" in err_str or "timed out" in err_str.lower():
+        return "LLM request timed out. Please retry."
+    return err_str
+
+
 def _run_evaluation(
     session_id: str,
     document_path: Path,
@@ -184,7 +196,8 @@ def _run_evaluation(
         if job is not None:
             job.progress.finish("failed") 
             job.status = JobStatus.FAILED
-            job.error = str(exc)
+            # format clean error message for user
+            job.error = _format_user_friendly_error(exc)
             job_store.update(job)
     finally:
         # lets /rerun know this worker has fully exited
