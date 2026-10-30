@@ -47,9 +47,9 @@ export interface SeverityCounts {
 /** 100 minus weighted gaps (major 12, minor 4, observation 1), floored at 0. */
 export function scoreFromCounts(c: SeverityCounts): number {
   const penalty =
-    c.major * SEVERITY_META.major.weight +
-    c.minor * SEVERITY_META.minor.weight +
-    c.observation * SEVERITY_META.observation.weight
+    (c.major || 0) * SEVERITY_META.major.weight +
+    (c.minor || 0) * SEVERITY_META.minor.weight +
+    (c.observation || 0) * SEVERITY_META.observation.weight
   return Math.max(0, Math.min(100, Math.round(100 - penalty)))
 }
 
@@ -284,15 +284,18 @@ export function trendGeometry(
   })
 }
 
-/** SVG arc starting at 12 o'clock and sweeping clockwise. */
+/** Polyline approximation of a clockwise arc from 12 o'clock.
+ *  Uses only M/L commands: react-pdf's arc-to-bezier conversion
+ *  can blow up on near-full circles and throws "unsupported number". */
 export function arcPath(cx: number, cy: number, r: number, fraction: number): string {
-  const f = Math.min(Math.max(fraction, 0), 0.9999)
+  const f = Math.min(Math.max(Number.isFinite(fraction) ? fraction : 0, 0), 1)
   if (f <= 0) return ""
+  const steps = Math.max(2, Math.ceil(f * 90))
   const a0 = -Math.PI / 2
-  const a1 = a0 + f * 2 * Math.PI
-  const x0 = cx + r * Math.cos(a0)
-  const y0 = cy + r * Math.sin(a0)
-  const x1 = cx + r * Math.cos(a1)
-  const y1 = cy + r * Math.sin(a1)
-  return `M ${x0} ${y0} A ${r} ${r} 0 ${f > 0.5 ? 1 : 0} 1 ${x1} ${y1}`
+  const pts: string[] = []
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + (f * 2 * Math.PI * i) / steps
+    pts.push(`${i === 0 ? "M" : "L"} ${(cx + r * Math.cos(a)).toFixed(3)} ${(cy + r * Math.sin(a)).toFixed(3)}`)
+  }
+  return pts.join(" ")
 }
