@@ -255,7 +255,7 @@ export default function ReportPage({
             <CardDescription className="text-[11px] font-semibold uppercase tracking-wider">
               Compliance Assessment Report
             </CardDescription>
-            <CardTitle className="break-words text-xl md:text-2xl">{documentName}</CardTitle>
+            <CardTitle className="wrap-break-word text-xl md:text-2xl">{documentName}</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
