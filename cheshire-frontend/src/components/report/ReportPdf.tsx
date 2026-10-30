@@ -16,18 +16,19 @@ const INK = "#18181b"
 const MUTED = "#71717a"
 const LINE = "#e4e4e7"
 const PRIMARY = "#1a47d0"
+const MAX_UNSPLIT_CHARS = 2200
 
 const s = StyleSheet.create({
   page: { paddingTop: 40, paddingBottom: 60, paddingHorizontal: 40, fontSize: 10, fontFamily: "Helvetica", color: INK, lineHeight: 1.4 },
   brand: { fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 2, color: PRIMARY, marginBottom: 6 },
-  title: { fontSize: 22, fontFamily: "Helvetica-Bold", marginBottom: 4 },
-  docName: { fontSize: 12, color: MUTED, marginBottom: 14 },
+  title: { fontSize: 22, fontFamily: "Helvetica-Bold", lineHeight: 1.2, marginBottom: 8 },
+  docName: { fontSize: 12, color: MUTED, marginBottom: 16 },
   metaGrid: { flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderBottomWidth: 1, borderColor: LINE, paddingVertical: 8, marginBottom: 18 },
   metaItem: { width: "50%", paddingVertical: 3, paddingRight: 8 },
   metaLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8 },
   metaValue: { fontSize: 10 },
   h2: { fontSize: 14, fontFamily: "Helvetica-Bold", marginTop: 6, marginBottom: 8 },
-  label: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8, marginTop: 6, marginBottom: 2 },
+  label: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8, marginTop: 10, marginBottom: 3 },
   body: { fontSize: 10 },
   muted: { fontSize: 9, color: MUTED },
   row: { flexDirection: "row", alignItems: "center" },
@@ -43,13 +44,13 @@ const s = StyleSheet.create({
   barFill: { height: 8, borderRadius: 4 },
   barCount: { width: 52, textAlign: "right", fontSize: 9 },
   pill: { borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1.5, marginRight: 6 },
-  pillText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5 },
+  pillText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5, lineHeight: 1 },
   pillOutline: { borderWidth: 1, borderColor: MUTED, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1, marginRight: 6 },
   pillOutlineText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED },
-  finding: { borderWidth: 1, borderColor: LINE, borderLeftWidth: 4, borderRadius: 4, padding: 10, marginBottom: 8 },
-  findingTitle: { fontSize: 11, fontFamily: "Helvetica-Bold", marginTop: 5, marginBottom: 2 },
+  finding: { borderWidth: 1, borderColor: LINE, borderLeftWidth: 4, borderRadius: 4, padding: 12, marginBottom: 10 },
+  findingTitle: { fontSize: 11, fontFamily: "Helvetica-Bold", lineHeight: 1.3, marginTop: 5, marginBottom: 3 },
   findingId: { fontSize: 8, color: MUTED, marginLeft: "auto" },
-  listItem: { flexDirection: "row", marginBottom: 3 },
+  listItem: { flexDirection: "row", marginBottom: 4 },
   listNum: { width: 16, fontFamily: "Helvetica-Bold" },
   listText: { flex: 1 },
   link: { fontSize: 8.5, color: PRIMARY },
@@ -71,9 +72,14 @@ function Gauge({ score, color }: { score: number; color: string }) {
         <Circle cx={48} cy={48} r={40} stroke={LINE} strokeWidth={9} fill="none" />
         {score > 0 && <Path d={arcPath(48, 48, 40, score / 100)} stroke={color} strokeWidth={9} fill="none" strokeLinecap="round" />}
       </Svg>
-      <View style={{ position: "absolute", top: 0, left: 0, width: 96, height: 96, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color }}>{score}</Text>
-        <Text style={{ fontSize: 7, color: MUTED }}>OUT OF 100</Text>
+      <View
+        style={{
+          position: "absolute", top: 0, left: 0, width: 96, height: 96,
+          flexDirection: "column", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        <Text style={{ fontSize: 24, fontFamily: "Helvetica-Bold", color, lineHeight: 1 }}>{score}</Text>
+        <Text style={{ fontSize: 7, color: MUTED, lineHeight: 1, marginTop: 5 }}>OUT OF 100</Text>
       </View>
     </View>
   )
@@ -207,45 +213,56 @@ export function ReportDocument({ report, trend }: { report: ReportData; trend: T
         {/* Detailed findings */}
         <Text style={s.h2} break>Detailed findings</Text>
         {report.findings.length === 0 && <Text style={s.body}>No gaps were found in this document.</Text>}
-        {report.findings.map((f) => (
-          <View key={f.id} style={[s.finding, { borderLeftColor: SEVERITY_META[f.severity].hex }]}>
-            <View style={s.row} minPresenceAhead={70}>
-              <Pill color={SEVERITY_META[f.severity].hex} label={SEVERITY_META[f.severity].label} />
-              {f.missing && (
-                <View style={s.pillOutline}>
-                  <Text style={s.pillOutlineText}>MISSING CONTENT</Text>
+        {report.findings.map((f) => {
+
+          const size = 
+            f.description.length +
+            f.recommendations.join(" ").length +
+            f.references.join(" ").length
+
+            return (
+            <View 
+              key={f.id}
+              wrap={size > MAX_UNSPLIT_CHARS}
+              style={[s.finding, { borderLeftColor: SEVERITY_META[f.severity].hex }]}>
+              <View style={s.row}>
+                <Pill color={SEVERITY_META[f.severity].hex} label={SEVERITY_META[f.severity].label} />
+                {f.missing && (
+                  <View style={s.pillOutline}>
+                    <Text style={s.pillOutlineText}>MISSING CONTENT</Text>
+                  </View>
+                )}
+                <Text style={s.findingId}>{f.id}</Text>
+              </View>
+              <Text style={s.findingTitle}>{f.title}</Text>
+              <Text style={s.muted}>{f.location} | Confidence {f.confidenceLabel}</Text>
+
+              <Text style={s.label}>EVIDENCE</Text>
+              <Text style={s.body}>{f.description}</Text>
+
+              {f.recommendations.length > 0 && (
+                <View>
+                  <Text style={s.label}>RECOMMENDATIONS</Text>
+                  {f.recommendations.map((r, i) => (
+                    <View key={i} style={s.listItem}>
+                      <Text style={s.listNum}>{i + 1}.</Text>
+                      <Text style={s.listText}>{r}</Text>
+                    </View>
+                  ))}
                 </View>
               )}
-              <Text style={s.findingId}>{f.id}</Text>
+
+              {f.references.length > 0 && (
+                <View>
+                  <Text style={s.label}>REFERENCES</Text>
+                  {f.references.map((url, i) => (
+                    <Text key={i} style={s.link}>{url}</Text>
+                  ))}
+                </View>
+              )}
             </View>
-            <Text style={s.findingTitle}>{f.title}</Text>
-            <Text style={s.muted}>{f.location} | Confidence {f.confidenceLabel}</Text>
-
-            <Text style={s.label}>EVIDENCE</Text>
-            <Text style={s.body}>{f.description}</Text>
-
-            {f.recommendations.length > 0 && (
-              <View>
-                <Text style={s.label}>RECOMMENDATIONS</Text>
-                {f.recommendations.map((r, i) => (
-                  <View key={i} style={s.listItem}>
-                    <Text style={s.listNum}>{i + 1}.</Text>
-                    <Text style={s.listText}>{r}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {f.references.length > 0 && (
-              <View>
-                <Text style={s.label}>REFERENCES</Text>
-                {f.references.map((url, i) => (
-                  <Text key={i} style={s.link}>{url}</Text>
-                ))}
-              </View>
-            )}
-          </View>
-        ))}
+          )
+        })}
 
         {/* Recommendations */}
         <Text style={s.h2} break>Recommendations</Text>
