@@ -12,6 +12,7 @@ from docling_core.types.doc.document import ProvenanceItem
 
 from .constants import FOOTER_BOTTOM_MARGIN_RATIO, FOOTER_MAX_TOP_RATIO, FOOTER_METADATA_PATTERN, MAX_CONTINUATION_PAGE_GAP
 from .geometry import _get_item_label, _to_topleft_dict
+from .hierarchy import _extract_heading_from_text
 from .models import ElementRef, FigureRef, ImageBoundingBox, TableCellRef
 from .tables import (
     _crop_table_as_figure,
@@ -111,6 +112,67 @@ def _is_footer_element(
     return bool(FOOTER_METADATA_PATTERN.search(item_text))
 
 
+def promote_heuristic_headings(doc: Any) -> list[str]:
+    """
+    Scans document text items for headings that were misclassified as paragraphs or regular text
+    by the layout parser and promotes them to section headers.
+    """
+    promoted: list[str] = []
+    if not hasattr(doc, "iterate_items"):
+        return promoted
+
+    for item, _level in doc.iterate_items():
+        if not hasattr(item, "prov") or not item.prov:
+            continue
+
+        label: str = _get_item_label(item)
+        if label in ("section_header", "section_heading"):
+            continue
+
+        # Skip decorative elements, tables, and pictures
+        if label in ("picture", "page_header", "page_footer", "page_number", "footnote", "table"):
+            continue
+
+        item_text = getattr(item, "text", "")
+        heading = _extract_heading_from_text(item_text)
+        if not heading:
+            continue
+
+        promoted.append(heading)
+
+        # 1. Update item attributes
+        if hasattr(item, "label"):
+            try:
+                from docling_core.types.doc.document import DocItemLabel
+                item.label = DocItemLabel.SECTION_HEADER
+            except Exception:
+                item.label = "section_header"
+        if hasattr(item, "level"):
+            item.level = 1
+
+        # 2. If item is a Docling TextItem in doc.texts, replace with SectionHeaderItem
+        try:
+            from docling_core.types.doc.document import SectionHeaderItem
+            if not isinstance(item, SectionHeaderItem) and hasattr(doc, "texts"):
+                new_item = SectionHeaderItem(
+                    text=heading,
+                    orig=getattr(item, "orig", heading),
+                    level=1,
+                    prov=item.prov,
+                    parent=getattr(item, "parent", None),
+                    children=getattr(item, "children", []),
+                    self_ref=item.self_ref,
+                )
+                for idx, t_item in enumerate(doc.texts):
+                    if getattr(t_item, "self_ref", None) == item.self_ref:
+                        doc.texts[idx] = new_item
+                        break
+        except Exception:
+            pass
+
+    return promoted
+
+
 def _build_element_lookup(
     doc: DoclingDocument,
     result: ConversionResult,
@@ -153,6 +215,12 @@ def _build_element_lookup(
         if label in ("section_header", "section_heading"):
             _current_section = getattr(item, "text", "")
             _last_table_header = None
+        else:
+            cand = _extract_heading_from_text(getattr(item, "text", ""))
+            if cand:
+                label = "section_header"
+                _current_section = cand
+                _last_table_header = None
 
         prov: ProvenanceItem = item.prov[0]
         page: Any = doc.pages.get(prov.page_no)

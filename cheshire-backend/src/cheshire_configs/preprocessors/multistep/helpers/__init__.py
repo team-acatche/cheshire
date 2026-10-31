@@ -25,6 +25,7 @@ from .hierarchy import (
     ScopeLevel,
     Segment,
     SeqType,
+    _extract_heading_from_text,
     parse_header_token,
 )
 from .constants import (
@@ -63,6 +64,7 @@ from .elements import (
     _build_figure_lookup,
     _find_page_gaps,
     _is_footer_element,
+    promote_heuristic_headings,
 )
 from .geometry import (
     _compute_box_overlap,
@@ -175,6 +177,7 @@ __all__ = [
     "_attach_captions",
     "_find_page_gaps",
     "_is_footer_element",
+    "promote_heuristic_headings",
     # Chunking
     "_extract_section_key",
     "_merge_chunk_pair",
@@ -191,4 +194,5 @@ __all__ = [
     "Segment",
     "SeqType",
     "parse_header_token",
+    "_extract_heading_from_text",
 ]

@@ -83,13 +83,10 @@ def _snap_table_finding_bboxes(
         spatial_score = 0.0
         if raw_bboxes:
             for rb in raw_bboxes:
-                x_ov = max(0.0, min(rb.r, cell.bbox_pdf.r) - max(rb.l, cell.bbox_pdf.l))
-                if origin == CoordOrigin.BOTTOMLEFT:
-                    y_ov = max(0.0, min(rb.t, cell.bbox_pdf.t) - max(rb.b, cell.bbox_pdf.b))
-                else:
-                    y_ov = max(0.0, min(rb.b, cell.bbox_pdf.b) - max(rb.t, cell.bbox_pdf.t))
+                x_ov = max(0.0, min(max(rb.l, rb.r), max(cell.bbox_pdf.l, cell.bbox_pdf.r)) - max(min(rb.l, rb.r), min(cell.bbox_pdf.l, cell.bbox_pdf.r)))
+                y_ov = max(0.0, min(max(rb.t, rb.b), max(cell.bbox_pdf.t, cell.bbox_pdf.b)) - max(min(rb.t, rb.b), min(cell.bbox_pdf.t, cell.bbox_pdf.b)))
                 if x_ov > 0 and y_ov > 0:
-                    c_w = max(1.0, cell.bbox_pdf.r - cell.bbox_pdf.l)
+                    c_w = max(1.0, abs(cell.bbox_pdf.r - cell.bbox_pdf.l))
                     c_h = max(1.0, abs(cell.bbox_pdf.t - cell.bbox_pdf.b))
                     spatial_score = max(spatial_score, (x_ov * y_ov) / (c_w * c_h))
 
@@ -103,11 +100,8 @@ def _snap_table_finding_bboxes(
         max_ov = 0.0
         for cell in table_cells:
             for rb in raw_bboxes:
-                x_ov = max(0.0, min(rb.r, cell.bbox_pdf.r) - max(rb.l, cell.bbox_pdf.l))
-                if origin == CoordOrigin.BOTTOMLEFT:
-                    y_ov = max(0.0, min(rb.t, cell.bbox_pdf.t) - max(rb.b, cell.bbox_pdf.b))
-                else:
-                    y_ov = max(0.0, min(rb.b, cell.bbox_pdf.b) - max(rb.t, cell.bbox_pdf.t))
+                x_ov = max(0.0, min(max(rb.l, rb.r), max(cell.bbox_pdf.l, cell.bbox_pdf.r)) - max(min(rb.l, rb.r), min(cell.bbox_pdf.l, cell.bbox_pdf.r)))
+                y_ov = max(0.0, min(max(rb.t, rb.b), max(cell.bbox_pdf.t, cell.bbox_pdf.b)) - max(min(rb.t, rb.b), min(cell.bbox_pdf.t, cell.bbox_pdf.b)))
                 area_ov = x_ov * y_ov
                 if area_ov > max_ov:
                     max_ov = area_ov
@@ -141,13 +135,10 @@ def _snap_table_finding_bboxes(
                 frac_top = start_seg / total_segs
                 frac_bottom = (end_seg + 1) / total_segs
 
-                cell_h = abs(best_cell.bbox_pdf.t - best_cell.bbox_pdf.b)
-                if origin == CoordOrigin.BOTTOMLEFT:
-                    sub_t = best_cell.bbox_pdf.t - frac_top * cell_h
-                    sub_b = best_cell.bbox_pdf.t - frac_bottom * cell_h
-                else:
-                    sub_t = best_cell.bbox_pdf.t + frac_top * cell_h
-                    sub_b = best_cell.bbox_pdf.t + frac_bottom * cell_h
+                cell_t = best_cell.bbox_pdf.t
+                cell_b = best_cell.bbox_pdf.b
+                sub_t = cell_t + frac_top * (cell_b - cell_t)
+                sub_b = cell_t + frac_bottom * (cell_b - cell_t)
 
                 return [PageBoundingBox(
                     l=best_cell.bbox_pdf.l,

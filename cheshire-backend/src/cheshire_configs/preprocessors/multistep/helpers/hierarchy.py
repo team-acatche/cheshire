@@ -160,7 +160,7 @@ def parse_header_token(heading: str) -> HeaderToken:
     # strip optional structural prefix words like section or appendix
     working_str = clean
     prefix_word_match = re.match(
-        r"^(?:section|appendix|annex|chapter|part)\s+",
+        r"^(?:section|appendix|annex|chapter|part|article|schedule)\s+",
         working_str,
         re.IGNORECASE,
     )
@@ -231,6 +231,83 @@ def parse_header_token(heading: str) -> HeaderToken:
     )
 
 
+def _extract_heading_from_text(raw_text: str) -> str | None:
+    # extracts a structural section heading candidate from raw text using outline syntax and layout heuristics.
+    # returns the clean heading string if valid, or none if text is narrative body content, a list item, or table cell.
+    # strictly logic-dependent; uses zero domain-specific or document-specific wordlists.
+    if not raw_text:
+        return None
+
+    text = raw_text.strip()
+    if not text or len(text) > 120:
+        return None
+
+    # reject bullet characters, list markers, and arrows
+    if text[0] in ("•", "◦", "▪", "▫", "*", "–", "—", ">", "→") and not re.match(r"^[A-Za-z0-9]", text):
+        return None
+
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        return None
+    line = lines[0]
+    if len(lines) > 1 and len(line) > 60:
+        return None
+
+    clean_line = line.rstrip(":")
+
+    # 1. Structural prefix keyword: e.g. "Section 1. Overview", "Appendix A - Notes", "Article 3: Governance"
+    prefix_match = re.match(
+        r"^(?:section|chapter|part|appendix|annex|article|schedule)\s+([A-Za-z0-9]+(?:[\.\-_][A-Za-z0-9]+)*)(?:[\.\-–—:\s]+)(\S.*)$",
+        clean_line,
+        re.IGNORECASE,
+    )
+    if prefix_match:
+        title = prefix_match.group(2).strip()
+        words = title.split()
+        if len(words) <= 15 and not re.search(r"\.\s+[A-Z]", title):
+            return clean_line
+
+    # 2. Uppercase Alphabetic Outline: e.g. "A. Primary Title", "B. Secondary Title", "(A) Scope", "B - Design"
+    alpha_match = re.match(
+        r"^(?:\(?([A-Z]{1,3})\)?[\.\-–—:\)]\s+)(\S.*)$",
+        clean_line,
+    )
+    if alpha_match:
+        title = alpha_match.group(2).strip()
+        words = title.split()
+        if len(words) <= 12 and not re.search(r"\.\s+[A-Z]", title):
+            if not title.endswith(".") or len(words) <= 6:
+                return clean_line
+
+    # 3. Numeric or Decimal Outline: e.g. "1. Outline Unit", "2. Component Design", "1.1 Architecture", "2.3.1 Cache"
+    num_match = re.match(
+        r"^(?:(?:\((\d+(?:\.\d+)*)\)|\b(\d+(?:\.\d+)+)[\.\-–—:\)]?|\b(\d+)[\.\-–—:\)])\s+)(\S.*)$",
+        clean_line,
+    )
+    if num_match:
+        title = num_match.group(4).strip()
+        words = title.split()
+        if len(words) <= 10 and not re.search(r"\.\s+[A-Z]", title):
+            if title.endswith(".") and len(words) > 4:
+                return None
+            return clean_line
+
+    # 4. Roman Numeral Outline: e.g. "I. Overview", "IV. Specifications", "(II) Implementation"
+    roman_match = re.match(
+        r"^(?:\(?([IVXLCDM]+)\)?[\.\-–—:\)]\s+)(\S.*)$",
+        clean_line,
+    )
+    if roman_match:
+        roman_cand = roman_match.group(1)
+        if _parse_roman(roman_cand) is not None:
+            title = roman_match.group(2).strip()
+            words = title.split()
+            if len(words) <= 12 and not re.search(r"\.\s+[A-Z]", title):
+                return clean_line
+
+    return None
+
+
 class HeaderHierarchyResolver:
     # stack-based header hierarchy resolver tracking active parent scopes
     def __init__(self):
@@ -252,11 +329,77 @@ class HeaderHierarchyResolver:
         # return joined breadcrumb of open headers
         return " - ".join(level.raw_heading for level in self.stack)
 
+    def _find_matching_level(self, token: HeaderToken, clean: str) -> int | None:
+        # find if heading already matches an active open level in the scope stack
+        clean_norm = clean.strip().lower()
+        clean_clean = re.sub(r"[^\w\s]", "", clean_norm)
+
+        for idx in range(len(self.stack) - 1, -1, -1):
+            anc = self.stack[idx]
+            anc_norm = anc.raw_heading.strip().lower()
+
+            # 1. exact raw heading string match
+            if clean_norm == anc_norm:
+                return idx
+
+            # 2. normalized string match (ignoring punctuation differences)
+            anc_clean = re.sub(r"[^\w\s]", "", anc_norm)
+            if clean_clean and clean_clean == anc_clean:
+                return idx
+
+            # 3. token prefix label and title match
+            if token.prefix_label and anc.token.prefix_label:
+                if token.prefix_label.lower() == anc.token.prefix_label.lower():
+                    t1 = token.title.strip().lower()
+                    t2 = anc.token.title.strip().lower()
+                    if not t1 or not t2 or t1 == t2:
+                        return idx
+                    c1 = re.sub(r"[^\w\s]", "", t1)
+                    c2 = re.sub(r"[^\w\s]", "", t2)
+                    if c1 and c1 == c2:
+                        return idx
+
+            # 4. identical segments with matching title
+            if token.segments and anc.token.segments and len(token.segments) == len(anc.token.segments):
+                if all(
+                    token.segments[i].kind == anc.token.segments[i].kind
+                    and token.segments[i].val == anc.token.segments[i].val
+                    for i in range(len(token.segments))
+                ):
+                    t1 = token.title.strip().lower()
+                    t2 = anc.token.title.strip().lower()
+                    if not t1 or not t2 or t1 == t2:
+                        return idx
+                    c1 = re.sub(r"[^\w\s]", "", t1)
+                    c2 = re.sub(r"[^\w\s]", "", t2)
+                    if c1 and c1 == c2:
+                        return idx
+
+        return None
+
+    def process_headings(self, headings: list[str]) -> str:
+        # process an ordered list of hierarchical headings (e.g. from chunk.meta.headings)
+        if not headings:
+            return self.get_current_breadcrumb()
+
+        cleaned_headings = [h.strip() for h in headings if h.strip()]
+        if not cleaned_headings:
+            return self.get_current_breadcrumb()
+
+        # if headings list exactly mirrors the active open stack, avoid unnecessary state churn
+        if [lvl.raw_heading for lvl in self.stack] == cleaned_headings:
+            return self.get_current_breadcrumb()
+
+        last_breadcrumb = ""
+        for clean in cleaned_headings:
+            last_breadcrumb = self.process_heading(clean)
+        return last_breadcrumb or self.get_current_breadcrumb()
+
     def process_heading(self, heading: str) -> str:
         # process a new heading and update the active scope stack
         clean = heading.strip()
         if not clean:
-            return clean
+            return self.get_current_breadcrumb()
 
         token = parse_header_token(clean)
 
@@ -265,6 +408,26 @@ class HeaderHierarchyResolver:
             if self.stack:
                 return f"{self.get_current_breadcrumb()} - {clean}"
             return clean
+
+        # check if heading matches an already open level in the active stack
+        match_idx = self._find_matching_level(token, clean)
+        if match_idx is not None:
+            # trim any descendants that were open below this level
+            self.stack = self.stack[: match_idx + 1]
+            return self.get_current_breadcrumb()
+
+        # if stack only had an unnumbered preamble and a major section arrives, replace root
+        if self.stack and self.stack[0].token.is_unnumbered and len(token.segments) == 1:
+            self.stack = [
+                ScopeLevel(
+                    token=token,
+                    raw_heading=clean,
+                    title=token.title,
+                    root_key=token.root_key,
+                    depth=0,
+                )
+            ]
+            return self.get_current_breadcrumb()
 
         # check if new heading is a compound descendant of an open ancestor
         compound_match_idx = self._find_compound_ancestor(token)
@@ -297,6 +460,21 @@ class HeaderHierarchyResolver:
             self.stack.append(level)
             return self.get_current_breadcrumb()
 
+        # check if new heading restarts a subordinate sequence (e.g. sequence resets to 1)
+        reset_match_idx = self._find_reset_level(token)
+        if reset_match_idx is not None:
+            root_key = self.stack[0].root_key
+            self.stack = self.stack[:reset_match_idx]
+            level = ScopeLevel(
+                token=token,
+                raw_heading=clean,
+                title=token.title,
+                root_key=root_key,
+                depth=reset_match_idx,
+            )
+            self.stack.append(level)
+            return self.get_current_breadcrumb()
+
         # new subordinate child level descending under current top
         root_key = self.stack[0].root_key if self.stack else token.root_key
         level = ScopeLevel(
@@ -308,6 +486,19 @@ class HeaderHierarchyResolver:
         )
         self.stack.append(level)
         return self.get_current_breadcrumb()
+
+    def _find_reset_level(self, token: HeaderToken) -> int | None:
+        # if new token has value 1 (or 'a') and matches the kind of a subordinate level in stack,
+        # it indicates that a previous sibling sequence at that level has closed and restarted
+        if not token.segments:
+            return None
+        new_seg = token.segments[-1]
+        if new_seg.val == 1:
+            for idx in range(len(self.stack) - 1, 0, -1):
+                anc_seg = self.stack[idx].token.segments[-1] if self.stack[idx].token.segments else None
+                if anc_seg and anc_seg.kind == new_seg.kind and anc_seg.val > 1:
+                    return idx
+        return None
 
     def _find_compound_ancestor(self, token: HeaderToken) -> int | None:
         # find ancestor whose segments match the prefix of token segments

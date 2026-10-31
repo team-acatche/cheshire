@@ -12,8 +12,8 @@ from docling_core.transforms.chunker.hierarchical_chunker import HierarchicalChu
 from docling_core.types.doc import DoclingDocument
 
 from .constants import DEFAULT_IMAGE_SCALE, DEFAULT_MAX_CHUNK_CHARS
-from .elements import _build_element_lookup, _build_figure_lookup
-from .hierarchy import HeaderHierarchyResolver, parse_header_token
+from .elements import _build_element_lookup, _build_figure_lookup, promote_heuristic_headings
+from .hierarchy import HeaderHierarchyResolver, _extract_heading_from_text, parse_header_token
 from .models import ElementRef, EvaluationChunk, FigureRef
 
 
@@ -208,6 +208,7 @@ def build_chunks(
     """
     figure_lookup: dict[str, FigureRef] = _build_figure_lookup(doc, result, scale)
     element_lookup: dict[str, ElementRef] = _build_element_lookup(doc, result, figure_lookup, scale)
+    promote_heuristic_headings(doc)
 
     chunks: list[EvaluationChunk] = []
     hierarchy_resolver = HeaderHierarchyResolver()
@@ -246,13 +247,37 @@ def build_chunks(
         )
         page_range: tuple[int, int] = (min(all_pages), max(all_pages)) if all_pages else (0, 0)
         
-        # resolve hierarchical heading using active scope stack
-        heading: str = f"Section {i + 1}"
-        if chunk.meta.headings:
-            for h in chunk.meta.headings:
-                heading = hierarchy_resolver.process_heading(h)
+        # resolve hierarchical heading using chunk elements or active scope stack
+        chunk_heading: str | None = None
+        for elem in chunk_elements:
+            candidate = None
+            if elem.label in ("section_header", "section_heading"):
+                candidate = _extract_heading_from_text(elem.text_excerpt) or elem.text_excerpt.strip()
+            else:
+                candidate = _extract_heading_from_text(elem.text_excerpt)
+            if candidate:
+                chunk_heading = hierarchy_resolver.process_heading(candidate)
+
+        if chunk_heading:
+            heading: str = chunk_heading
+        elif chunk.meta.headings:
+            # check if chunk.meta.headings is a stale backward regression from layout parser
+            meta_key: str | None = _extract_section_key(chunk.meta.headings[0])
+            active_key: str | None = hierarchy_resolver.get_root_key()
+            is_stale: bool = False
+            if meta_key and active_key and meta_key != active_key:
+                if len(meta_key) == 1 and len(active_key) == 1:
+                    if meta_key.isalpha() and active_key.isalpha() and meta_key.upper() < active_key.upper():
+                        is_stale = True
+                    elif meta_key.isdigit() and active_key.isdigit() and int(meta_key) < int(active_key):
+                        is_stale = True
+
+            if not is_stale:
+                heading = hierarchy_resolver.process_headings(chunk.meta.headings)
+            else:
+                heading = hierarchy_resolver.get_current_breadcrumb() or f"Section {i + 1}"
         else:
-            heading = f"Section {i + 1}"
+            heading = hierarchy_resolver.get_current_breadcrumb() or f"Section {i + 1}"
 
         chunks.append(EvaluationChunk(
             chunk_id=f"chunk_{i}",

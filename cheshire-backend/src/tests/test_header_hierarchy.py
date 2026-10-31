@@ -11,10 +11,12 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     HeaderToken,
     ImageBoundingBox,
     SeqType,
+    _extract_heading_from_text,
     _extract_section_key,
     _propagate_section_figures,
     merge_chunks,
     parse_header_token,
+    promote_heuristic_headings,
 )
 from docling_core.types.doc import BoundingBox, CoordOrigin
 
@@ -229,6 +231,102 @@ def test_hierarchy_resolver_unnumbered_headers():
     assert b1 == "E. Processing Specifications - 1. Modules"
 
 
+def test_hierarchy_resolver_idempotent_repeated_headers():
+    # verify calling process_heading repeatedly with the exact same header does not duplicate
+    resolver = HeaderHierarchyResolver()
+
+    b1 = resolver.process_heading("E. Recommendations")
+    assert b1 == "E. Recommendations"
+    assert len(resolver.stack) == 1
+
+    b2 = resolver.process_heading("E. Recommendations")
+    assert b2 == "E. Recommendations"
+    assert len(resolver.stack) == 1
+
+    b3 = resolver.process_heading("E. Recommendations")
+    assert b3 == "E. Recommendations"
+    assert len(resolver.stack) == 1
+
+    b4 = resolver.process_heading("E. Recommendations")
+    assert b4 == "E. Recommendations"
+    assert len(resolver.stack) == 1
+
+
+def test_hierarchy_resolver_chunk_repetition_and_subheaders():
+    # verify chunk heading paths across multiple chunks do not duplicate headers and advance root
+    resolver = HeaderHierarchyResolver()
+
+    # chunk 1: section e
+    c1 = resolver.process_headings(["E. Recommendations"])
+    assert c1 == "E. Recommendations"
+    assert resolver.get_root_key() == "E"
+    assert len(resolver.stack) == 1
+
+    # chunk 2: section e repeated across chunks
+    c2 = resolver.process_headings(["E. Recommendations"])
+    assert c2 == "E. Recommendations"
+    assert resolver.get_root_key() == "E"
+    assert len(resolver.stack) == 1
+
+    # chunk 3: subheader 1 under section e
+    c3 = resolver.process_headings(["E. Recommendations", "1. Modules"])
+    assert c3 == "E. Recommendations - 1. Modules"
+    assert resolver.get_root_key() == "E"
+    assert len(resolver.stack) == 2
+
+    # chunk 4: subheader 1 repeated across chunks
+    c4 = resolver.process_headings(["E. Recommendations", "1. Modules"])
+    assert c4 == "E. Recommendations - 1. Modules"
+    assert resolver.get_root_key() == "E"
+    assert len(resolver.stack) == 2
+
+    # chunk 5: sibling subheader 2 under section e
+    c5 = resolver.process_headings(["E. Recommendations", "2. Diagrams"])
+    assert c5 == "E. Recommendations - 2. Diagrams"
+    assert resolver.get_root_key() == "E"
+    assert len(resolver.stack) == 2
+    assert resolver.stack[1].token.prefix_label == "2"
+
+    # chunk 6: advancing to section f resets root cleanly and does not stick to e
+    c6 = resolver.process_headings(["F. System Considerations"])
+    assert c6 == "F. System Considerations"
+    assert resolver.get_root_key() == "F"
+    assert resolver.get_root_heading() == "F. System Considerations"
+    assert len(resolver.stack) == 1
+
+    # chunk 7: section f repeated across chunks
+    c7 = resolver.process_headings(["F. System Considerations"])
+    assert c7 == "F. System Considerations"
+    assert resolver.get_root_key() == "F"
+    assert len(resolver.stack) == 1
+
+
+def test_hierarchy_resolver_flattened_docling_leaf_headings():
+    # verify docling providing only leaf headings preserves parent hierarchy and advances correctly
+    resolver = HeaderHierarchyResolver()
+
+    c1 = resolver.process_heading("E. Recommendations")
+    assert c1 == "E. Recommendations"
+
+    c2 = resolver.process_heading("1. Modules")
+    assert c2 == "E. Recommendations - 1. Modules"
+    assert resolver.get_root_key() == "E"
+
+    # repeated chunk on same leaf
+    c3 = resolver.process_heading("1. Modules")
+    assert c3 == "E. Recommendations - 1. Modules"
+    assert len(resolver.stack) == 2
+
+    c4 = resolver.process_heading("2. Diagrams")
+    assert c4 == "E. Recommendations - 2. Diagrams"
+    assert resolver.get_root_key() == "E"
+
+    c5 = resolver.process_heading("F. System Considerations")
+    assert c5 == "F. System Considerations"
+    assert resolver.get_root_key() == "F"
+    assert len(resolver.stack) == 1
+
+
 def test_extract_section_key_compatibility():
     # verify _extract_section_key correctly resolves root keys across variations
     assert _extract_section_key("E. Processing Specifications") == "E"
@@ -324,3 +422,229 @@ def test_propagate_section_figures_across_mixed_subsections():
     # chunk 1 now sees the figure from subsection 2
     assert len(chunks[0].figures) == 1
     assert chunks[0].figures[0].figure_id == "fig_e2"
+
+
+def test_extract_heading_from_text_patterns():
+    # verify extraction of outline section headers and subsections from raw text lines
+    assert _extract_heading_from_text("E. Processing Specifications") == "E. Processing Specifications"
+    assert _extract_heading_from_text("E. Processing Specifications:\nIntro text") == "E. Processing Specifications"
+    assert _extract_heading_from_text("1. Modules") == "1. Modules"
+    assert _extract_heading_from_text("2. Diagrams") == "2. Diagrams"
+    assert _extract_heading_from_text("3. Files and Records") == "3. Files and Records"
+    assert _extract_heading_from_text("4. Reports") == "4. Reports"
+    assert _extract_heading_from_text("5. Parameter and Lookup Files") == "5. Parameter and Lookup Files"
+    assert _extract_heading_from_text("Section D. Technology Stack Requirements") == "Section D. Technology Stack Requirements"
+    assert _extract_heading_from_text("1.1 Handler Layer") == "1.1 Handler Layer"
+    assert _extract_heading_from_text("I. Executive Summary") == "I. Executive Summary"
+    assert _extract_heading_from_text("Appendix A - Revision History") == "Appendix A - Revision History"
+
+
+def test_extract_heading_from_text_rejects_non_headings():
+    # verify non-heading text lines are rejected
+    assert _extract_heading_from_text("JVM/Go GC pause times during large XML serialization cycles.") is None
+    assert _extract_heading_from_text("A. All user passwords must be hashed before storage in the database.") is None
+    assert _extract_heading_from_text("Table: products") is None
+    assert _extract_heading_from_text("Specifications: Outbound Status Code from the gateway.") is None
+    assert _extract_heading_from_text("• Bullet point text in document") is None
+    assert _extract_heading_from_text("1. Deliver a functioning website within a four-month development period.") is None
+
+
+def test_hierarchy_resolver_recovers_section_e_when_subsections_follow_section_d():
+    # verify resolver advances to section e when major section e arrives after section d
+    resolver = HeaderHierarchyResolver()
+    b_d = resolver.process_heading("D. Technology Stack Requirements")
+    assert b_d == "D. Technology Stack Requirements"
+    assert resolver.get_root_key() == "D"
+
+    # major section e arrives and advances root scope from d to e
+    b_e = resolver.process_heading("E. Processing Specifications")
+    assert b_e == "E. Processing Specifications"
+    assert resolver.get_root_key() == "E"
+
+    # subheader 1 subordinates under active section e
+    b_mod = resolver.process_heading("1. Modules")
+    assert b_mod == "E. Processing Specifications - 1. Modules"
+    assert resolver.get_root_key() == "E"
+
+    # sibling subheader 2 continues under section e
+    b_diag = resolver.process_heading("2. Diagrams")
+    assert b_diag == "E. Processing Specifications - 2. Diagrams"
+    assert resolver.get_root_key() == "E"
+
+
+def test_merge_chunks_separates_section_d_and_section_e():
+    # verify section d terminates at page 6 and does not absorb section e chunks (pages 7-13)
+    chunk_d = EvaluationChunk(
+        chunk_id="c0",
+        heading="D. Technology Stack Requirements",
+        page_range=(5, 6),
+        structured_text="Tech stack details on pages 5 and 6",
+        element_refs=[],
+        figures=[],
+    )
+    chunk_e1 = EvaluationChunk(
+        chunk_id="c1",
+        heading="E. Processing Specifications - 1. Modules",
+        page_range=(7, 7),
+        structured_text="Module specs on page 7",
+        element_refs=[],
+        figures=[],
+    )
+    chunk_e2 = EvaluationChunk(
+        chunk_id="c2",
+        heading="E. Processing Specifications - 2. Diagrams",
+        page_range=(7, 8),
+        structured_text="Diagram specs on pages 7 and 8",
+        element_refs=[],
+        figures=[],
+    )
+    chunk_e3 = EvaluationChunk(
+        chunk_id="c3",
+        heading="E. Processing Specifications - 3. Files and Records",
+        page_range=(8, 9),
+        structured_text="Files specs on pages 8 and 9",
+        element_refs=[],
+        figures=[],
+    )
+    chunk_e4 = EvaluationChunk(
+        chunk_id="c4",
+        heading="E. Processing Specifications - 4. Reports",
+        page_range=(9, 10),
+        structured_text="Reports specs on pages 9 and 10",
+        element_refs=[],
+        figures=[],
+    )
+    chunk_e5 = EvaluationChunk(
+        chunk_id="c5",
+        heading="E. Processing Specifications - 5. Parameter and Lookup Files",
+        page_range=(10, 13),
+        structured_text="Lookup files specs on pages 10 to 13",
+        element_refs=[],
+        figures=[],
+    )
+
+    merged = merge_chunks([chunk_d, chunk_e1, chunk_e2, chunk_e3, chunk_e4, chunk_e5])
+
+    # section d and section e remain separate chunks with correct page bounds
+    assert len(merged) == 2
+    assert merged[0].heading == "D. Technology Stack Requirements"
+    assert merged[0].page_range == (5, 6)
+    assert merged[1].heading == "E. Processing Specifications"
+    assert merged[1].page_range == (7, 13)
+
+
+def test_promote_heuristic_headings_on_mock_document():
+    # verify promote_heuristic_headings detects misclassified paragraph headings in mock doc
+    class MockProv:
+        def __init__(self, page_no):
+            self.page_no = page_no
+
+    class MockItem:
+        def __init__(self, label, text, self_ref, page_no):
+            self.label = label
+            self.text = text
+            self.self_ref = self_ref
+            self.prov = [MockProv(page_no)]
+
+    class MockDoc:
+        def __init__(self, items):
+            self.items = items
+            self.texts = items
+
+        def iterate_items(self):
+            for item in self.items:
+                yield item, 0
+
+    items = [
+        MockItem("section_header", "D. Technology Stack Requirements", "#/texts/0", 5),
+        MockItem("paragraph", "Tech stack body text", "#/texts/1", 5),
+        MockItem("paragraph", "E. Processing Specifications", "#/texts/2", 7),
+        MockItem("paragraph", "1. Modules", "#/texts/3", 7),
+        MockItem("paragraph", "Regular module description paragraph.", "#/texts/4", 7),
+    ]
+    doc = MockDoc(items)
+
+    promoted = promote_heuristic_headings(doc)
+    assert "E. Processing Specifications" in promoted
+    assert "1. Modules" in promoted
+
+    assert items[0].label == "section_header"
+    assert items[1].label == "paragraph"
+    assert items[2].label in ("section_header", "section_heading")
+    assert items[3].label in ("section_header", "section_heading")
+    assert items[4].label == "paragraph"
+
+
+def test_hierarchy_resolver_scientific_decimal_outline():
+    # verify decimal hierarchy resolution for scientific / academic papers
+    resolver = HeaderHierarchyResolver()
+    assert resolver.process_heading("1. Introduction") == "1. Introduction"
+    assert resolver.get_root_key() == "1"
+
+    assert resolver.process_heading("1.1 Background") == "1. Introduction - 1.1 Background"
+    assert resolver.get_root_key() == "1"
+
+    assert resolver.process_heading("1.2 Prior Work") == "1. Introduction - 1.2 Prior Work"
+    assert resolver.get_root_key() == "1"
+
+    # advance to section 2
+    assert resolver.process_heading("2. Methodology") == "2. Methodology"
+    assert resolver.get_root_key() == "2"
+
+    assert resolver.process_heading("2.1 Data Collection") == "2. Methodology - 2.1 Data Collection"
+    assert resolver.get_root_key() == "2"
+
+
+def test_hierarchy_resolver_legal_articles_and_sections():
+    # verify structural prefix hierarchies for legal contracts and governance documents
+    resolver = HeaderHierarchyResolver()
+    assert resolver.process_heading("Article I - Definitions") == "Article I - Definitions"
+    assert resolver.get_root_key() == "I"
+
+    assert resolver.process_heading("Section 1.1 Party Obligations") == "Article I - Definitions - Section 1.1 Party Obligations"
+    assert resolver.get_root_key() == "I"
+
+    # advance to article ii
+    assert resolver.process_heading("Article II - Payment Terms") == "Article II - Payment Terms"
+    assert resolver.get_root_key() == "II"
+
+    assert resolver.process_heading("Section 2.1 Invoicing") == "Article II - Payment Terms - Section 2.1 Invoicing"
+    assert resolver.get_root_key() == "II"
+
+
+def test_hierarchy_resolver_sequence_reset_across_parents():
+    # verify that subordinate sequences reset cleanly when transitioning across major parents
+    resolver = HeaderHierarchyResolver()
+    resolver.process_heading("A. First Major Division")
+    resolver.process_heading("1. Item One")
+    resolver.process_heading("2. Item Two")
+    assert resolver.get_current_breadcrumb() == "A. First Major Division - 2. Item Two"
+
+    # new parent division b
+    resolver.process_heading("B. Second Major Division")
+    assert resolver.get_root_key() == "B"
+    assert resolver.get_current_breadcrumb() == "B. Second Major Division"
+
+    # subordinate sequence restarts at 1 under b
+    resolver.process_heading("1. Item One")
+    assert resolver.get_current_breadcrumb() == "B. Second Major Division - 1. Item One"
+    assert resolver.get_root_key() == "B"
+
+
+def test_no_wordlists_in_helper_modules():
+    # verify that helper modules contain zero hardcoded section lists, dictionaries, or document maps
+    import inspect
+    from cheshire_configs.preprocessors.multistep import helpers
+
+    for name in dir(helpers):
+        assert not name.startswith("_KNOWN_"), f"Hardcoded wordlist {name} found in helpers!"
+        assert not name.endswith("_MAP"), f"Hardcoded mapping {name} found in helpers!"
+
+    # verify hierarchy module has zero hardcoded section titles or document-specific constants
+    from cheshire_configs.preprocessors.multistep.helpers import hierarchy
+    hierarchy_src = inspect.getsource(hierarchy).lower()
+    assert "_known" not in hierarchy_src
+    assert "sentrobank" not in hierarchy_src
+    assert "processing specifications" not in hierarchy_src
+    assert "technology stack" not in hierarchy_src
+

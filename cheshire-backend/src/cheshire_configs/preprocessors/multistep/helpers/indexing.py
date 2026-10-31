@@ -9,9 +9,9 @@ from typing import Any
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
 
-from .elements import _attach_captions, _find_page_gaps
+from .elements import _attach_captions, _find_page_gaps, promote_heuristic_headings
 from .geometry import _get_item_label
-from .hierarchy import HeaderHierarchyResolver
+from .hierarchy import HeaderHierarchyResolver, _extract_heading_from_text
 
 
 def _is_reference_section(section_title: str) -> bool:
@@ -146,6 +146,8 @@ def build_document_index(doc: DoclingDocument) -> dict:
     and external reference documents cited in reference tables, lists, or
     introductory overview text.
     """
+    promote_heuristic_headings(doc)
+
     sections: list[dict] = []
     figures: list[dict] = []
     tables: list[dict] = []
@@ -200,7 +202,17 @@ def build_document_index(doc: DoclingDocument) -> dict:
         elif label in ("paragraph", "list_item", "text"):
             item_text = getattr(item, "text", "")
             if item_text:
-                if _is_reference_section(current_section):
+                cand = _extract_heading_from_text(item_text)
+                if cand:
+                    current_section = hierarchy_resolver.process_heading(cand)
+                    root_section = hierarchy_resolver.get_root_heading() or current_section
+                    sections.append({
+                        "id": item.self_ref,
+                        "title": current_section,
+                        "root_section": root_section,
+                        "page": prov.page_no,
+                    })
+                elif _is_reference_section(current_section):
                     for entry in _extract_reference_text_items(item_text):
                         _add_ref(entry)
                 elif "overview" in current_section.lower() or "introduction" in current_section.lower():
