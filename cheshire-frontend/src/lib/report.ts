@@ -238,6 +238,29 @@ export function reportFileName(documentName: string, date: Date): string {
   return `${base}_Assessment_${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}.pdf`
 }
 
+/**
+ * Makes model-written text safe for react-pdf's built-in Helvetica (Latin-1 only):
+ * maps typographic characters to ASCII, drops control/zero-width/unsupported glyphs,
+ * and collapses whitespace. Unsupported glyphs otherwise corrupt text layout.
+ */
+export function pdfSafe(input: unknown): string {
+  if (input == null) return ""
+  return String(input)
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2013\u2014\u2212]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u2022\u25CF\u25AA\u00B7]/g, "-")
+    .replace(/[\u2192\u21D2]/g, "->")
+    .replace(/[\u2190\u21D0]/g, "<-")
+    .replace(/[\u00A0\u2000-\u200A\u202F\u205F]/g, " ")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/[^\u0009\u000A\u000D\u0020-\u00FF]/g, "")
+    .replace(/[ \t]+/g, " ")
+    .trim()
+}
+
 // ── Trend (multiple assessments) ──────────────────────────────────────────────
 
 export interface TrendPoint extends SeverityCounts {
@@ -264,20 +287,22 @@ export interface TrendCoord {
   point: TrendPoint
 }
 
-/** Shared by the on-screen chart and the PDF so both draw the same line. */
+const finite = (n: number, fallback = 0) => (Number.isFinite(n) ? n : fallback)
+
+/** Shared by the on-screen chart and the PDF so both draw the same line. Always returns finite numbers. */
 export function trendGeometry(
   points: TrendPoint[],
   width: number,
   height: number,
   pad = { l: 28, r: 12, t: 10, b: 22 }
 ): TrendCoord[] {
-  const innerW = width - pad.l - pad.r
-  const innerH = height - pad.t - pad.b
+  const innerW = Math.max(1, width - pad.l - pad.r)
+  const innerH = Math.max(1, height - pad.t - pad.b)
   return points.map((point, i) => {
     const score = scoreFromCounts(point)
     return {
-      x: pad.l + (points.length === 1 ? innerW / 2 : (innerW * i) / (points.length - 1)),
-      y: pad.t + innerH * (1 - score / 100),
+      x: finite(pad.l + (points.length === 1 ? innerW / 2 : (innerW * i) / (points.length - 1)), pad.l),
+      y: finite(pad.t + innerH * (1 - score / 100), pad.t),
       score,
       point,
     }

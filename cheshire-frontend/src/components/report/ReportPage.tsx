@@ -212,7 +212,6 @@ export default function ReportPage({
   const handleExport = async () => {
     setExporting(true)
     try {
-      // Loaded on demand so the PDF renderer stays out of the main bundle.
       const { exportReportPdf } = await import("@/lib/helpers/export_report")
       const fileName = await exportReportPdf({ ...report, generatedAt: new Date() }, trend)
       toast.success("Report exported", { description: fileName })
