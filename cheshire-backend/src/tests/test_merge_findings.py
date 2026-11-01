@@ -13,10 +13,12 @@ from cheshire_configs.preprocessors.multistep.helpers import (
 from cheshire_configs.preprocessors.multistep.tools import (
     add_local_finding,
     accept_local_finding,
+    batch_accept_findings,
     merge_findings,
 )
 from cheshire_configs.preprocessors.multistep.pipelines import (
     merge_findings_tool,
+    batch_accept_findings_tool,
     build_dedup_pipeline,
 )
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
@@ -371,3 +373,39 @@ def test_accept_local_finding_mandatory_recommendations():
             element_type="paragraph",
             recommendations=[],
         )
+
+
+def test_batch_accept_findings():
+    # test batch accept
+    findings = [
+        LocalFinding(
+            element_id="p_1",
+            element_type="paragraph",
+            finding="Gap 1",
+            standard_ref="Standard",
+            severity="major",
+            confidence=1.0,
+            recommendations=["Fix 1"],
+        ),
+        LocalFinding(
+            element_id="p_2",
+            element_type="paragraph",
+            finding="Gap 2",
+            standard_ref="Standard",
+            severity="minor",
+            confidence=0.8,
+            recommendations=["Fix 2"],
+        ),
+    ]
+    res = batch_accept_findings(findings)
+    assert len(res["finding"]) == 2
+    assert res["finding"][0].element_id == ["p_1"]
+    assert res["finding"][1].element_id == ["p_2"]
+
+
+def test_batch_accept_findings_tool_wrapper():
+    # test batch accept tool
+    tool = batch_accept_findings_tool("accepted_findings")
+    assert tool.name == "batch_accept_findings"
+
+

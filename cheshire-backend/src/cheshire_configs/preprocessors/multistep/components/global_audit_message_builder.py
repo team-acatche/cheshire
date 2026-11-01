@@ -44,7 +44,7 @@ class GlobalAuditMessageBuilder:
 
         return {"messages": [
             ChatMessage.from_user(
-                f"Document index:\n{json.dumps(document_index, indent=2)}"
+                f"Document index:\n{json.dumps(document_index, separators=(',', ':'))}"
                 f"\n\nAccepted finding titles from deduplication ({len(finding_titles)} total):\n"
                 + "\n".join(f"- {t}" for t in finding_titles)
             )

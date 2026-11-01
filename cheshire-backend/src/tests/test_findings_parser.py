@@ -4,7 +4,13 @@ from haystack.dataclasses import ChatMessage
 from docling_core.types.doc import BoundingBox
 
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, ElementRef, FigureRef, ImageBoundingBox
+from cheshire_configs.preprocessors.multistep.helpers import (
+    EvaluationChunk,
+    ElementRef,
+    FigureRef,
+    ImageBoundingBox,
+    TableCellRef,
+)
 from tools.helpers.output_schema import VulnerabilityDetails
 
 # A dummy ImageBoundingBox for ElementRef initialization
@@ -324,3 +330,257 @@ def test_findings_parser_none_message_text():
     
     result = parser.run(last_message=message, chunk=chunk)
     assert result == {"vulnerabilities": []}
+
+
+def test_findings_parser_table_cell_snapping_subline_text():
+    """
+    Verify that an imprecise vision sub_bbox on a multi-line table cell snaps
+    strictly to the column boundaries and the targeted bullet text line.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Operational & System Telemetry: Outdated GC pause specifications",
+            "description": "Specifications reference JVM/Go GC pause times during large XML serialization cycles.",
+            "figure_id": "table_crop_#/tables/0",
+            # Imprecise sub_bbox shifted down and to the right into the next column
+            "sub_bbox": [400.0, 500.0, 850.0, 750.0],
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    desc_cell_bbox = BoundingBox(l=200.0, t=500.0, r=450.0, b=300.0)
+    col3_cell_bbox = BoundingBox(l=450.0, t=500.0, r=550.0, b=300.0)
+
+    table_cells = [
+        TableCellRef(
+            text="Operational & System Telemetry",
+            bbox_pdf=BoundingBox(l=50.0, t=500.0, r=180.0, b=300.0),
+            row_idx=1,
+            col_idx=0,
+        ),
+        TableCellRef(
+            text="E",
+            bbox_pdf=BoundingBox(l=180.0, t=500.0, r=200.0, b=300.0),
+            row_idx=1,
+            col_idx=1,
+        ),
+        TableCellRef(
+            text=(
+                "Specifications:\n"
+                "• JVM/Go GC pause times during large XML serialization cycles.\n"
+                "• Streaming XML buffer memory allocation counters."
+            ),
+            bbox_pdf=desc_cell_bbox,
+            row_idx=1,
+            col_idx=2,
+        ),
+        TableCellRef(
+            text="AWVTelemetry&PerformanceLogs_10-20-2026.xlsx",
+            bbox_pdf=col3_cell_bbox,
+            row_idx=1,
+            col_idx=3,
+        ),
+    ]
+
+    fig = FigureRef(
+        figure_id="table_crop_#/tables/0",
+        page_number=8,
+        bbox_image_px=[0.0, 0.0, 1000.0, 400.0],
+        bbox_pdf=BoundingBox(l=50.0, t=550.0, r=550.0, b=300.0),
+        base64_png="dummy_base64",
+        table_cells=table_cells,
+    )
+    chunk = create_test_chunk(figures=[fig])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    v = vulns[0]
+
+    # The snapped box must be strictly within the description column (l=200.0, r=450.0)
+    # It must NOT bleed into the Excel icon column (r <= 450.0)
+    assert v.bbox.l == 200.0
+    assert v.bbox.r == 450.0
+    # Vertically it must target segment 1 ("JVM/Go GC pause times")
+    # cell_h = 200.0; segment 1 of 3 lines spans top_frac = 1/3 to bottom_frac = 2/3
+    # t = 500 - (1/3)*200 = 433.333, b = 500 - (2/3)*200 = 366.667
+    assert v.bbox.t < desc_cell_bbox.t  # below "Specifications:"
+    assert v.bbox.b > desc_cell_bbox.b  # above "Streaming XML"
+
+
+def test_findings_parser_table_element_id_cell_snapping():
+    """
+    Verify that findings anchored to element_id on a table snap to the matching cell.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Reports: Missing Attachment Format",
+            "description": "Attachment AWVTransportLogs_10-25-2026.pdf is missing Class/Module field.",
+            "element_id": "#/tables/0",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    target_cell_bbox = BoundingBox(l=450.0, t=500.0, r=550.0, b=300.0)
+    table_cells = [
+        TableCellRef(
+            text="Internet & Perimeter Egress",
+            bbox_pdf=BoundingBox(l=50.0, t=500.0, r=180.0, b=300.0),
+            row_idx=1,
+            col_idx=0,
+        ),
+        TableCellRef(
+            text="AWVTransportLogs_10-25-2026.pdf",
+            bbox_pdf=target_cell_bbox,
+            row_idx=1,
+            col_idx=3,
+        ),
+    ]
+
+    elem = ElementRef(
+        element_id="#/tables/0",
+        label="table",
+        page_number=8,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=BoundingBox(l=50.0, t=550.0, r=550.0, b=300.0),
+        text_excerpt="table content",
+        table_cells=table_cells,
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    # Bbox snaps directly to the target cell
+    assert vulns[0].bbox == target_cell_bbox
+
+
+def test_findings_parser_table_title_priority_over_description():
+    """
+    Verify that table cell snapping prioritizes title subjects (e.g. RabbitMQ 3.12)
+    over long narrative description text (e.g. Loan event streaming).
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Message Queue: RabbitMQ 3.12 is out of community and commercial support",
+            "description": "The Message Queue row specifies RabbitMQ 3.12 for loan event streaming. RabbitMQ 3.12 ended community support...",
+            "element_id": "#/tables/1",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    mq_cell_bbox = BoundingBox(l=150.0, t=400.0, r=250.0, b=370.0)
+    ver_cell_bbox = BoundingBox(l=260.0, t=400.0, r=320.0, b=370.0)
+    desc_cell_bbox = BoundingBox(l=330.0, t=400.0, r=500.0, b=370.0)
+
+    table_cells = [
+        TableCellRef(text="Message Queue", bbox_pdf=BoundingBox(l=50.0, t=400.0, r=140.0, b=370.0), row_idx=5, col_idx=0),
+        TableCellRef(text="RabbitMQ", bbox_pdf=mq_cell_bbox, row_idx=5, col_idx=1),
+        TableCellRef(text="3.12", bbox_pdf=ver_cell_bbox, row_idx=5, col_idx=2),
+        TableCellRef(text="Loan event streaming", bbox_pdf=desc_cell_bbox, row_idx=5, col_idx=3),
+    ]
+
+    elem = ElementRef(
+        element_id="#/tables/1",
+        label="table",
+        page_number=5,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=BoundingBox(l=50.0, t=600.0, r=500.0, b=200.0),
+        text_excerpt="tech stack table",
+        table_cells=table_cells,
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    # Bbox should cover the subject technology / version (stopping at r=320.0), NOT desc_cell_bbox (l=330.0)
+    snapped_bbox = vulns[0].bbox
+    assert snapped_bbox.r == 320.0
+    assert snapped_bbox.r < desc_cell_bbox.l
+    assert snapped_bbox.r == 320.0
+    assert snapped_bbox.r < desc_cell_bbox.l or snapped_bbox.r != desc_cell_bbox.r
+
+
+def test_findings_parser_table_multi_row_matching():
+    """
+    Verify that findings mentioning elements across multiple table rows
+    produce highlights for all matched rows rather than collapsing to a single cell.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Reports: Missing Attachment Format for ReportA and ReportB",
+            "description": "Both ReportA.pdf and ReportB.pdf lack specified output class formats in table.",
+            "element_id": "#/tables/2",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    row1_cell = TableCellRef(text="ReportA.pdf", bbox_pdf=BoundingBox(l=50.0, t=500.0, r=200.0, b=450.0), row_idx=1, col_idx=0)
+    row2_cell = TableCellRef(text="ReportB.pdf", bbox_pdf=BoundingBox(l=50.0, t=400.0, r=200.0, b=350.0), row_idx=2, col_idx=0)
+
+    elem = ElementRef(
+        element_id="#/tables/2",
+        label="table",
+        page_number=8,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=BoundingBox(l=50.0, t=550.0, r=500.0, b=300.0),
+        text_excerpt="reports table",
+        table_cells=[row1_cell, row2_cell],
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    bboxes = vulns[0].bboxes
+    # Both rows should be represented in bboxes
+    assert len(bboxes) == 2
+    y_tops = {b.t for b in bboxes}
+    assert 500.0 in y_tops
+    assert 400.0 in y_tops
+
+
+def test_findings_parser_table_wide_finding_highlights_table():
+    """
+    Verify that findings regarding table-wide structure (e.g. 'lacks column headers')
+    highlight the entire table bounding box rather than collapsing to a single cell.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Directories/Paths table lacks column headers in the statutory report block",
+            "description": "The Directories/Paths table lacks column headers and uses hardcoded UNC paths.",
+            "element_id": "#/tables/3",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    cell1 = TableCellRef(text=r"\\crestview-internal\Auditing_Section\AWV", bbox_pdf=BoundingBox(l=60.0, t=480.0, r=400.0, b=450.0), row_idx=0, col_idx=0)
+    table_box = BoundingBox(l=50.0, t=500.0, r=500.0, b=200.0)
+
+    elem = ElementRef(
+        element_id="#/tables/3",
+        label="table",
+        page_number=13,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=table_box,
+        text_excerpt="directories table",
+        table_cells=[cell1],
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    # Bbox must highlight the whole table, not just cell1
+    assert vulns[0].bbox.l == table_box.l
+    assert vulns[0].bbox.r == table_box.r
+    assert vulns[0].bbox.t == table_box.t
+    assert vulns[0].bbox.b == table_box.b
+
+

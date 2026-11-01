@@ -2,13 +2,20 @@ from dataclasses import dataclass
 
 from haystack import Pipeline
 
+from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessing_pipeline, build_evaluation_pipeline
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, LocalFinding, ElementRef, FigureRef
+from cheshire_configs.preprocessors.multistep.helpers import (
+    EvaluationChunk,
+    LocalFinding,
+    ElementRef,
+    FigureRef,
+    _snap_table_finding_bboxes,
+)
 from cheshire_configs.preprocessors.multistep.components.findings_parser import clamp
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_dedup_pipeline, build_global_audit_pipeline
 from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails, Contradiction
-from docling_core.types.doc import BoundingBox
+from docling_core.types.doc import BoundingBox, CoordOrigin
 
 import logging
 from typing import Any, Optional
@@ -71,17 +78,6 @@ def run_pass1(
             f"{len(chunk.figures)} figure(s))..."
         )
 
-        previous_findings: list[dict] = [
-            {
-                "finding": f.finding,
-                "standard_ref": f.standard_ref,
-                "severity": f.severity,
-                "element_id": f.element_id,
-                "figure_id": f.figure_id
-            }
-            for f in all_findings
-        ]
-
         # evaluate chunk with retry
         max_chunk_retries = 2
         result: dict = {}
@@ -91,7 +87,6 @@ def run_pass1(
                     "chunk_message_builder": {
                         "chunk": chunk,
                         "document_index": document_index,
-                        "previous_findings": previous_findings
                     },
                     "agent": {
                         "chunks_cache": chunks
@@ -138,11 +133,26 @@ def run_pass2(
     # ---- Step 1: Deduplication & contradiction resolution ----
     raise_if_cancelled(should_cancel)
     logger.info("[Pass 2a] Deduplicating findings...")
+
+    # pre-dedup exact duplicates
+    seen_exact: set[tuple[Any, Any, str, str]] = set()
+    unique_findings: list[LocalFinding] = []
+    for f in all_findings:
+        elem_val = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+        elem_key = tuple(elem_val) if isinstance(elem_val, list) else elem_val
+        fig_id = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
+        std_ref = getattr(f, "standard_ref", None) or (f.get("standard_ref") if isinstance(f, dict) else None) or ""
+        desc = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
+        k = (elem_key, fig_id, std_ref, desc.strip().lower())
+        if k not in seen_exact:
+            seen_exact.add(k)
+            unique_findings.append(f)
+
     dedup_pipeline: Pipeline = build_dedup_pipeline()
 
     dedup_result: dict = dedup_pipeline.run({
         "dedup_message_builder": {
-            "all_findings": all_findings,
+            "all_findings": unique_findings,
         }
     })
 
@@ -241,13 +251,11 @@ def run_pass2(
         if confidence is not None:
             confidence = min(1.0, max(0.0, float(confidence)))
 
+        final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         page_no: int = 1
         bboxes: list[PageBoundingBox] = []
 
-        if is_document:
-            pass
-
-        elif figure_id and figure_id in figure_by_id:
+        if figure_id and figure_id in figure_by_id:
             fig: FigureRef = figure_by_id[figure_id]
             page_no = fig.page_number
             origin = fig.bbox_pdf.coord_origin
@@ -272,34 +280,69 @@ def run_pass2(
                 frac_x2: float = clamp(0.0, sx2 / scale_factor, 1.0)
                 frac_y2: float = clamp(0.0, sy2 / scale_factor, 1.0)
 
+                fig_top: float = max(fig.bbox_pdf.t, fig.bbox_pdf.b)
+                fig_bot: float = min(fig.bbox_pdf.t, fig.bbox_pdf.b)
+                fig_left: float = min(fig.bbox_pdf.l, fig.bbox_pdf.r)
+
+                pdf_x1 = fig_left + frac_x1 * fig_w
+                pdf_x2 = fig_left + frac_x2 * fig_w
+                pdf_y1 = fig_top - frac_y1 * fig_h
+                pdf_y2 = fig_top - frac_y2 * fig_h
+
                 bboxes.append(PageBoundingBox(
-                    l=fig.bbox_pdf.l + frac_x1 * fig_w,
-                    t=fig.bbox_pdf.t - frac_y1 * fig_h,
-                    r=fig.bbox_pdf.l + frac_x2 * fig_w,
-                    b=fig.bbox_pdf.t - frac_y2 * fig_h,
-                    coord_origin=origin,
+                    l=min(pdf_x1, pdf_x2),
+                    t=max(pdf_y1, pdf_y2),
+                    r=max(pdf_x1, pdf_x2),
+                    b=min(pdf_y1, pdf_y2),
+                    coord_origin=CoordOrigin.BOTTOMLEFT,
                     page_no=fig.page_number,
                 ))
 
             if not bboxes:  # no usable sub_bbox: highlight the whole figure
                 bboxes = [PageBoundingBox(**fig.bbox_pdf.model_dump(), page_no=fig.page_number)]
 
+            # Snap table findings to deterministic cell geometry
+            table_cells = getattr(fig, "table_cells", None)
+            if not table_cells and figure_id.startswith("table_crop_"):
+                parent_elem = element_by_id.get(figure_id.removeprefix("table_crop_"))
+                table_cells = getattr(parent_elem, "table_cells", None) if parent_elem else None
+
+            if table_cells:
+                bboxes = _snap_table_finding_bboxes(
+                    finding_text=finding,
+                    title=final_title,
+                    table_cells=table_cells,
+                    raw_bboxes=bboxes,
+                    table_bbox=fig.bbox_pdf,
+                    page_number=page_no,
+                )
+
         elif element_id:
             elem_ids = [element_id] if isinstance(element_id, str) else element_id
             for eid in elem_ids:
                 elem = element_by_id.get(eid)
                 if elem:
-                    bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
+                    if getattr(elem, "table_cells", None):
+                        snapped = _snap_table_finding_bboxes(
+                            finding_text=finding,
+                            title=final_title,
+                            table_cells=elem.table_cells,
+                            raw_bboxes=[],
+                            table_bbox=elem.bbox_pdf,
+                            page_number=elem.page_number,
+                        )
+                        bboxes.extend(snapped)
+                    else:
+                        bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
             if bboxes:
                 page_no = bboxes[0].page_no or 1  # finding.page_no = first box's page
 
-        final_title: str = title if title else (finding[:60] + "..." if len(finding) > 60 else finding)
         final_vulnerabilities.append(
             VulnerabilityDetails(
                 title=final_title,
                 description=finding,
                 page_no=page_no,
-                bboxes=bboxes,  # bbox is derived from bboxes[0] by the validator
+                bboxes=bboxes,
                 web_references=web_refs,
                 recommendations=recs,
                 scope="section" if bboxes else "document",

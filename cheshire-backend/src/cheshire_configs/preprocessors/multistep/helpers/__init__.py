@@ -25,6 +25,9 @@ from .hierarchy import (
     ScopeLevel,
     Segment,
     SeqType,
+    _extract_heading_from_text,
+    _is_spurious_heading,
+    _normalize_heading_text,
     parse_header_token,
 )
 from .constants import (
@@ -63,10 +66,12 @@ from .elements import (
     _build_figure_lookup,
     _find_page_gaps,
     _is_footer_element,
+    promote_heuristic_headings,
 )
 from .geometry import (
     _compute_box_overlap,
     _get_item_label,
+    _snap_table_finding_bboxes,
     _to_topleft_dict,
 )
 from .indexing import (
@@ -78,6 +83,7 @@ from .models import (
     FigureRef,
     ImageBoundingBox,
     LocalFinding,
+    TableCellRef,
 )
 from .tables import (
     _calculate_extended_col_bounds,
@@ -87,6 +93,7 @@ from .tables import (
     _detect_document_footer_top,
     _detect_table_column_splits,
     _extract_header_from_table_text,
+    _extract_table_cells_ref,
     _format_cell_with_icons,
     _format_table_markdown,
     _format_table_row_cells,
@@ -137,11 +144,13 @@ __all__ = [
     "ElementRef",
     "FigureRef",
     "LocalFinding",
+    "TableCellRef",
     "EvaluationChunk",
     # Geometry
     "_get_item_label",
     "_to_topleft_dict",
     "_compute_box_overlap",
+    "_snap_table_finding_bboxes",
     # Tables
     "_calculate_extended_row_bounds",
     "_calculate_extended_col_bounds",
@@ -170,6 +179,7 @@ __all__ = [
     "_attach_captions",
     "_find_page_gaps",
     "_is_footer_element",
+    "promote_heuristic_headings",
     # Chunking
     "_extract_section_key",
     "_merge_chunk_pair",
@@ -186,4 +196,7 @@ __all__ = [
     "Segment",
     "SeqType",
     "parse_header_token",
+    "_extract_heading_from_text",
+    "_is_spurious_heading",
+    "_normalize_heading_text",
 ]

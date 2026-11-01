@@ -19,11 +19,15 @@ class ChunkMessageBuilder:
         document_index: dict,
         previous_findings: list | None = None
     ) -> dict:
+        # prune table rows from index to save tokens
+        pruned_index = {k: v for k, v in document_index.items() if k != "tables"}
+        if "tables" in document_index:
+            pruned_index["tables"] = [
+                {k: v for k, v in t.items() if k != "rows"}
+                for t in document_index["tables"]
+            ]
 
-        prompt_text: str = f"Document index:\n{json.dumps(document_index, indent=2)}"
-        
-        if previous_findings:
-            prompt_text += f"\n\nFindings identified in previous sections:\n{json.dumps(previous_findings, indent=2)}"
+        prompt_text: str = f"Document index:\n{json.dumps(pruned_index, separators=(',', ':'))}"
             
         # Section structure context for lead-in awareness
         import re

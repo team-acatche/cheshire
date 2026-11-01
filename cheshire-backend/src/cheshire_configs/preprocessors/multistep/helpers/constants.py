@@ -27,9 +27,9 @@ INDEPENDENT_HEADER_KEYWORDS: frozenset[str] = frozenset({
     "format", "attachment", "attachments",
 })
 
-# Default text scale and chunk length thresholds
-DEFAULT_MAX_CHUNK_CHARS: int = 4000
-DEFAULT_IMAGE_SCALE: float = 2.0
+# default chunk length and scale
+DEFAULT_MAX_CHUNK_CHARS: int = 6000
+DEFAULT_IMAGE_SCALE: float = 1.0
 
 # Table cell coverage and clipping detection thresholds
 MIN_TABLE_CELL_COVERAGE_RATIO: float = 0.85

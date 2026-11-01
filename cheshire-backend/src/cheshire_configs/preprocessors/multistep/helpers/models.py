@@ -39,6 +39,20 @@ class ImageBoundingBox:
 
 
 @dataclass
+class TableCellRef:
+    """
+    Metadata for a table cell parsed by Docling, including its PDF bounding box,
+    text content, and row/column coordinates.
+    """
+    text: str
+    bbox_pdf: BoundingBox
+    row_idx: int
+    col_idx: int
+    row_span: int = 1
+    col_span: int = 1
+
+
+@dataclass
 class ElementRef:
     """
     A text-based document element with its Docling-sourced bbox.
@@ -51,6 +65,7 @@ class ElementRef:
     bbox_image_px: ImageBoundingBox
     bbox_pdf: BoundingBox
     text_excerpt: str
+    table_cells: list[TableCellRef] = field(default_factory=list)
 
 
 @dataclass
@@ -65,6 +80,7 @@ class FigureRef:
     bbox_image_px: Union[ImageBoundingBox, list[float]]
     bbox_pdf: BoundingBox
     base64_png: str
+    table_cells: list[TableCellRef] = field(default_factory=list)
 
 
 class LocalFinding(BaseModel):

@@ -12,7 +12,7 @@ import warnings
 
 from dateutil.parser import ParserError, parse as datetime_parse
 from docling.datamodel.document import ConversionResult
-from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc import BoundingBox, CoordOrigin, DoclingDocument
 from docling_core.types.doc.document import ProvenanceItem
 import numpy as np
 from tabulate import tabulate
@@ -45,7 +45,7 @@ from .constants import (
     WIDE_TABLE_ASPECT_RATIO,
 )
 from .geometry import _compute_box_overlap, _to_topleft_dict
-from .models import FigureRef, ImageBoundingBox
+from .models import FigureRef, ImageBoundingBox, TableCellRef
 
 
 def _calculate_extended_row_bounds(
@@ -646,6 +646,108 @@ def _sanitize_table_cell_text(text: str) -> str:
     return cleaned
 
 
+def _extract_table_cells_ref(
+    table_item: Any,
+    page_h: float,
+    fallback_prov_bbox: Any,
+) -> list[TableCellRef]:
+    """
+    Extracts structured TableCellRef instances for each cell in a table,
+    capturing its exact PDF bounding box, text content, row, and column indices.
+    """
+    cells_ref: list[TableCellRef] = []
+    data = getattr(table_item, "data", None)
+    if not data:
+        return cells_ref
+
+    raw_cells = getattr(data, "table_cells", None)
+    cell_bounds = _get_table_cell_bounds(table_item, page_h) if page_h > 0 else {}
+    fallback_origin = getattr(fallback_prov_bbox, "coord_origin", CoordOrigin.BOTTOMLEFT)
+
+    if raw_cells and len(raw_cells) > 0:
+        for tc in raw_cells:
+            text = getattr(tc, "text", "")
+            r_idx = getattr(tc, "start_row_offset_idx", 0)
+            c_idx = getattr(tc, "start_col_offset_idx", 0)
+            r_span = getattr(tc, "row_span", 1)
+            c_span = getattr(tc, "col_span", 1)
+            bbox = getattr(tc, "bbox", None)
+
+            if bbox is None and (r_idx, c_idx) in cell_bounds:
+                cb = cell_bounds[(r_idx, c_idx)]
+                if fallback_origin == CoordOrigin.BOTTOMLEFT:
+                    bbox = BoundingBox(
+                        l=cb["l"],
+                        r=cb["r"],
+                        t=page_h - cb["t"],
+                        b=page_h - cb["b"],
+                        coord_origin=CoordOrigin.BOTTOMLEFT,
+                    )
+                else:
+                    bbox = BoundingBox(
+                        l=cb["l"],
+                        r=cb["r"],
+                        t=cb["t"],
+                        b=cb["b"],
+                        coord_origin=CoordOrigin.TOPLEFT,
+                    )
+            elif bbox is not None:
+                # Ensure coordinate origin matches table's provenance bbox
+                if hasattr(bbox, "coord_origin") and bbox.coord_origin != fallback_origin:
+                    if fallback_origin == CoordOrigin.BOTTOMLEFT and hasattr(bbox, "to_bottom_left_origin"):
+                        bbox = bbox.to_bottom_left_origin(page_h)
+                    elif fallback_origin == CoordOrigin.TOPLEFT and hasattr(bbox, "to_top_left_origin"):
+                        bbox = bbox.to_top_left_origin(page_h)
+
+            if bbox is not None:
+                cells_ref.append(
+                    TableCellRef(
+                        text=text,
+                        bbox_pdf=bbox,
+                        row_idx=r_idx,
+                        col_idx=c_idx,
+                        row_span=r_span,
+                        col_span=c_span,
+                    )
+                )
+    elif hasattr(data, "grid") and data.grid:
+        for r, row in enumerate(data.grid):
+            for c, cell in enumerate(row):
+                text = getattr(cell, "text", str(cell))
+                bbox = None
+                if (r, c) in cell_bounds:
+                    cb = cell_bounds[(r, c)]
+                    if fallback_origin == CoordOrigin.BOTTOMLEFT:
+                        bbox = BoundingBox(
+                            l=cb["l"],
+                            r=cb["r"],
+                            t=page_h - cb["t"],
+                            b=page_h - cb["b"],
+                            coord_origin=CoordOrigin.BOTTOMLEFT,
+                        )
+                    else:
+                        bbox = BoundingBox(
+                            l=cb["l"],
+                            r=cb["r"],
+                            t=cb["t"],
+                            b=cb["b"],
+                            coord_origin=CoordOrigin.TOPLEFT,
+                        )
+                elif fallback_prov_bbox is not None:
+                    bbox = fallback_prov_bbox
+
+                if bbox is not None:
+                    cells_ref.append(
+                        TableCellRef(
+                            text=text,
+                            bbox_pdf=bbox,
+                            row_idx=r,
+                            col_idx=c,
+                        )
+                    )
+
+    return cells_ref
+
 
 def _crop_table_as_figure(
     result: ConversionResult,
@@ -653,6 +755,7 @@ def _crop_table_as_figure(
     self_ref: str,
     scale: float,
     figure_lookup: dict[str, FigureRef],
+    table_cells: list[TableCellRef] | None = None,
 ) -> str | None:
     """
     Renders the page region containing the table and stores a FigureRef
@@ -685,6 +788,7 @@ def _crop_table_as_figure(
         ),
         bbox_pdf=prov.bbox,
         base64_png=b64,
+        table_cells=table_cells or [],
     )
     return fig_id
 

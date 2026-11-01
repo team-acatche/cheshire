@@ -4,8 +4,14 @@ from typing import Any
 from haystack import component
 from haystack.dataclasses import ChatMessage
 
+from docling_core.types.doc import CoordOrigin
 from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails
-from cheshire_configs.preprocessors.multistep.helpers import EvaluationChunk, ElementRef, FigureRef
+from cheshire_configs.preprocessors.multistep.helpers import (
+    EvaluationChunk,
+    ElementRef,
+    FigureRef,
+    _snap_table_finding_bboxes,
+)
 
 def clamp(min_val: float, value: float, max_val: float) -> float:
     """
@@ -115,12 +121,39 @@ class FindingsParser:
                 if not bboxes:  # no usable sub_bbox: highlight the whole figure
                     bboxes = [PageBoundingBox(**fig.bbox_pdf.model_dump(), page_no=fig.page_number)]
 
+                # Snap table findings to deterministic cell geometry
+                table_cells = getattr(fig, "table_cells", None)
+                if not table_cells and figure_id.startswith("table_crop_"):
+                    parent_elem = element_by_id.get(figure_id.removeprefix("table_crop_"))
+                    table_cells = getattr(parent_elem, "table_cells", None) if parent_elem else None
+
+                if table_cells:
+                    bboxes = _snap_table_finding_bboxes(
+                        finding_text=finding.get("description", ""),
+                        title=finding.get("title", ""),
+                        table_cells=table_cells,
+                        raw_bboxes=bboxes,
+                        table_bbox=fig.bbox_pdf,
+                        page_number=page_no,
+                    )
+
             elif element_id:
                 elem_ids = [element_id] if isinstance(element_id, str) else element_id
                 for eid in elem_ids:
                     elem: ElementRef | None = element_by_id.get(eid)
                     if elem:
-                        bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
+                        if getattr(elem, "table_cells", None):
+                            snapped = _snap_table_finding_bboxes(
+                                finding_text=finding.get("description", ""),
+                                title=finding.get("title", ""),
+                                table_cells=elem.table_cells,
+                                raw_bboxes=[],
+                                table_bbox=elem.bbox_pdf,
+                                page_number=elem.page_number,
+                            )
+                            bboxes.extend(snapped)
+                        else:
+                            bboxes.append(PageBoundingBox(**elem.bbox_pdf.model_dump(), page_no=elem.page_number))
                 if bboxes:
                     page_no = bboxes[0].page_no or page_no
 
