@@ -78,17 +78,6 @@ def run_pass1(
             f"{len(chunk.figures)} figure(s))..."
         )
 
-        previous_findings: list[dict] = [
-            {
-                "finding": f.finding,
-                "standard_ref": f.standard_ref,
-                "severity": f.severity,
-                "element_id": f.element_id,
-                "figure_id": f.figure_id
-            }
-            for f in all_findings
-        ]
-
         # evaluate chunk with retry
         max_chunk_retries = 2
         result: dict = {}
@@ -98,7 +87,6 @@ def run_pass1(
                     "chunk_message_builder": {
                         "chunk": chunk,
                         "document_index": document_index,
-                        "previous_findings": previous_findings
                     },
                     "agent": {
                         "chunks_cache": chunks
@@ -145,11 +133,26 @@ def run_pass2(
     # ---- Step 1: Deduplication & contradiction resolution ----
     raise_if_cancelled(should_cancel)
     logger.info("[Pass 2a] Deduplicating findings...")
+
+    # pre-dedup exact duplicates
+    seen_exact: set[tuple[Any, Any, str, str]] = set()
+    unique_findings: list[LocalFinding] = []
+    for f in all_findings:
+        elem_val = getattr(f, "element_id", None) or (f.get("element_id") if isinstance(f, dict) else None)
+        elem_key = tuple(elem_val) if isinstance(elem_val, list) else elem_val
+        fig_id = getattr(f, "figure_id", None) or (f.get("figure_id") if isinstance(f, dict) else None)
+        std_ref = getattr(f, "standard_ref", None) or (f.get("standard_ref") if isinstance(f, dict) else None) or ""
+        desc = getattr(f, "finding", None) or (f.get("finding") if isinstance(f, dict) else None) or ""
+        k = (elem_key, fig_id, std_ref, desc.strip().lower())
+        if k not in seen_exact:
+            seen_exact.add(k)
+            unique_findings.append(f)
+
     dedup_pipeline: Pipeline = build_dedup_pipeline()
 
     dedup_result: dict = dedup_pipeline.run({
         "dedup_message_builder": {
-            "all_findings": all_findings,
+            "all_findings": unique_findings,
         }
     })
 

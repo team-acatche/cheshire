@@ -54,6 +54,27 @@ def query_other_section(
         
     return f"Warning: No sections found matching title '{section_title}'."
 
+@tool
+def inspect_figure(
+    query: Annotated[str, "The figure ID (e.g. '#/pictures/0'), caption (e.g. 'Data Flow Diagram'), or page (e.g. 'page 5')."],
+    chunks_cache: list[EvaluationChunk],
+) -> str:
+    """
+    Inspect a diagram or figure crop across the document by ID, caption, or page number.
+    Use this when text refers to a visual diagram that is not attached to the current chunk.
+    """
+    # find figure in chunks
+    q = query.strip().lower()
+    for chunk in chunks_cache:
+        for fig in chunk.figures:
+            f_id = fig.figure_id.lower()
+            if q in f_id or f_id in q:
+                return f"[Figure ID:{fig.figure_id} | page {fig.page_number}] Located on page {fig.page_number} under section: {chunk.heading}."
+            if f"page {fig.page_number}" in q or f"p{fig.page_number}" in q:
+                return f"[Figure ID:{fig.figure_id} | page {fig.page_number}] Located on page {fig.page_number} under section: {chunk.heading}."
+
+    return f"Warning: No figure found matching '{query}'."
+
 def add_local_finding(
     finding: LocalFinding | dict | str,
     element_type: str | None = None,
@@ -185,6 +206,39 @@ def accept_local_finding(
         )
 
     return {"finding": _finding}
+
+def batch_accept_findings(
+    findings: list[LocalFinding | dict | str],
+) -> dict:
+    """
+    Accept multiple local findings all at once as valid and non-duplicate.
+
+    :param findings: List of local findings to accept.
+    """
+    # accept findings in batch
+    if isinstance(findings, str):
+        findings_str = findings.strip()
+        if findings_str.startswith("["):
+            try:
+                findings = json.loads(findings_str)
+            except Exception:
+                findings = [findings_str]
+        elif findings_str.startswith("{"):
+            try:
+                findings = [json.loads(findings_str)]
+            except Exception:
+                findings = [findings_str]
+        else:
+            findings = [findings_str]
+    elif findings is None:
+        findings = []
+
+    accepted: list[LocalFinding] = []
+    for f in findings:
+        res = accept_local_finding(f)
+        accepted.append(res["finding"])
+
+    return {"finding": accepted}
 
 SEVERITY_ORDER = {
     "major": 3,

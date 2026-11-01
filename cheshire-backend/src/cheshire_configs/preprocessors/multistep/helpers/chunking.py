@@ -191,11 +191,6 @@ def _attach_figures_by_page(
 
 
 def _propagate_section_figures(chunks: list[EvaluationChunk]) -> None:
-    """
-    Ensures chunks that share the same subsection or explicitly reference
-    diagrams from a companion subsection can see those figures, while preventing
-    table crops and unrelated figures from flooding across the entire section.
-    """
     # 1. Intra-subsection figure sharing: chunks sharing the exact same section key (e.g. continuation chunks)
     sub_groups: dict[str, list[int]] = defaultdict(list)
     for i, chunk in enumerate(chunks):

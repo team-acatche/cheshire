@@ -12,12 +12,19 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     EvaluationChunk,
     LocalFinding,
     ASSUME_EXTERNAL_ATTACHMENTS_COMPLIANT,
+    DEFAULT_IMAGE_SCALE,
 )
 from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.components.message_builder import ChunkMessageBuilder
 from cheshire_configs.preprocessors.multistep.components.findings_parser import FindingsParser
 
-from cheshire_configs.preprocessors.multistep.tools import add_local_finding, accept_local_finding, merge_findings
+from cheshire_configs.preprocessors.multistep.tools import (
+    add_local_finding,
+    accept_local_finding,
+    batch_accept_findings,
+    merge_findings,
+    inspect_figure,
+)
 
 import re
 from typing import cast, Optional, Any
@@ -322,7 +329,7 @@ PASS1_SYSTEM_PROMPT: Optional[str] = None
 
 
 def _make_tools() -> list[Tool]:
-    return [cast(Tool, web_search), cast(Tool, query_other_section)]
+    return [cast(Tool, web_search), cast(Tool, query_other_section), cast(Tool, inspect_figure)]
 
 
 def build_preprocessing_pipeline() -> Pipeline:
@@ -330,7 +337,7 @@ def build_preprocessing_pipeline() -> Pipeline:
 
     pipeline.add_component(
         "docling_converter",
-        MultistepDoclingConverter(images_scale=2.0)
+        MultistepDoclingConverter(images_scale=DEFAULT_IMAGE_SCALE)
     )
 
     # Single-component pipeline — no connections needed
@@ -350,6 +357,16 @@ def accept_local_finding_tool(state_key: str) -> Tool:
     _tool: Tool = create_tool_from_function(
         function=accept_local_finding,
         description="Accept a local finding as valid and non-duplicate. Call this for each unique local finding you want to keep.",
+        outputs_to_state={state_key: {"source": "finding"}}
+    )
+    _tool.warm_up()
+    return _tool
+
+def batch_accept_findings_tool(state_key: str) -> Tool:
+    # batch accept tool
+    _tool: Tool = create_tool_from_function(
+        function=batch_accept_findings,
+        description="Accept multiple unique local findings at once. Call this once with the full list of findings to keep.",
         outputs_to_state={state_key: {"source": "finding"}}
     )
     _tool.warm_up()
@@ -412,6 +429,7 @@ INPUT
 All Findings: Array of local findings from Pass 1.
 
 TOOLS
+- batch_accept_findings(findings): Accept multiple unique, non-duplicate local findings all at once in a single call. STRONGLY PREFERRED: pass an array of all unique findings in one call.
 - accept_local_finding(finding): Accept a unique, non-duplicate local finding as valid. The `finding` dictionary must match the schema:
   {
     "title": "str",
@@ -466,7 +484,7 @@ TASKS
    Ensure that every accepted finding provides actionable, quality recommendations and verifiable references that will facilitate InfoSec walkthroughs.
 
 CONSTRAINTS
-- You MUST call accept_local_finding for every unique, non-duplicate finding, or merge_findings for groups of duplicate same-topic findings. This is the only way findings are recorded.
+- PREFER batch_accept_findings to record all accepted findings in a single call. You may also call accept_local_finding or merge_findings for groups of duplicate same-topic findings.
 - Preserve ALL original fields exactly as given when accepting valid findings.
 - Do NOT accept duplicate findings individually.
 - "recommendations" and "web_references" MUST be native JSON arrays of strings. "recommendations" is MANDATORY and must contain at least one concrete, actionable recommendation.
@@ -629,12 +647,13 @@ def build_dedup_pipeline() -> Pipeline:
     agent: Agent = Agent(
         chat_generator=_make_generator(),
         tools=[
+            batch_accept_findings_tool("accepted_findings"),
             accept_local_finding_tool("accepted_findings"),
             merge_findings_tool("accepted_findings"),
             flag_contradiction_tool("contradictions"),
         ],
         system_prompt=build_dedup_system_prompt(),
-        max_agent_steps=200,
+        max_agent_steps=20,
         exit_conditions=["text"],
         state_schema={
             "accepted_findings": {"type": list[LocalFinding]},

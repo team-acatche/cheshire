@@ -19,13 +19,13 @@ class DedupMessageBuilder:
         self,
         all_findings: list[Any],
     ) -> dict:
-        # Convert pydantic models to dicts for JSON serialization
+        # compact json serialization
         findings_data: list[dict] = [
             f.model_dump() if hasattr(f, "model_dump") else f
             for f in all_findings
         ]
         return {"messages": [
             ChatMessage.from_user(
-                f"All findings ({len(findings_data)} total):\n{json.dumps(findings_data, indent=2)}"
+                f"All findings ({len(findings_data)} total):\n{json.dumps(findings_data, separators=(',', ':'))}"
             )
         ]}
