@@ -250,6 +250,9 @@ AUDIT RULES & CONSTRAINTS
 - CONTINUATION TABLES ACROSS PAGE BREAKS:
   * Tables that span multiple pages frequently continue on the following page without repeating headers.
   * If a table on the following page continues the rows of a table from the preceding page, it is a VALID continuation table. NEVER flag continuation tables as empty, missing headers, or having an unpopulated/blank body when their continuation rows are present.
+- COVER BLOCKS, DOCUMENT IDENTIFICATION & TWO-COLUMN METADATA FIELDS:
+  * In document identification, metadata blocks, and form tables, values are frequently rendered in an adjacent parallel column or aligned horizontally to the right of field labels.
+  * Distinguish between genuinely unpopulated placeholders and multi-column layouts. NEVER flag a metadata field or label as empty or missing if its corresponding value appears in the adjacent column, block, or line on the same page.
 - TABLE TEXT FRAGMENTATION & MARGIN CLIPPING:
   * In tables extracted from documents, long cell content frequently experiences line-wrapping, hyphen-splitting, or margin clipping during table conversion.
   * Distinguish between genuine omissions and parser extraction artifacts. When a table cell or row is populated, NEVER flag it as "incomplete information", "malformed", or "missing content" simply because its text was line-wrapped, hyphen-split, or truncated by the markdown table extractor.
@@ -446,9 +449,14 @@ TASKS
    - Discard any finding that targets purely administrative or managerial content (such as Version History, Approver blocks, or Document Control tables).
    - Discard any finding claiming that the "Format" column in Attachments tables is empty when it is annotated with `[Embedded Icon]` or visually displays format badges/icons (e.g. Word, Excel icons).
    - Discard any finding claiming a parent section (such as "System Considerations" or "Processing Specifications") is empty or missing content when it provides introductory lead-in framing for succeeding subsections.
-   - Discard any finding claiming that a continuation table (such as the Look-Up Files continuation table on page 13) is empty, missing headers, or an unpopulated second table when it continues the previous page's table.
+   - Discard any finding claiming that a continuation table across page breaks is empty, missing headers, or an unpopulated table when it continues the previous page's table rows.
    - Discard any finding claiming that a populated table specification, parameter, or cell entry is incomplete, malformed, or missing information when the issue arises from table parser line-wrapping, hyphen-splitting, or margin clipping of long cell text, rather than a genuine author omission or placeholder.
    - Discard any finding claiming a violation based on corporate page-control footers, document classification markings, or page numbering metadata.
+   - Discard any finding claiming metadata, tracking, or document identification fields are empty when their values are present in adjacent lines or parallel columns on the same page.
+   - Discard any finding claiming section headings do not match content or that content is misplaced when the discrepancy arises from chunk boundaries or continuation material of multi-page sections.
+   - Discard any finding claiming required diagrams are missing or unidentifiable when they are evidenced in diagram tables, `diagram_documents`, figures, or companion attachments.
+   - Discard any finding claiming Section D (Technology Stack Requirements) is missing, empty, or misfiled when an architectural diagram or technology stack figure exists in Section D or the document.
+   - Discard any finding claiming subsections of Section E (Processing Specifications)—such as Modules, Diagrams, Files and Records, Reports, Parameter and Lookup Files, or Others—are missing or unidentifiable when they are evidenced in section headers, numbered items, tables (e.g. schema/file definitions), or figures.
 4. If two findings contradict each other, call flag_contradiction.
 5. For each unique, valid finding without duplicates, call accept_local_finding with the original fields preserved, ensuring severity is calibrated according to:
    * "major": findings that will most likely halt approval from the Information Security Department; should be resolved before approval.
@@ -552,15 +560,16 @@ Audit the document index against the mandatory global checklist above, applying 
      * Overview (matches "Overview", "1. Overview", "Executive Summary")
      * Reference Documents (matches "Reference Documents", "References", "Related Documents")
      * Technical Specifications (matches "Technical Specifications", "Technical Specs", "Specifications")
-     * Technology Stack Requirements (matches "Technology Stack Requirements", "Technology Stack", "Tech Stack")
-     * Processing Specifications (matches "Processing Specifications", "Processing") and subsections: Modules, Diagrams, Files and Records, Reports, Parameter and Lookup Files
+     * Technology Stack Requirements (matches "Technology Stack Requirements", "Technology Stack", "Tech Stack", or architecture/stack figures in Section D)
+     * Processing Specifications (matches "Processing Specifications", "Processing") and subsections: Modules, Diagrams, Files and Records, Reports, Parameter and Lookup Files, Others
      * System Considerations (matches "System Considerations", "Operational Considerations")
      * Security Considerations (matches "Security Considerations", "Security Architecture")
      * Estimates (matches "Estimates", "Project Estimates", "Effort Estimates")
      * Attachments (matches "Attachments", "Exhibits")
      * Sonar Scan Result (matches "Sonar Scan Result", "SonarQube Results", "Sonar Analysis", "Static Code Analysis")
      * Appendices (matches "Appendices", "Appendix")
-   - CRITICAL: Only flag a required section as missing if there is GENUINELY NO corresponding section in `document_index["sections"]`. Do NOT flag sections as missing simply because they omit letter prefixes like "A." or "B.".
+   - CRITICAL: Only flag a required section as missing if there is GENUINELY NO corresponding section or dedicated content table in `document_index["sections"]` or `document_index["tables"]`. Check both section titles and table headers/rows. Do NOT flag sections as missing simply because they omit letter prefixes like "A." or "B.".
+   - Subsections under Processing Specifications (Modules, Diagrams, Files and Records, Reports, Parameter and Lookup Files, Others): If present in section headers, numbered items, tables (e.g. schemas, outbox, WORM, PKI tables for Files and Records), or figures, do NOT flag as missing.
 
 2. Required Reference Documents (ALIAS RECOGNITION):
    - Check `document_index.get("reference_documents", [])` as well as Reference Documents / References in `document_index["sections"]` and the accepted finding titles.
@@ -569,9 +578,12 @@ Audit the document index against the mandatory global checklist above, applying 
      * "Solutions Document", "Solutions Architecture Document", or "Solution Design" satisfies the Solutions Document standard. Do NOT flag the Solutions Document as missing if any of these appear in `document_index["reference_documents"]`, in section headings, or in accepted finding titles.
 
 3. Required Diagrams:
-   - Verify the document contains all mandatory diagram types (inspect `document_index["figures"]` captions, sections, and accepted finding titles):
-     1. Data Flow Diagram, 2. Network Diagram, 3. Sequence Diagram, 4. Process Flow Diagram.
-   - If a diagram is referenced as an external attachment or link, assume it is compliant and present (per Attachment Policy).
+   - Verify the document contains all mandatory diagram types (inspect `document_index.get("diagram_documents", [])`, `document_index["tables"]` (including `headers` and `rows`), `document_index["figures"]` captions/names, sections, and accepted finding titles):
+     1. Data Flow Diagram (DFD), 2. Network Diagram, 3. Sequence Diagram, 4. Process Flow Diagram.
+   - ATTACHMENT POLICY ON DIAGRAM SPECIFICATION TABLES:
+     * Multi-diagram design specifications frequently itemize diagrams in a specification table with companion file attachments (such as .pdf, .vsdx, or image files).
+     * Any diagram type whose name or attachment appears in `document_index["diagram_documents"]` or within the `rows` of a diagram table or `document_index["figures"]` is PRESENT and FULLY COMPLIANT under the Attachment Policy.
+     * NEVER flag mandatory diagrams as missing, unidentifiable, or unconfirmed when diagram tables or attached files exist under the Diagrams section or document.
 
 4. Required Tables (Reports Table):
    - Check `document_index["tables"]`: if any table has `"section"` indicating "Reports" (e.g. section title contains "Reports"), or if accepted findings reference a table under the Reports section, the Reports table exists. Only flag missing if no table exists under the Reports section.
@@ -581,6 +593,7 @@ Audit the document index against the mandatory global checklist above, applying 
 
 TASK 2: EXTERNAL REFERENCES & DELEGATED CONTENT
 - Do NOT flag details as missing if the document index indicates they are covered in companion documents listed under Reference Documents.
+- Do NOT flag continuation pages of multi-page sections or tables as "page gaps" or unparsed structure. If pages contain ongoing narrative, tables, or figures, they are valid continuous content. Only truly empty pages with zero parsed body items represent gaps.
 
 RECORDING GLOBAL OMISSIONS (FRONTEND SAFE):
 - For any missing section, diagram, table, or reference document that is genuinely required: call accept_local_finding.

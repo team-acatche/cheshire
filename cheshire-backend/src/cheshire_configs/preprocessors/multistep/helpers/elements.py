@@ -4,6 +4,7 @@ Document element and figure lookup construction, caption attachment, and page ga
 
 import base64
 from io import BytesIO
+import re
 from typing import Any
 
 from docling.datamodel.document import ConversionResult
@@ -12,7 +13,7 @@ from docling_core.types.doc.document import ProvenanceItem
 
 from .constants import FOOTER_BOTTOM_MARGIN_RATIO, FOOTER_MAX_TOP_RATIO, FOOTER_METADATA_PATTERN, MAX_CONTINUATION_PAGE_GAP
 from .geometry import _get_item_label, _to_topleft_dict
-from .hierarchy import _extract_heading_from_text
+from .hierarchy import _extract_heading_from_text, _is_spurious_heading, _normalize_heading_text
 from .models import ElementRef, FigureRef, ImageBoundingBox, TableCellRef
 from .tables import (
     _crop_table_as_figure,
@@ -114,8 +115,10 @@ def _is_footer_element(
 
 def promote_heuristic_headings(doc: Any) -> list[str]:
     """
-    Scans document text items for headings that were misclassified as paragraphs or regular text
-    by the layout parser and promotes them to section headers.
+    Scans document items for headings:
+    1. Demotes spurious section headers (e.g. isolated table column headers like 'Diagram' or 'Files')
+       misclassified as section headers by the layout parser back to paragraphs.
+    2. Promotes headings misclassified as paragraphs or regular text to section headers.
     """
     promoted: list[str] = []
     if not hasattr(doc, "iterate_items"):
@@ -126,21 +129,84 @@ def promote_heuristic_headings(doc: Any) -> list[str]:
             continue
 
         label: str = _get_item_label(item)
+
+        # 1. Demote spurious section headers mislabeled by Docling layout model
         if label in ("section_header", "section_heading"):
+            raw_text = getattr(item, "text", "")
+            orig_text = getattr(item, "orig", "")
+            txt = orig_text or raw_text
+            cand = _extract_heading_from_text(txt)
+            clean = cand or _normalize_heading_text(txt)
+            if not clean or _is_spurious_heading(clean):
+                if hasattr(item, "label"):
+                    try:
+                        from docling_core.types.doc.document import DocItemLabel
+                        item.label = DocItemLabel.PARAGRAPH
+                    except Exception:
+                        item.label = "paragraph"
+                try:
+                    from docling_core.types.doc.document import TextItem
+                    if not isinstance(item, TextItem):
+                        item.__class__ = TextItem
+                except Exception:
+                    pass
+                if hasattr(doc, "texts"):
+                    for idx, t_item in enumerate(doc.texts):
+                        if getattr(t_item, "self_ref", None) == item.self_ref:
+                            try:
+                                from docling_core.types.doc.document import TextItem
+                                doc.texts[idx] = TextItem(
+                                    text=raw_text,
+                                    orig=orig_text,
+                                    prov=item.prov,
+                                    parent=getattr(item, "parent", None),
+                                    children=getattr(item, "children", []),
+                                    self_ref=item.self_ref,
+                                )
+                            except Exception:
+                                pass
+                            break
             continue
 
-        # Skip decorative elements, tables, and pictures
-        if label in ("picture", "page_header", "page_footer", "page_number", "footnote", "table"):
+        # Skip decorative elements, tables, and pictures (allow page_header if it contains outline heading)
+        if label in ("picture", "page_footer", "page_number", "footnote", "table"):
             continue
+        if label == "page_header":
+            item_text = getattr(item, "text", "")
+            if not _extract_heading_from_text(item_text):
+                continue
 
-        item_text = getattr(item, "text", "")
-        heading = _extract_heading_from_text(item_text)
+        raw_text = getattr(item, "text", "")
+        orig_text = getattr(item, "orig", "")
+        marker = getattr(item, "marker", "") or getattr(item, "enumerator", "")
+        combined = f"{marker} {raw_text}".strip() if marker else ""
+
+        heading = None
+        for cand_str in (orig_text, combined, raw_text):
+            if cand_str:
+                h = _extract_heading_from_text(cand_str)
+                if h and not _is_spurious_heading(h):
+                    heading = h
+                    break
+
         if not heading:
             continue
 
+        item_text = raw_text or heading
+
         promoted.append(heading)
 
-        # 1. Update item attributes
+        # 1. Update item attributes and class
+        is_standalone = len(item_text.strip()) <= len(heading) + 120 and len(item_text.splitlines()) <= 2
+        if is_standalone:
+            if hasattr(item, "text"):
+                item.text = heading
+            if hasattr(item, "orig"):
+                item.orig = heading
+        else:
+            if hasattr(item, "orig") and not item.orig:
+                item.orig = item_text
+
         if hasattr(item, "label"):
             try:
                 from docling_core.types.doc.document import DocItemLabel
@@ -150,12 +216,19 @@ def promote_heuristic_headings(doc: Any) -> list[str]:
         if hasattr(item, "level"):
             item.level = 1
 
+        try:
+            from docling_core.types.doc.document import SectionHeaderItem
+            if not isinstance(item, SectionHeaderItem):
+                item.__class__ = SectionHeaderItem
+        except Exception:
+            pass
+
         # 2. If item is a Docling TextItem in doc.texts, replace with SectionHeaderItem
         try:
             from docling_core.types.doc.document import SectionHeaderItem
-            if not isinstance(item, SectionHeaderItem) and hasattr(doc, "texts"):
+            if hasattr(doc, "texts"):
                 new_item = SectionHeaderItem(
-                    text=heading,
+                    text=heading if is_standalone else getattr(item, "text", heading),
                     orig=getattr(item, "orig", heading),
                     level=1,
                     prov=item.prov,
@@ -207,13 +280,20 @@ def _build_element_lookup(
 
         label: str = _get_item_label(item)
 
-        # Skip decorative page elements (headers, footers, page numbers)
-        if label in ("picture", "page_header", "page_footer", "page_number", "footnote"):
+        # Skip decorative page elements, but check if page_header is actually a section heading
+        if label == "page_header":
+            cand = _extract_heading_from_text(getattr(item, "text", ""))
+            if cand:
+                label = "section_header"
+            else:
+                continue
+        elif label in ("picture", "page_footer", "page_number", "footnote"):
             continue
 
         # Track section boundaries to scope continuation headers
         if label in ("section_header", "section_heading"):
-            _current_section = getattr(item, "text", "")
+            cand = _extract_heading_from_text(getattr(item, "text", ""))
+            _current_section = cand or getattr(item, "text", "")
             _last_table_header = None
         else:
             cand = _extract_heading_from_text(getattr(item, "text", ""))
@@ -282,8 +362,8 @@ def _attach_captions(doc: DoclingDocument, figures: list[dict]) -> None:
     Captions are separate DocItemLabel.CAPTION elements in Docling's output —
     they are not properties of the picture item itself. This function matches
     each caption to the nearest figure on the same page by measuring the
-    vertical distance between the bottom of the figure and the top of the
-    caption (PDF coordinate space). The closest figure above the caption wins.
+    vertical distance between the figure and caption in normalized top-left space.
+    The closest figure within reasonable proximity wins.
     """
     for item, _level in doc.iterate_items():
         label: str = _get_item_label(item)
@@ -294,42 +374,167 @@ def _attach_captions(doc: DoclingDocument, figures: list[dict]) -> None:
 
         caption_prov: ProvenanceItem = item.prov[0]
         caption_page: int = caption_prov.page_no
-        caption_top: float = caption_prov.bbox.t  # top of caption in PDF space
+        page = doc.pages.get(caption_page) if hasattr(doc, "pages") and doc.pages else None
+        p_h = getattr(getattr(page, "size", None), "height", 0.0) if page else 0.0
+        if p_h <= 0.0:
+            if hasattr(doc, "pages") and doc.pages:
+                for pg in doc.pages.values():
+                    h = getattr(getattr(pg, "size", None), "height", 0.0)
+                    if h > 0.0:
+                        p_h = h
+                        break
+            if p_h <= 0.0:
+                p_h = 792.0
+
+        c_box = _to_topleft_dict(caption_prov.bbox, p_h)
 
         best_fig: dict | None = None
         best_dist: float = float("inf")
 
         for fig in figures:
-            if fig["page"] != caption_page:
+            if fig.get("page") != caption_page:
                 continue
-            for pic in doc.pictures:
+            for pic in getattr(doc, "pictures", []) or []:
                 if pic.self_ref != fig["id"] or not pic.prov:
                     continue
-                fig_bottom: float = pic.prov[0].bbox.b  # bottom of figure in PDF space
-                dist: float = caption_top - fig_bottom  # positive = caption below figure
-                if 0 < dist < best_dist:
+                p_box = _to_topleft_dict(pic.prov[0].bbox, p_h)
+                dist = min(abs(c_box["t"] - p_box["b"]), abs(p_box["t"] - c_box["b"]))
+                if dist < best_dist and dist <= 180.0:
                     best_dist = dist
                     best_fig = fig
 
-        if best_fig is not None:
+        if best_fig is not None and not best_fig.get("caption"):
             best_fig["caption"] = getattr(item, "text", None)
+
+    # For figures with null captions (e.g. icon attachments embedded in table cells),
+    # check if the figure is located on a page containing tables with itemized rows.
+    for fig in figures:
+        if not fig.get("caption"):
+            fig_page = fig.get("page")
+            if not fig_page:
+                continue
+            page = doc.pages.get(fig_page) if hasattr(doc, "pages") and doc.pages else None
+            p_h = getattr(getattr(page, "size", None), "height", 792.0) if page else 792.0
+
+            pic_item = None
+            for pic in getattr(doc, "pictures", []) or []:
+                if pic.self_ref == fig["id"] and pic.prov:
+                    pic_item = pic
+                    break
+            if not pic_item:
+                continue
+            p_box = _to_topleft_dict(pic_item.prov[0].bbox, p_h)
+            p_mid_y = (p_box["t"] + p_box["b"]) / 2.0
+
+            best_row_name = ""
+            best_row_dist = float("inf")
+            for tbl in getattr(doc, "tables", []) or []:
+                if not tbl.prov or tbl.prov[0].page_no != fig_page:
+                    continue
+                grid = getattr(getattr(tbl, "data", None), "grid", None)
+                if not grid:
+                    continue
+                t_box = _to_topleft_dict(tbl.prov[0].bbox, p_h)
+                num_rows = len(grid)
+                if num_rows == 0:
+                    continue
+                row_h = (t_box["b"] - t_box["t"]) / float(num_rows)
+                for r_idx, row in enumerate(grid):
+                    r_top = t_box["t"] + r_idx * row_h
+                    r_bot = r_top + row_h
+                    dist = abs(p_mid_y - (r_top + r_bot) / 2.0)
+                    if dist < best_row_dist and dist <= max(row_h * 1.5, 60.0):
+                        row_texts = [getattr(c, "text", str(c)).strip() for c in row if getattr(c, "text", str(c)).strip()]
+                        if row_texts:
+                            cand_title = row_texts[0]
+                            if cand_title.lower() not in ("diagram", "diagrams", "attachment", "files", "description"):
+                                best_row_dist = dist
+                                best_row_name = cand_title
+
+            if not best_row_name:
+                diag_re = re.compile(r'\b(diagrams?|flowcharts?|data\s+flow|process\s+flow|sequence\s+diagram|network\s+diagram)\b', re.IGNORECASE)
+                for txt_item in getattr(doc, "texts", []) or []:
+                    if not txt_item.prov or txt_item.prov[0].page_no != fig_page:
+                        continue
+                    t_text = getattr(txt_item, "text", "").strip()
+                    if not t_text or len(t_text) > 140 or "\n" in t_text:
+                        continue
+                    if t_text.lower() in (
+                        "pdf", "png", "jpg", "jpeg", "image", "img", "docx", "xlsx", "pptx",
+                        "file", "files", "diagram", "diagrams", "attachment", "attachments", "description"
+                    ):
+                        continue
+                    if diag_re.search(t_text) or "diagram" in fig.get("section", "").lower():
+                        t_box = _to_topleft_dict(txt_item.prov[0].bbox, p_h)
+                        t_mid_y = (t_box["t"] + t_box["b"]) / 2.0
+                        dist = abs(p_mid_y - t_mid_y)
+                        if dist < best_row_dist and dist <= 120.0:
+                            best_row_dist = dist
+                            best_row_name = t_text
+
+            if best_row_name:
+                fig["caption"] = best_row_name
+
+            # Search for attachment filename overlapping or immediately under the figure
+            if pic_item and hasattr(pic_item, "prov") and pic_item.prov:
+                p_box = _to_topleft_dict(pic_item.prov[0].bbox, p_h)
+                attach_texts: list[str] = []
+                has_badge: bool = False
+                for txt_item in getattr(doc, "texts", []) or []:
+                    if not txt_item.prov or txt_item.prov[0].page_no != fig.get("page"):
+                        continue
+                    t_box = _to_topleft_dict(txt_item.prov[0].bbox, p_h)
+                    # Check spatial overlap or direct placement beneath the picture
+                    x_overlap = max(0.0, min(p_box["r"] + 25.0, t_box["r"]) - max(p_box["l"] - 25.0, t_box["l"]))
+                    y_overlap = max(0.0, min(p_box["b"] + 60.0, t_box["b"]) - max(p_box["t"] - 10.0, t_box["t"]))
+                    if x_overlap > 10.0 and y_overlap > 5.0:
+                        t_val = getattr(txt_item, "text", "").strip()
+                        if t_val.lower() in ("pdf", "png", "jpg", "jpeg", "doc", "docx", "xls", "xlsx"):
+                            has_badge = True
+                        elif t_val:
+                            attach_texts.append(t_val)
+                if attach_texts:
+                    full_attach = " ".join(attach_texts)
+                    if any(ext in full_attach.lower() for ext in (".pdf", ".png", ".jpg", ".docx", ".xlsx", ".zip")):
+                        fig["attachment"] = full_attach
+                    elif has_badge or any(k in full_attach.lower() for k in ("diagram", "flow", "report", "spec", "pid-", "awv")):
+                        clean_att = full_attach.rstrip(".").strip()
+                        if clean_att:
+                            fig["attachment"] = f"{clean_att}.pdf"
+
+        # If figure caption represents a section header (e.g. 'D. Technology Stack Requirements'),
+        # align its section metadata so it is never misfiled under a preceding section
+        if fig.get("caption"):
+            sec_cand = _extract_heading_from_text(fig["caption"])
+            if sec_cand:
+                fig["section"] = sec_cand
 
 
 def _find_page_gaps(doc: DoclingDocument) -> list[dict]:
     """
-    Identifies pages that contain no section heading. These are flagged in
-    the document index so Pass 1 agents can reason about missing sections.
-    Contiguous ungrouped pages are reported as a single gap entry.
+    Identifies pages that contain no substantive body content (e.g. blank pages or unparsed pages).
+    Contiguous empty pages are reported as a single gap entry.
+    Pages containing paragraphs, tables, or figures are active content continuation
+    pages and are not considered gaps.
     """
-    section_pages: set[int] = set()
+    content_pages: set[int] = set()
 
     for item, _level in doc.iterate_items():
+        if not hasattr(item, "prov") or not item.prov:
+            continue
         label: str = _get_item_label(item)
-        if label in ("section_header", "section_heading") and hasattr(item, "prov") and item.prov:
-            section_pages.add(item.prov[0].page_no)
+        if label in ("page_footer", "page_number"):
+            continue
+        p_no: int = item.prov[0].page_no
+        if label in ("section_header", "section_heading", "table", "picture"):
+            content_pages.add(p_no)
+        elif label in ("paragraph", "text", "list_item", "caption", "title", "group"):
+            txt: str = getattr(item, "text", "")
+            if txt and len(txt.strip()) > 5:
+                content_pages.add(p_no)
 
-    all_pages: list[int] = sorted(doc.pages.keys())
-    unassigned: list[int] = [p for p in all_pages if p not in section_pages]
+    all_pages: list[int] = sorted(doc.pages.keys()) if hasattr(doc, "pages") and doc.pages else []
+    unassigned: list[int] = [p for p in all_pages if p not in content_pages]
 
     if not unassigned:
         return []

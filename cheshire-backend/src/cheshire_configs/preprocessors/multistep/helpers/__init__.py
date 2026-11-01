@@ -26,6 +26,8 @@ from .hierarchy import (
     Segment,
     SeqType,
     _extract_heading_from_text,
+    _is_spurious_heading,
+    _normalize_heading_text,
     parse_header_token,
 )
 from .constants import (
@@ -195,4 +197,6 @@ __all__ = [
     "SeqType",
     "parse_header_token",
     "_extract_heading_from_text",
+    "_is_spurious_heading",
+    "_normalize_heading_text",
 ]

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from haystack import Pipeline
 
+from cheshire_configs.preprocessors.multistep.components.chunker import MultistepDoclingConverter
 from cheshire_configs.preprocessors.multistep.pipelines import build_preprocessing_pipeline, build_evaluation_pipeline
 from cheshire_configs.preprocessors.multistep.helpers import (
     EvaluationChunk,
@@ -14,7 +15,7 @@ from cheshire_configs.preprocessors.multistep.components.findings_parser import 
 
 from cheshire_configs.preprocessors.multistep.pipelines import build_dedup_pipeline, build_global_audit_pipeline
 from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails, Contradiction
-from docling_core.types.doc import BoundingBox
+from docling_core.types.doc import BoundingBox, CoordOrigin
 
 import logging
 from typing import Any, Optional
@@ -251,10 +252,7 @@ def run_pass2(
         page_no: int = 1
         bboxes: list[PageBoundingBox] = []
 
-        if is_document:
-            pass
-
-        elif figure_id and figure_id in figure_by_id:
+        if figure_id and figure_id in figure_by_id:
             fig: FigureRef = figure_by_id[figure_id]
             page_no = fig.page_number
             origin = fig.bbox_pdf.coord_origin
@@ -279,12 +277,21 @@ def run_pass2(
                 frac_x2: float = clamp(0.0, sx2 / scale_factor, 1.0)
                 frac_y2: float = clamp(0.0, sy2 / scale_factor, 1.0)
 
+                fig_top: float = max(fig.bbox_pdf.t, fig.bbox_pdf.b)
+                fig_bot: float = min(fig.bbox_pdf.t, fig.bbox_pdf.b)
+                fig_left: float = min(fig.bbox_pdf.l, fig.bbox_pdf.r)
+
+                pdf_x1 = fig_left + frac_x1 * fig_w
+                pdf_x2 = fig_left + frac_x2 * fig_w
+                pdf_y1 = fig_top - frac_y1 * fig_h
+                pdf_y2 = fig_top - frac_y2 * fig_h
+
                 bboxes.append(PageBoundingBox(
-                    l=fig.bbox_pdf.l + frac_x1 * fig_w,
-                    t=fig.bbox_pdf.t - frac_y1 * fig_h,
-                    r=fig.bbox_pdf.l + frac_x2 * fig_w,
-                    b=fig.bbox_pdf.t - frac_y2 * fig_h,
-                    coord_origin=origin,
+                    l=min(pdf_x1, pdf_x2),
+                    t=max(pdf_y1, pdf_y2),
+                    r=max(pdf_x1, pdf_x2),
+                    b=min(pdf_y1, pdf_y2),
+                    coord_origin=CoordOrigin.BOTTOMLEFT,
                     page_no=fig.page_number,
                 ))
 
@@ -332,7 +339,7 @@ def run_pass2(
                 title=final_title,
                 description=finding,
                 page_no=page_no,
-                bboxes=bboxes,  # bbox is derived from bboxes[0] by the validator
+                bboxes=bboxes,
                 web_references=web_refs,
                 recommendations=recs,
                 scope="section" if bboxes else "document",

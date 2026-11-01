@@ -4,6 +4,7 @@ from typing import Any
 from haystack import component
 from haystack.dataclasses import ChatMessage
 
+from docling_core.types.doc import CoordOrigin
 from tools.helpers.output_schema import PageBoundingBox, VulnerabilityDetails
 from cheshire_configs.preprocessors.multistep.helpers import (
     EvaluationChunk,

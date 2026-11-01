@@ -455,3 +455,132 @@ def test_findings_parser_table_element_id_cell_snapping():
     assert len(vulns) == 1
     # Bbox snaps directly to the target cell
     assert vulns[0].bbox == target_cell_bbox
+
+
+def test_findings_parser_table_title_priority_over_description():
+    """
+    Verify that table cell snapping prioritizes title subjects (e.g. RabbitMQ 3.12)
+    over long narrative description text (e.g. Loan event streaming).
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Message Queue: RabbitMQ 3.12 is out of community and commercial support",
+            "description": "The Message Queue row specifies RabbitMQ 3.12 for loan event streaming. RabbitMQ 3.12 ended community support...",
+            "element_id": "#/tables/1",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    mq_cell_bbox = BoundingBox(l=150.0, t=400.0, r=250.0, b=370.0)
+    ver_cell_bbox = BoundingBox(l=260.0, t=400.0, r=320.0, b=370.0)
+    desc_cell_bbox = BoundingBox(l=330.0, t=400.0, r=500.0, b=370.0)
+
+    table_cells = [
+        TableCellRef(text="Message Queue", bbox_pdf=BoundingBox(l=50.0, t=400.0, r=140.0, b=370.0), row_idx=5, col_idx=0),
+        TableCellRef(text="RabbitMQ", bbox_pdf=mq_cell_bbox, row_idx=5, col_idx=1),
+        TableCellRef(text="3.12", bbox_pdf=ver_cell_bbox, row_idx=5, col_idx=2),
+        TableCellRef(text="Loan event streaming", bbox_pdf=desc_cell_bbox, row_idx=5, col_idx=3),
+    ]
+
+    elem = ElementRef(
+        element_id="#/tables/1",
+        label="table",
+        page_number=5,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=BoundingBox(l=50.0, t=600.0, r=500.0, b=200.0),
+        text_excerpt="tech stack table",
+        table_cells=table_cells,
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    # Bbox should cover the subject technology / version (stopping at r=320.0), NOT desc_cell_bbox (l=330.0)
+    snapped_bbox = vulns[0].bbox
+    assert snapped_bbox.r == 320.0
+    assert snapped_bbox.r < desc_cell_bbox.l
+    assert snapped_bbox.r == 320.0
+    assert snapped_bbox.r < desc_cell_bbox.l or snapped_bbox.r != desc_cell_bbox.r
+
+
+def test_findings_parser_table_multi_row_matching():
+    """
+    Verify that findings mentioning elements across multiple table rows
+    produce highlights for all matched rows rather than collapsing to a single cell.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Reports: Missing Attachment Format for ReportA and ReportB",
+            "description": "Both ReportA.pdf and ReportB.pdf lack specified output class formats in table.",
+            "element_id": "#/tables/2",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    row1_cell = TableCellRef(text="ReportA.pdf", bbox_pdf=BoundingBox(l=50.0, t=500.0, r=200.0, b=450.0), row_idx=1, col_idx=0)
+    row2_cell = TableCellRef(text="ReportB.pdf", bbox_pdf=BoundingBox(l=50.0, t=400.0, r=200.0, b=350.0), row_idx=2, col_idx=0)
+
+    elem = ElementRef(
+        element_id="#/tables/2",
+        label="table",
+        page_number=8,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=BoundingBox(l=50.0, t=550.0, r=500.0, b=300.0),
+        text_excerpt="reports table",
+        table_cells=[row1_cell, row2_cell],
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    bboxes = vulns[0].bboxes
+    # Both rows should be represented in bboxes
+    assert len(bboxes) == 2
+    y_tops = {b.t for b in bboxes}
+    assert 500.0 in y_tops
+    assert 400.0 in y_tops
+
+
+def test_findings_parser_table_wide_finding_highlights_table():
+    """
+    Verify that findings regarding table-wide structure (e.g. 'lacks column headers')
+    highlight the entire table bounding box rather than collapsing to a single cell.
+    """
+    parser = FindingsParser()
+    json_data = [
+        {
+            "title": "Directories/Paths table lacks column headers in the statutory report block",
+            "description": "The Directories/Paths table lacks column headers and uses hardcoded UNC paths.",
+            "element_id": "#/tables/3",
+        }
+    ]
+    message = ChatMessage.from_assistant(json.dumps(json_data))
+
+    cell1 = TableCellRef(text=r"\\crestview-internal\Auditing_Section\AWV", bbox_pdf=BoundingBox(l=60.0, t=480.0, r=400.0, b=450.0), row_idx=0, col_idx=0)
+    table_box = BoundingBox(l=50.0, t=500.0, r=500.0, b=200.0)
+
+    elem = ElementRef(
+        element_id="#/tables/3",
+        label="table",
+        page_number=13,
+        bbox_image_px=DUMMY_IMAGE_BBOX,
+        bbox_pdf=table_box,
+        text_excerpt="directories table",
+        table_cells=[cell1],
+    )
+    chunk = create_test_chunk(element_refs=[elem])
+
+    result = parser.run(last_message=message, chunk=chunk)
+    vulns = result["vulnerabilities"]
+    assert len(vulns) == 1
+    # Bbox must highlight the whole table, not just cell1
+    assert vulns[0].bbox.l == table_box.l
+    assert vulns[0].bbox.r == table_box.r
+    assert vulns[0].bbox.t == table_box.t
+    assert vulns[0].bbox.b == table_box.b
+
+

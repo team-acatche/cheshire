@@ -16,6 +16,7 @@ from cheshire_configs.preprocessors.multistep.helpers import (
     _table_has_empty_cells,
     _table_needs_visual_crop,
     build_document_index,
+    _find_page_gaps,
     _classify_with_fastembed,
     _compute_cosine_similarity,
     is_horizontal_two_column_table,
@@ -138,19 +139,20 @@ def test_format_table_markdown_compound_column_expansion():
 
 
 class MockItem:
-    def __init__(self, label: str, text: str = "", self_ref: str = "", page_no: int = 1, grid=None):
+    def __init__(self, label: str, text: str = "", self_ref: str = "", page_no: int = 1, grid=None, bbox=None):
         self.label = label
         self.text = text
         self.self_ref = self_ref
-        self.prov = [MockProv(BoundingBox(l=0, t=0, r=10, b=10), page_no=page_no)]
+        b = bbox if bbox is not None else BoundingBox(l=0, t=0, r=10, b=10)
+        self.prov = [MockProv(b, page_no=page_no)]
         if grid is not None:
             self.data = MockTableData(grid)
 
 
 class MockDoc:
-    def __init__(self, items):
+    def __init__(self, items, pages=None):
         self.items = items
-        self.pages = {1: type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()}
+        self.pages = pages if pages is not None else {1: type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()}
         self.pictures = []
 
     def iterate_items(self):
@@ -745,6 +747,200 @@ def test_compute_cosine_similarity():
     assert abs(_compute_cosine_similarity([1.0, 0.0], [-1.0, 0.0]) - (-1.0)) < 1e-5
     # zero vector returns zero
     assert _compute_cosine_similarity([0.0, 0.0], [1.0, 2.0]) == 0.0
+
+
+def test_build_document_index_rejects_footer_tables():
+    """Verify that build_document_index ignores page-control footer tables so they are not indexed as reference docs."""
+    mock_page = type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()
+    pages = {2: mock_page}
+
+    items = [
+        MockItem(label="section_header", text="B. Reference Documents:", self_ref="#/texts/1", page_no=2),
+        MockItem(
+            label="table",
+            self_ref="#/tables/ref_table",
+            page_no=2,
+            bbox=BoundingBox(l=50.0, t=100.0, r=550.0, b=250.0, coord_origin=CoordOrigin.TOPLEFT),
+            grid=[
+                [MockCell("References", column_header=True), MockCell("Attachments", column_header=True), MockCell("Links", column_header=True)],
+                [MockCell("Solution Document"), MockCell("Project Solution ID10-AWV.pdf"), MockCell("Project Solution ID10-AWV.pdf")],
+                [MockCell("Requirements Document"), MockCell("PID-0010 AWV Compliant Reporting Service-RD.pdf"), MockCell("PID-0010 AWV Compliant Reporting Service-RD.pdf")],
+            ],
+        ),
+        # Footer table at bottom of page (t=740, b=770 on a 792 pt page)
+        MockItem(
+            label="table",
+            self_ref="#/tables/footer_table",
+            page_no=2,
+            bbox=BoundingBox(l=50.0, t=740.0, r=550.0, b=770.0, coord_origin=CoordOrigin.TOPLEFT),
+            grid=[
+                [MockCell("Classification:"), MockCell("Crestview National Bank – Confidential"), MockCell("Document Owner:"), MockCell("ITSD")],
+                [MockCell("Document Title:"), MockCell("Technical Specifications"), MockCell("Page No.:"), MockCell("2 of 18")],
+            ],
+        ),
+    ]
+
+    doc = MockDoc(items, pages=pages)
+    index = build_document_index(doc)
+
+    ref_docs = index.get("reference_documents", [])
+    # Valid references should be extracted
+    assert any("Solution Document" in d for d in ref_docs)
+    assert any("Requirements Document" in d for d in ref_docs)
+
+    # Footer table elements like "Page No.: (Technical Specifications)" must NOT be present
+    assert not any("Page No" in d for d in ref_docs)
+    assert not any("Technical Specifications" in d for d in ref_docs)
+    assert not any("Confidential" in d for d in ref_docs)
+
+
+def test_build_document_index_diagrams_extraction():
+    """Verify that build_document_index extracts diagram specification tables under Diagrams subsections."""
+    mock_page = type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()
+    pages = {7: mock_page, 8: mock_page}
+
+    items = [
+        MockItem(label="section_header", text="C. Technical Specifications", self_ref="#/texts/10", page_no=7),
+        MockItem(label="section_header", text="2. Diagrams", self_ref="#/texts/11", page_no=7),
+        MockItem(
+            label="table",
+            self_ref="#/tables/diag_table",
+            page_no=7,
+            bbox=BoundingBox(l=50.0, t=100.0, r=550.0, b=400.0, coord_origin=CoordOrigin.TOPLEFT),
+            grid=[
+                [MockCell("Diagram", column_header=True), MockCell("Attachment", column_header=True)],
+                [MockCell("Network Diagram"), MockCell("AWV Compliant Reporting Service Network Diagram.pdf")],
+                [MockCell("Process Flow Diagram – Serialization and Reporting Service"), MockCell("PID-0015 Serialization and Reporting Process Flow Diagram.pdf")],
+                [MockCell("Sequence Diagram – Serialization and Reporting Service"), MockCell("PID-0015 Serialization and Reporting Sequence Diagram.pdf")],
+                [MockCell("Data Flow Diagram"), MockCell("PID-0015 Serialization and Reporting Data Flow Diagram.pdf")],
+            ],
+        ),
+    ]
+
+    doc = MockDoc(items, pages=pages)
+    index = build_document_index(doc)
+
+    diag_docs = index.get("diagram_documents", [])
+    assert len(diag_docs) == 4
+    diag_names = [d["name"] for d in diag_docs]
+    assert "Network Diagram" in diag_names
+    assert "Process Flow Diagram – Serialization and Reporting Service" in diag_names
+    assert "Sequence Diagram – Serialization and Reporting Service" in diag_names
+    assert "Data Flow Diagram" in diag_names
+
+    # Figures should also reflect these diagrams
+    figures = index.get("figures", [])
+    fig_captions = [f["caption"] for f in figures]
+    assert "Data Flow Diagram" in fig_captions
+    assert "Network Diagram" in fig_captions
+
+
+def test_find_page_gaps_ignores_continuation_pages():
+    """Verify that _find_page_gaps does not report continuation pages (with tables or text) as page gaps."""
+    mock_page = type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()
+    pages = {1: mock_page, 2: mock_page, 3: mock_page, 4: mock_page, 5: mock_page}
+
+    items = [
+        # Page 1 has section header
+        MockItem(label="section_header", text="1. Overview", self_ref="#/texts/1", page_no=1),
+        MockItem(label="paragraph", text="Overview introductory narrative text.", self_ref="#/texts/2", page_no=1),
+        # Page 2 has only paragraph continuation (no section header)
+        MockItem(label="paragraph", text="Continuation of system requirements details.", self_ref="#/texts/3", page_no=2),
+        # Page 3 has only table continuation (no section header)
+        MockItem(label="table", self_ref="#/tables/1", page_no=3, grid=[[MockCell("Col1"), MockCell("Col2")]]),
+        # Page 4 is empty / blank
+        # Page 5 has section header
+        MockItem(label="section_header", text="2. Architecture", self_ref="#/texts/4", page_no=5),
+    ]
+
+    doc = MockDoc(items, pages=pages)
+    gaps = _find_page_gaps(doc)
+
+    # Only page 4 should be flagged as a gap
+    assert len(gaps) == 1
+    assert gaps[0]["pages"] == [4]
+
+
+def test_build_document_index_continuation_diagram_tables():
+    """Verify that build_document_index extracts diagrams across both initial and continuation diagram tables."""
+    mock_page7 = type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()
+    mock_page8 = type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()
+    pages = {7: mock_page7, 8: mock_page8}
+
+    items = [
+        MockItem(label="section_header", text="E. Processing Specifications", self_ref="#/texts/1", page_no=7),
+        MockItem(label="section_header", text="2. Diagrams", self_ref="#/texts/2", page_no=7),
+        # Initial diagram table on page 7 with column headers
+        MockItem(
+            label="table",
+            self_ref="#/tables/11",
+            page_no=7,
+            grid=[
+                [MockCell("Diagram", column_header=True), MockCell("Attachment", column_header=True)],
+                [MockCell("Network Diagram"), MockCell("AWV_Network_Diagram.pdf")],
+                [MockCell("Process Flow Diagram – Serialization and Reporting Service"), MockCell("PID-0015_Process_Flow.pdf")],
+            ],
+        ),
+        # Continuation diagram table on page 8 without repeated header row
+        MockItem(
+            label="table",
+            self_ref="#/tables/13",
+            page_no=8,
+            grid=[
+                [MockCell("Sequence Diagram – Serialization and Reporting Service"), MockCell("PID-0015_Sequence.pdf")],
+                [MockCell("Data Flow Diagram"), MockCell("PID-0015_DFD.pdf")],
+            ],
+        ),
+    ]
+
+    doc = MockDoc(items, pages=pages)
+    index = build_document_index(doc)
+
+    diag_docs = index.get("diagram_documents", [])
+    assert len(diag_docs) == 4
+    diag_names = [d["name"] for d in diag_docs]
+    assert "Network Diagram" in diag_names
+    assert "Process Flow Diagram – Serialization and Reporting Service" in diag_names
+    assert "Sequence Diagram – Serialization and Reporting Service" in diag_names
+    assert "Data Flow Diagram" in diag_names
+
+    # All 4 should also be synced into figures with matching captions
+    figures = index.get("figures", [])
+    captions = [f["caption"] for f in figures]
+    assert "Network Diagram" in captions
+    assert "Process Flow Diagram – Serialization and Reporting Service" in captions
+    assert "Sequence Diagram – Serialization and Reporting Service" in captions
+    assert "Data Flow Diagram" in captions
+
+
+def test_build_document_index_table_caption_and_cell_heading():
+    """Verify that build_document_index detects section headings from table captions and banner cells."""
+    mock_page = type('MockPage', (), {'size': type('MockSize', (), {'height': 792.0, 'width': 612.0})()})()
+    pages = {3: mock_page, 4: mock_page}
+
+    class MockTableWithCaption(MockItem):
+        def caption_text(self, doc):
+            return "D. Technology Stack Requirements"
+
+    # Multi-column table whose caption specifies section D
+    t1 = MockTableWithCaption(
+        label="table",
+        self_ref="#/tables/5",
+        page_no=3,
+        grid=[
+            [MockCell("Microsoft .NET"), MockCell(".NET 10.0"), MockCell("Microservice/Web API")],
+            [MockCell("Extensible Markup Language"), MockCell("XML"), MockCell("Reports")],
+        ],
+    )
+
+    doc = MockDoc([t1], pages=pages)
+    index = build_document_index(doc)
+
+    sections = index.get("sections", [])
+    titles = [s["title"] for s in sections]
+    assert "D. Technology Stack Requirements" in titles
+
+
 
 
 
