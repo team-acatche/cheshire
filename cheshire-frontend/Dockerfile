@@ -45,6 +45,7 @@ RUN rm -f /etc/nginx/conf.d/default.conf \
         || sed -i -E 's/(javascript[[:space:]]+)js;/\1js mjs;/' /etc/nginx/mime.types) \
     && grep -nE '\bmjs\b' /etc/nginx/mime.types
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

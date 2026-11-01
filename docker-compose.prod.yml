@@ -5,9 +5,12 @@
 # The backend and Qdrant are reachable only on the internal Docker network.
 services:
   qdrant:
-    image: qdrant/qdrant:v1.13.4   # pin a version; avoid :latest in production
+    image: qdrant/qdrant:latest
     container_name: cheshire-qdrant
     restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - ~/.cheshire/qdrant:/qdrant/storage
     networks:
@@ -32,8 +35,8 @@ services:
         required: true
       - path: ./cheshire-backend/.env.user
         required: false
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     volumes:
       - ~/.cheshire:/data
     depends_on:
