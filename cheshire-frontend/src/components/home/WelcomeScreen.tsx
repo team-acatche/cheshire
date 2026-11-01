@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { AiDisclaimer } from "@/components/ui/ai-disclaimer"
 
 interface WelcomeScreenProps {
   userName: string
@@ -127,6 +128,7 @@ export default function WelcomeScreen({ userName, onUpload }: WelcomeScreenProps
                   }}
                 />
               </CardAction>
+              <AiDisclaimer className="pb-1" />
             </CardContent>
           </Card>
         </motion.section>

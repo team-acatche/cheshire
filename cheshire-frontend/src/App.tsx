@@ -531,6 +531,7 @@ export default function App({ user, onLogout }: AppProps) {
       onOpenSettings={() => setSettingsOpen(true)}
       onActivity={() => touchChat(currentSessionId)}
       evaluationPending={findingsLoading}
+      evaluationCancelled={currentChat?.status === "cancelled"}
     />
   ) : null
 

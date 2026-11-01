@@ -39,6 +39,7 @@ import type { EvaluationProgress, ProgressEvent } from "@/lib/helpers/evaluate_d
 import { PdfPageItem } from "./PdfPageItem";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import { AiDisclaimer } from "@/components/ui/ai-disclaimer";
 
 // ─── pdfjs worker ────────────────────────────────────────────────────────────
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -542,6 +543,9 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                         ))}
                       </div>
                     ))}
+                  </div>
+                  <div className="border-t px-3 py-2">
+                    <AiDisclaimer />
                   </div>
                 </PopoverContent>
               </Popover>

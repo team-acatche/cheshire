@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import { categoryOf, shortTitle } from "./helpers";
 import { TONES, bySeverity, dominantTone, getTone, toneColor } from "./severity";
+import { AiDisclaimer } from "@/components/ui/ai-disclaimer";
 
 interface Props {
   findings: VulnerabilityFinding[];
@@ -70,6 +71,9 @@ export const DocumentLevelFindings = forwardRef<HTMLButtonElement, Props>(
                 ))}
               </div>
             ))}
+          </div>
+          <div className="border-t px-3 py-2">
+            <AiDisclaimer />
           </div>
         </PopoverContent>
       </Popover>
