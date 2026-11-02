@@ -39,6 +39,9 @@ RUN docling-tools models download
 # Predownload EasyOCR models
 RUN python -c "import easyocr; easyocr.Reader(['fr', 'de', 'es', 'en'])"
 
+# Predownload RapidOCR models
+RUN python -c "from rapidocr import RapidOCR; RapidOCR()"
+
 # ─────────────────────────────────────────────────────────────
 # Stage 2: Run
 # Lean runtime image — no Poetry, no build-essential
