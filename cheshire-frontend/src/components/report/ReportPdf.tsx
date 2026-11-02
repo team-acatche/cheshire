@@ -13,12 +13,13 @@ import {
 } from "@/lib/report"
 
 // Debug switch: add "trend" | "glance" | "findings" | "recs" to skip a section while bisecting.
-const SKIP = new Set<string>(["findings"])
+const SKIP = new Set<string>([])
+
 // A4 is 595pt wide; page padding is 40 each side. Every width below is a fixed number
 // (no %, no flex:1) so yoga never has an undefined size to resolve.
 const CW = 515
 const CARD_PAD = 12
-const INNER = CW - CARD_PAD * 2 // 491
+const INNER = CW - 2 - CARD_PAD * 2 // 489 (card border 1pt each side)
 
 const INK = "#18181b"
 const MUTED = "#71717a"
@@ -27,83 +28,94 @@ const SOFT = "#f4f4f5"
 const PRIMARY = "#1a47d0"
 
 const SCORE_W = 104
-const RIGHT_W = INNER - SCORE_W - 16 // 371
-const TILE_W = Math.floor((RIGHT_W - 18) / 4) // 88
+const RIGHT_W = INNER - SCORE_W - 16 // 369
+const TILE_W = Math.floor((RIGHT_W - 18) / 4) // 87
 const BAR_LABEL = 78
 const BAR_COUNT = 56
-const BAR_TRACK = INNER - BAR_LABEL - BAR_COUNT // 357
+const BAR_TRACK = INNER - BAR_LABEL - BAR_COUNT // 355
 
 const COL_ID = 36
 const COL_SEV = 70
 const COL_LOC = 78
 const COL_TITLE = CW - COL_ID - COL_SEV - COL_LOC // 331
 
+// Finding card: 1pt border + 4pt stripe + 12pt padding each side
+const STRIPE_W = 4
+const F_BODY_W = CW - 2 - STRIPE_W // 509
+const F_INNER = F_BODY_W - CARD_PAD * 2 // 485
+const F_HEAD_ID = 91
+
 const s = StyleSheet.create({
   page: { paddingTop: 40, paddingBottom: 60, paddingHorizontal: 40, fontSize: 10, fontFamily: "Helvetica", color: INK, lineHeight: 1.4 },
-  brand: { fontSize: 9, fontFamily: "Helvetica-Bold", color: PRIMARY, marginBottom: 6 },
+  brand: { fontSize: 9, fontFamily: "Helvetica-Bold", letterSpacing: 2, color: PRIMARY, marginBottom: 6 },
   title: { fontSize: 22, fontFamily: "Helvetica-Bold", lineHeight: 1.2, marginBottom: 6, width: CW },
   docName: { fontSize: 12, color: MUTED, marginBottom: 14, width: CW },
-  metaGrid: { width: CW, flexDirection: "row", flexWrap: "wrap", backgroundColor: SOFT, padding: 10, marginBottom: 18 },
-  metaItem: { width: (CW - 20) / 2, paddingVertical: 3, paddingRight: 8 },
-  metaLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED },
+  metaGrid: { width: CW, flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: LINE, borderRadius: 4, padding: 10, marginBottom: 18 },
+  metaItem: { width: (CW - 22) / 2, paddingVertical: 3, paddingRight: 8 },
+  metaLabel: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8 },
   metaValue: { fontSize: 10 },
   h2: { fontSize: 14, fontFamily: "Helvetica-Bold", marginTop: 6, marginBottom: 8, width: CW },
-  label: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, marginTop: 10, marginBottom: 3 },
+  label: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8, marginTop: 10, marginBottom: 3 },
   body: { fontSize: 10 },
   muted: { fontSize: 9, color: MUTED },
   row: { flexDirection: "row", alignItems: "center" },
-  card: { width: CW, backgroundColor: SOFT, padding: CARD_PAD, marginBottom: 14 },
+  card: { width: CW, borderWidth: 1, borderColor: LINE, borderRadius: 4, padding: CARD_PAD, marginBottom: 14 },
   divider: { width: CW, height: 1, backgroundColor: LINE },
 
   // summary
   summaryRow: { flexDirection: "row", alignItems: "flex-start" },
   scoreCol: { width: SCORE_W, marginRight: 16 },
   scoreNum: { fontSize: 38, fontFamily: "Helvetica-Bold", lineHeight: 1.1 },
-  scoreSub: { fontSize: 7.5, color: MUTED, marginBottom: 6 },
-  scoreTrack: { width: SCORE_W, height: 6, backgroundColor: LINE },
+  scoreSub: { fontSize: 7.5, color: MUTED, letterSpacing: 0.8, marginBottom: 6 },
+  scoreTrack: { width: SCORE_W, height: 6, backgroundColor: SOFT, borderRadius: 3 },
   rightCol: { width: RIGHT_W },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 6 },
-  statusText: { fontSize: 11, fontFamily: "Helvetica-Bold", color: "#ffffff" },
+  statusPill: { borderWidth: 1, borderRadius: 3, paddingHorizontal: 8, paddingVertical: 2, alignSelf: "flex-start", marginBottom: 6 },
+  statusText: { fontSize: 11, fontFamily: "Helvetica-Bold" },
   tiles: { flexDirection: "row", marginTop: 10 },
-  tile: { width: TILE_W, backgroundColor: "#ffffff", padding: 6 },
+  tile: { width: TILE_W, borderWidth: 1, borderColor: LINE, borderRadius: 3, padding: 6 },
   tileValue: { fontSize: 16, fontFamily: "Helvetica-Bold" },
 
   // severity bars
   barRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
   barLabel: { width: BAR_LABEL, fontSize: 9 },
-  barTrack: { width: BAR_TRACK, height: 8, backgroundColor: LINE },
+  barTrack: { width: BAR_TRACK, height: 8, backgroundColor: SOFT, borderRadius: 4 },
   barCount: { width: BAR_COUNT, textAlign: "right", fontSize: 9 },
 
   // pills
-  pill: { paddingHorizontal: 6, paddingVertical: 2, marginRight: 6 },
-  pillText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#ffffff" },
-  pillMuted: { backgroundColor: LINE, paddingHorizontal: 6, paddingVertical: 2, marginRight: 6 },
-  pillMutedText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED },
+  pill: { borderRadius: 3, paddingHorizontal: 6, paddingVertical: 2, marginRight: 6 },
+  pillText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: "#ffffff", letterSpacing: 0.5 },
+  pillOutline: { borderWidth: 1, borderColor: MUTED, borderRadius: 3, paddingHorizontal: 6, paddingVertical: 1, marginRight: 6 },
+  pillOutlineText: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED },
 
   // glance table
   thRow: { width: CW, flexDirection: "row", paddingBottom: 3 },
-  th: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED },
+  th: { fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8 },
   tr: { width: CW, flexDirection: "row", paddingVertical: 4 },
   colId: { width: COL_ID },
   colSev: { width: COL_SEV },
   colTitle: { width: COL_TITLE, paddingRight: 8 },
   colLoc: { width: COL_LOC, textAlign: "right" },
 
-  // findings
-  finding: { width: CW, backgroundColor: SOFT, marginBottom: 10 },
-  findingBar: { width: CW, height: 4 },
-  findingBody: { width: CW, padding: CARD_PAD },
-  findingHead: { width: INNER, flexDirection: "row", alignItems: "center" },
-  headLeft: { width: INNER - 91, flexDirection: "row", alignItems: "center" },
-  headId: { width: 91, textAlign: "right" },
-  findingTitle: { width: INNER, fontSize: 11, fontFamily: "Helvetica-Bold", lineHeight: 1.3, marginTop: 5, marginBottom: 3 },
-  textInner: { width: INNER },
-  listItem: { width: INNER, flexDirection: "row", marginBottom: 4 },
+  // finding cards (stripe + body in a row, so no mixed border widths)
+  finding: { width: CW, flexDirection: "row", borderWidth: 1, borderColor: LINE, borderRadius: 4, marginBottom: 10 },
+  fStripe: { width: STRIPE_W },
+  fBody: { width: F_BODY_W, padding: CARD_PAD },
+  fHeadRow: { width: F_INNER, flexDirection: "row", alignItems: "center" },
+  fHeadLeft: { width: F_INNER - F_HEAD_ID, flexDirection: "row", alignItems: "center" },
+  fHeadId: { width: F_HEAD_ID, textAlign: "right" },
+  fTitle: { width: F_INNER, fontSize: 11, fontFamily: "Helvetica-Bold", lineHeight: 1.3, marginTop: 5, marginBottom: 3 },
+  fMeta: { width: F_INNER, fontSize: 9, color: MUTED },
+  fLabel: { width: F_INNER, fontSize: 7.5, fontFamily: "Helvetica-Bold", color: MUTED, letterSpacing: 0.8, marginTop: 10, marginBottom: 3 },
+  fText: { width: F_INNER, fontSize: 10 },
+  fItem: { width: F_INNER, flexDirection: "row", marginBottom: 4 },
+  fNum: { width: 16, fontFamily: "Helvetica-Bold", fontSize: 10 },
+  fItemText: { width: F_INNER - 16, fontSize: 10 },
+  fLink: { width: F_INNER, fontSize: 8.5, color: PRIMARY, marginBottom: 2 },
+
+  // recommendations page
   listNum: { width: 16, fontFamily: "Helvetica-Bold" },
-  listTextInner: { width: INNER - 16 },
   listItemOuter: { width: CW, flexDirection: "row", marginBottom: 4 },
   listTextOuter: { width: CW - 16 },
-  link: { width: INNER, fontSize: 8.5, color: PRIMARY, marginBottom: 2 },
 
   footer: { position: "absolute", left: 40, bottom: 24, width: CW },
   footerRow: { width: CW, flexDirection: "row", paddingTop: 6 },
@@ -161,6 +173,54 @@ function TrendSvg({ points, currentSessionId }: { points: TrendPoint[]; currentS
   )
 }
 
+// ── Manual pagination for detailed findings ───────────────────────────────────
+// Page content height is 842 - 40 - 60 = 742pt. Stay well under it so react-pdf
+// never has to split a finding card itself (splitting bordered boxes is where
+// the -8e21 box appeared).
+const PAGE_BUDGET = 660
+
+const lines = (text: string, charsPerLine: number) =>
+  text
+    .split("\n")
+    .reduce((n, part) => n + Math.max(1, Math.ceil(part.length / charsPerLine)), 0)
+
+// Deliberately pessimistic: slightly too tall is fine, too short is not.
+function estimateFindingHeight(f: ReportData["findings"][number]): number {
+  let h = 2 + CARD_PAD * 2 + 10 // border, padding, margin
+  h += 18 + 8 // pill row + title spacing
+  h += lines(t(f.title), 62) * 15
+  h += 13 // location / confidence line
+  h += 10 + 3 + 11 // EVIDENCE label
+  h += lines(t(f.description), 78) * 14
+  if (f.recommendations.length) {
+    h += 10 + 3 + 11
+    for (const r of f.recommendations) h += lines(t(r), 74) * 14 + 4
+  }
+  if (f.references.length) {
+    h += 10 + 3 + 11
+    for (const url of f.references) h += lines(t(url), 74) * 12 + 2
+  }
+  return h
+}
+
+function paginateFindings(findings: ReportData["findings"]): ReportData["findings"][] {
+  const pages: ReportData["findings"][] = []
+  let current: ReportData["findings"] = []
+  let used = 30 // "Detailed findings" heading on the first page
+  for (const f of findings) {
+    const h = estimateFindingHeight(f)
+    if (current.length > 0 && used + h > PAGE_BUDGET) {
+      pages.push(current)
+      current = []
+      used = 0
+    }
+    current.push(f)
+    used += h
+  }
+  if (current.length > 0) pages.push(current)
+  return pages
+}
+
 export function ReportDocument({ report, trend }: { report: ReportData; trend: TrendPoint[] }) {
   const status = STATUS_META[report.status]
   const docName = t(report.documentName) || "Document"
@@ -207,12 +267,12 @@ export function ReportDocument({ report, trend }: { report: ReportData; trend: T
               <Text style={[s.scoreNum, { color: status.hex }]}>{score}</Text>
               <Text style={s.scoreSub}>OUT OF 100</Text>
               <View style={s.scoreTrack}>
-                <View style={{ width: Math.round((SCORE_W * score) / 100), height: 6, backgroundColor: status.hex }} />
+                <View style={{ width: Math.round((SCORE_W * score) / 100), height: 6, borderRadius: 3, backgroundColor: status.hex }} />
               </View>
             </View>
             <View style={s.rightCol}>
-              <View style={[s.statusPill, { backgroundColor: status.hex }]}>
-                <Text style={s.statusText}>{status.label}</Text>
+              <View style={[s.statusPill, { borderColor: status.hex }]}>
+                <Text style={[s.statusText, { color: status.hex }]}>{status.label}</Text>
               </View>
               <Text style={[s.body, { width: RIGHT_W }]}>{t(summaryText(report))}</Text>
               <View style={s.tiles}>
@@ -241,7 +301,7 @@ export function ReportDocument({ report, trend }: { report: ReportData; trend: T
               <View key={sev} style={s.barRow}>
                 <Text style={s.barLabel}>{SEVERITY_META[sev].label}</Text>
                 <View style={s.barTrack}>
-                  <View style={{ width: Math.round((BAR_TRACK * pct) / 100), height: 8, backgroundColor: SEVERITY_META[sev].hex }} />
+                  <View style={{ width: Math.round((BAR_TRACK * pct) / 100), height: 8, borderRadius: 4, backgroundColor: SEVERITY_META[sev].hex }} />
                 </View>
                 <Text style={s.barCount}>{n} ({pct}%)</Text>
               </View>
@@ -270,7 +330,7 @@ export function ReportDocument({ report, trend }: { report: ReportData; trend: T
         <Footer docName={docName} />
       </Page>
 
-      {/* Page 2+: findings at a glance */}
+      {/* Findings at a glance */}
       {!SKIP.has("glance") && (
         <Page size="A4" style={s.page}>
           <Text style={s.h2}>Findings at a glance</Text>
@@ -304,59 +364,61 @@ export function ReportDocument({ report, trend }: { report: ReportData; trend: T
         </Page>
       )}
 
-      {/* Detailed findings */}
-      {!SKIP.has("findings") && (
-        <Page size="A4" style={s.page}>
-          <Text style={s.h2}>Detailed findings</Text>
-          {report.findings.length === 0 && <Text style={s.body}>No gaps were found in this document.</Text>}
-          {report.findings.map((f) => (
-            <View key={f.id} style={s.finding}>
-              <View style={[s.findingBar, { backgroundColor: SEVERITY_META[f.severity].hex }]} />
-              <View style={s.findingBody}>
-                <View style={s.findingHead}>
-                  <View style={s.headLeft}>
-                    <Pill color={SEVERITY_META[f.severity].hex} label={SEVERITY_META[f.severity].label} />
-                    {f.missing && (
-                      <View style={s.pillMuted}>
-                        <Text style={s.pillMutedText}>MISSING CONTENT</Text>
+      {/* Detailed findings: packed into pages by estimated height, so no card ever needs splitting */}
+      {!SKIP.has("findings") &&
+        (report.findings.length === 0 ? (
+          <Page size="A4" style={s.page}>
+            <Text style={s.h2}>Detailed findings</Text>
+            <Text style={s.body}>No gaps were found in this document.</Text>
+            <Footer docName={docName} />
+          </Page>
+        ) : (
+          paginateFindings(report.findings).map((group, pageIdx) => (
+            <Page key={pageIdx} size="A4" style={s.page}>
+              {pageIdx === 0 && <Text style={s.h2}>Detailed findings</Text>}
+
+              {group.map((f) => (
+                <View key={f.id} style={s.finding}>
+                  <View style={[s.fStripe, { backgroundColor: SEVERITY_META[f.severity].hex }]} />
+                  <View style={s.fBody}>
+                    <View style={s.fHeadRow}>
+                      <View style={s.fHeadLeft}>
+                        <Pill color={SEVERITY_META[f.severity].hex} label={SEVERITY_META[f.severity].label} />
+                        {f.missing && (
+                          <View style={s.pillOutline}>
+                            <Text style={s.pillOutlineText}>MISSING CONTENT</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
-                  <Text style={[s.muted, s.headId]}>{f.id}</Text>
-                </View>
+                      <Text style={[s.muted, s.fHeadId]}>{f.id}</Text>
+                    </View>
 
-                <Text style={s.findingTitle}>{t(f.title)}</Text>
-                <Text style={[s.muted, s.textInner]}>{t(f.location)} | Confidence {t(f.confidenceLabel)}</Text>
+                    <Text style={s.fTitle}>{t(f.title)}</Text>
+                    <Text style={s.fMeta}>{t(f.location)} | Confidence {t(f.confidenceLabel)}</Text>
 
-                <Text style={[s.label, s.textInner]}>EVIDENCE</Text>
-                <Text style={[s.body, s.textInner]}>{t(f.description)}</Text>
+                    <Text style={s.fLabel}>EVIDENCE</Text>
+                    <Text style={s.fText}>{t(f.description)}</Text>
 
-                {f.recommendations.length > 0 && (
-                  <View>
-                    <Text style={[s.label, s.textInner]}>RECOMMENDATIONS</Text>
+                    {f.recommendations.length > 0 && <Text style={s.fLabel}>RECOMMENDATIONS</Text>}
                     {f.recommendations.map((r, i) => (
-                      <View key={i} style={s.listItem}>
-                        <Text style={s.listNum}>{i + 1}.</Text>
-                        <Text style={s.listTextInner}>{t(r)}</Text>
+                      <View key={i} style={s.fItem}>
+                        <Text style={s.fNum}>{i + 1}.</Text>
+                        <Text style={s.fItemText}>{t(r)}</Text>
                       </View>
                     ))}
-                  </View>
-                )}
 
-                {f.references.length > 0 && (
-                  <View>
-                    <Text style={[s.label, s.textInner]}>REFERENCES</Text>
+                    {f.references.length > 0 && <Text style={s.fLabel}>REFERENCES</Text>}
                     {f.references.map((url, i) => (
-                      <Text key={i} style={s.link}>{t(url)}</Text>
+                      <Text key={i} style={s.fLink}>{t(url)}</Text>
                     ))}
                   </View>
-                )}
-              </View>
-            </View>
-          ))}
-          <Footer docName={docName} />
-        </Page>
-      )}
+                </View>
+              ))}
+
+              <Footer docName={docName} />
+            </Page>
+          ))
+        ))}
 
       {/* Recommendations */}
       {!SKIP.has("recs") && (
