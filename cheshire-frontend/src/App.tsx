@@ -131,6 +131,8 @@ export default function App({ user, onLogout }: AppProps) {
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [findingsLoading, setFindingsLoading] = useState(false)
   const [chats, setChats] = useState<Chat[]>([])
+  const chatsRef = useRef<Chat[]>([])
+  chatsRef.current = chats
   const [chatsLoading, setChatsLoading] = useState(true)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
@@ -208,6 +210,14 @@ export default function App({ user, onLogout }: AppProps) {
         if (isCurrent()) setFindingsLoading(false)
         return
       }
+    
+      const doneChat = chatsRef.current.find(c => c.session_id === session_id)
+      toast.success("Analysis complete", {
+        description: `${doneChat?.title ?? "Your document"} has finished processing.`,
+        ...(doneChat && !isCurrent()
+          ? { action: { label: "View", onClick: () => handleSelectChat({ ...doneChat, status: "done" }) } }
+          : {}),
+      })
 
       setChats(prev =>
         sortChatsByLatest(
