@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button"
 import {
   Upload, Loader2, MousePointerClick, MessageCircle,
-  ChevronLeft, ChevronRight, Check, Keyboard,
+  ChevronLeft, ChevronRight, Check, Keyboard, ClipboardList,
 } from "lucide-react"
 import { TONES, TONE_ORDER } from "@/components/document-preview/severity"
 import { cn } from "@/lib/utils"
@@ -71,13 +71,25 @@ const STEPS = [
     showLegend: true,
   },
   {
+    icon: ClipboardList,
+    title: "Review the assessment report",
+    tagline: "A compliance summary you can save.",
+    points:[
+      "Open the ⋯ menu next to a finished document and choose Assessment report.",
+      "See a compliance score out of 100, an overall status, and gaps by severity.",
+      "The trend chart compares your score across completed assessments.",
+      "Export PDF downloads the report as DocumentName_Assessment_Date.pdf.",
+    ],
+    image: {light: "/how-to-use/step-5-light.png", dark: "/how-to-use/step-5-dark.png"},
+  },
+  {
     icon: MessageCircle,
     title: "Ask the chatbot",
     tagline: "Talk through the findings with AI.",
     points: [
       "Open it with the chat icon at the top right of the preview (or the Chat tab on mobile).",
       "Ask why something was flagged or how to fix it.",
-      "Tell it your team's policies. It saves them and uses them in later answers.",
+      "Tell it your team's policies. It saves them and uses them in later evaluations.",
     ],
     image: {light: "/how-to-use/step-4-light.png", dark: "/how-to-use/step-4-dark.png"},
   },
@@ -103,7 +115,7 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
       <DialogContent className="sm:max-w-4xl p-0 gap-0 overflow-hidden flex flex-col h-[min(640px,90dvh)]">
         <DialogHeader className="px-4 pt-5 pb-3 text-center gap-1 md:px-6 md:pt-6 md:pb-4">
           <DialogTitle className="text-xl font-bold md:text-2xl">How to Use Cheshire</DialogTitle>
-          <DialogDescription>Four quick steps from PDF to fixes.</DialogDescription>
+          <DialogDescription>Five quick steps from PDF to fixes.</DialogDescription>
         </DialogHeader>
 
         {/* Mobile: step tabs on top, content fills the rest. Desktop: side list + content. */}
@@ -118,7 +130,7 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
                   key={s.title}
                   onClick={() => setStep(i)}
                   className={cn(
-                    "flex items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm whitespace-nowrap transition-colors",
+                    "flex w-full min-w-0 items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm whitespace-nowrap transition-colors",
                     i === step ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:bg-muted"
                   )}
                 >
@@ -130,7 +142,12 @@ export function HowToUseDialog({ isOpen, onClose }: HowToUseDialogProps) {
                   </span>
                   <Icon className="size-4 shrink-0 hidden md:block" />
                   {/* On phones the step number is enough for non-active tabs */}
-                  <span className={cn(i !== step && "hidden sm:inline")}>{s.title}</span>
+                  <span className={cn(
+                    "min-w-0 flex-1 truncate",
+                    i !== step && "hidden sm:inline"
+                  )}>
+                    {s.title}
+                  </span>
                 </button>
               )
             })}
