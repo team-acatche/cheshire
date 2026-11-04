@@ -12,6 +12,7 @@ import type { ResponseMessages, ResponseMessage } from "@/lib/chat"
 import { EVALUATION_MODE, PROVIDER } from "@/globals"
 import { authFetch } from "@/lib/auth"
 import { ChevronDown, Square, RotateCw, Copy, Check } from "lucide-react"
+import { AI_DISCLAIMER } from "@/components/ui/ai-disclaimer"
 
 type Message = {
   role: "user" | "bot1" | "bot2" | "bot3"
@@ -28,6 +29,7 @@ interface ChatbotProps {
   onOpenSettings: () => void
   onActivity?: () => void
   evaluationPending?: boolean
+  evaluationCancelled?: boolean
 }
 
 function parseFinding(text: string): VulnerabilityFinding | null {
@@ -135,7 +137,8 @@ const MessageBody = memo(function MessageBody({ text, role }: { text: string; ro
   )
 })
 
-export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluationPending = false }: ChatbotProps) {
+export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluationPending = false, evaluationCancelled = false }: ChatbotProps) {
+  const inputLocked = evaluationPending || evaluationCancelled
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState<string>("")
   const [typing, setTyping] = useState<boolean>(false)
@@ -427,7 +430,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
 
   // ── Send message ──────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!input.trim() || typing || evaluationPending) return
+    if (!input.trim() || typing || inputLocked) return
     const userText = input
     setMessages(prev => [...prev, { role: "user", text: userText }, { role: "bot1", text: "" }])
     setInput("")
@@ -470,7 +473,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
   // Offered once the last answer has finished (or errored, or was stopped
   // before any text arrived), and never when the last item is a finding card.
   const canRegenerate =
-    !typing && !evaluationPending && lastUserIdx !== -1 &&
+    !typing && !inputLocked && lastUserIdx !== -1 &&
     (lastMsg?.role === "user" || (lastMsg?.role === "bot1" && !isFindingMessage(lastMsg.text)))
 
   const regenerate = async () => {
@@ -502,7 +505,12 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               msg.text !== "" &&
               !isFindingMessage(msg.text) &&
               !(typing && i === lastIdx)
-
+            
+              const canRetryBot =
+              msg.role !== "user" &&
+              i === lastIdx &&
+              canRegenerate &&
+              !isFindingMessage(msg.text)
             return (
               <div
                 key={i}
@@ -556,21 +564,35 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                   <div className="group flex min-w-0 flex-1 flex-col gap-1 overflow-hidden text-foreground">
                     <MessageBody text={msg.text} role={msg.role} />
 
-                    {canCopyBot && (
+                    {(canCopyBot || canRetryBot) && (
                       <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => copyMessage(msg.text, i)}
-                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          title={copiedMessageIdx === i ? "Copied!" : "Copy response"}
-                          aria-label={copiedMessageIdx === i ? "Response copied" : "Copy response"}
-                        >
-                          {copiedMessageIdx === i ? (
-                            <Check className="size-3.5" />
-                          ) : (
-                            <Copy className="size-3.5" />
-                          )}
-                        </button>
+                        {canCopyBot && (
+                          <button
+                            type="button"
+                            onClick={() => copyMessage(msg.text, i)}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title={copiedMessageIdx === i ? "Copied!" : "Copy response"}
+                            aria-label={copiedMessageIdx === i ? "Response copied" : "Copy response"}
+                          >
+                            {copiedMessageIdx === i ? (
+                              <Check className="size-3.5" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </button>
+                        )}
+
+                        {canRetryBot && (
+                          <button
+                            type="button"
+                            onClick={regenerate}
+                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title="Retry response"
+                            aria-label="Retry response"
+                          >
+                            <RotateCw className="size-3.5" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -655,8 +677,12 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="What would you like to know?"
-              disabled={typing || evaluationPending}
+              placeholder={
+                evaluationCancelled
+                  ? "Analysis cancelled. Re-run it to chat."
+                  : "What would you like to know?"
+              }
+              disabled={typing || inputLocked}
               minRows={1}
               maxRows={8}
               // 16px on mobile prevents iOS Safari from zooming into the field on focus
@@ -685,7 +711,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
                 type="button"
                 onClick={stopGenerating}
                 aria-label="Stop generating"
-                title="Stop generating"
+                title="Stop g enerating"
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-all duration-200 hover:scale-105 hover:opacity-90 active:scale-95"
               >
                 <Square className="size-4 fill-current" />
@@ -693,7 +719,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
             ) : (
               <button
                 onClick={sendMessage}
-                disabled={typing || evaluationPending || !input.trim()}
+                disabled={typing || inputLocked || !input.trim()}
                 aria-label="Send message"
                 className="
                   flex h-10 w-10 shrink-0 items-center justify-center
@@ -716,7 +742,7 @@ export function Chatbot({ findings, sessionId, profileImage, onActivity, evaluat
           </div>
 
           <p className="mt-2 text-center text-[11px] text-muted-foreground/60 md:text-xs">
-            Cheshire can make mistakes. Verify important security findings.
+            {AI_DISCLAIMER}
           </p>
         </div>
       </div>

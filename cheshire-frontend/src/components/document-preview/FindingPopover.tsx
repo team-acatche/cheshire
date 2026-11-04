@@ -6,6 +6,7 @@ import type { VulnerabilityFinding } from "@/types/VulnerabilityFinding";
 import { isUnanchored, getBoxes } from "./helpers";
 import { SeverityBadge, ConfidenceMeter } from "./severity-badge";
 import { TONES, bySeverity, getTone, isTentative, toneColor } from "./severity";
+import { AiDisclaimer } from "@/components/ui/ai-disclaimer";
 
 interface FindingPopoverProps {
   findings: VulnerabilityFinding[];
@@ -93,11 +94,6 @@ export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusC
         >
           <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
             <SeverityBadge tone={tone} />
-            {tone === "missing" && finding.severity && (
-              <span className="text-[10px] capitalize text-zinc-500 dark:text-zinc-400">
-                {finding.severity} priority
-              </span>
-            )}
             <ConfidenceMeter value={finding.confidence} />
             <Badge variant="outline" className="ml-auto shrink-0 text-[10px]">
               {isUnanchored(finding) ? "Document" : `pg. ${pages.join(", ")}`}
@@ -205,6 +201,9 @@ export function FindingPopover({ findings: incoming, anchorEl, onClose, onFocusC
               </ul>
             </div>
           )}
+        </div>
+        <div className="border-t px-4 py-2" style={{ borderColor: toneColor(tone, 0.2) }}>
+          <AiDisclaimer />
         </div>
       </div>
     </FloatingPortal>

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cheshire_configs.registry import configs
 from endpoints.evaluate import evaluate_router
 from endpoints.chat import chat_router
+from endpoints.reports import reports_router
 from endpoints.user_auth import auth_router
 from endpoints.user import user_router
 
@@ -52,6 +53,11 @@ api.include_router(
 
 api.include_router(
     user_router,
+    prefix="/api/v1",
+)
+
+api.include_router(
+    reports_router,
     prefix="/api/v1",
 )
 

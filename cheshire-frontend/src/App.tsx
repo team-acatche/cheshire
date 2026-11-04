@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from "react"
-import { Upload, FileText, MessageSquareText } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { motion } from "framer-motion"
-import { Card, CardAction, CardContent } from "./components/ui/card"
+import { FileText, MessageSquareText } from "lucide-react"
+import { Card, CardContent } from "./components/ui/card"
 import {
   SidebarProvider,
   SidebarTrigger,
@@ -34,7 +32,9 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import Account from "./components/account"
+import ReportPage from "./components/report/ReportPage"
 import SettingsModal from "./components/settings-modal"
+import WelcomeScreen from "./components/home/WelcomeScreen"
 import { toast } from "sonner"
 import { CancelEvaluationDialog } from "@/components/chat/CancelEvaluationDialog"
 
@@ -106,6 +106,7 @@ interface AppProps {
 }
 
 type MobileTab = "document" | "chat"
+type AppPage = "chat" | "account" | "report"
 
 const MOBILE_TABS: { id: MobileTab; label: string; icon: typeof FileText }[] = [
   { id: "document", label: "Document", icon: FileText },
@@ -130,10 +131,12 @@ export default function App({ user, onLogout }: AppProps) {
   const [findings, setFindings] = useState<VulnerabilityFinding[]>([])
   const [findingsLoading, setFindingsLoading] = useState(false)
   const [chats, setChats] = useState<Chat[]>([])
+  const chatsRef = useRef<Chat[]>([])
+  chatsRef.current = chats
   const [chatsLoading, setChatsLoading] = useState(true)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [currentFileName, setCurrentFileName] = useState<string>("document.pdf")
-  const [page, setPage] = useState<"chat" | "account">("chat")
+  const [page, setPage] = useState<AppPage>("chat")
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [chatToCancel, setChatToCancel] = useState<Chat | null>(null)
   const [mobileTab, setMobileTab] = useState<MobileTab>("document")
@@ -207,6 +210,14 @@ export default function App({ user, onLogout }: AppProps) {
         if (isCurrent()) setFindingsLoading(false)
         return
       }
+    
+      const doneChat = chatsRef.current.find(c => c.session_id === session_id)
+      toast.success("Analysis complete", {
+        description: `${doneChat?.title ?? "Your document"} has finished processing.`,
+        ...(doneChat && !isCurrent()
+          ? { action: { label: "View", onClick: () => handleSelectChat({ ...doneChat, status: "done" }) } }
+          : {}),
+      })
 
       setChats(prev =>
         sortChatsByLatest(
@@ -336,6 +347,18 @@ export default function App({ user, onLogout }: AppProps) {
     } finally {
       if (!isStale()) setFindingsLoading(false)
     }
+  }
+
+  // Opens the assessment report for a finished document. If it isn't the open
+  // document yet, it is loaded first (the report shows a skeleton meanwhile).
+  const handleOpenReport = async (chat: Chat) => {
+    if (currentSessionIdRef.current === chat.session_id && !findingsLoading) {
+      setPage("report")
+      return
+    }
+    const loading = handleSelectChat(chat) // sets page to "chat" synchronously...
+    setPage("report")                      // ...so this must come after it
+    await loading
   }
 
   const touchChat = (sessionId: string) => {
@@ -487,7 +510,9 @@ export default function App({ user, onLogout }: AppProps) {
   )
 
   const mobileTitle =
-    page === "account" ? "Account" : file ? currentFileName : "Cheshire"
+    page === "account" ? "Account"
+    : page === "report" ? "Assessment report"
+    : file ? currentFileName : "Cheshire"
 
   // Shared props for the document viewer (desktop panel and mobile tab)
   const documentPreview = (
@@ -503,6 +528,11 @@ export default function App({ user, onLogout }: AppProps) {
       onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
       progress={progress}
       progressEvents={progressEvents}
+      onOpenReport={
+        currentChat?.status === "done" && !findingsLoading
+          ? () => handleOpenReport(currentChat)
+          : undefined
+      }
     />
   )
 
@@ -516,6 +546,7 @@ export default function App({ user, onLogout }: AppProps) {
       onOpenSettings={() => setSettingsOpen(true)}
       onActivity={() => touchChat(currentSessionId)}
       evaluationPending={findingsLoading}
+      evaluationCancelled={currentChat?.status === "cancelled"}
     />
   ) : null
 
@@ -538,6 +569,7 @@ export default function App({ user, onLogout }: AppProps) {
         onOpenSettings={() => setSettingsOpen(true)}
         onCancelChat={(chat) => setChatToCancel(chat)}
         onRerunChat={handleRerunChat}
+        onOpenReport={handleOpenReport}
       />
 
       <SettingsModal
@@ -573,6 +605,19 @@ export default function App({ user, onLogout }: AppProps) {
               onClose={() => setPage("chat")}
             />
           </div>
+        ) : page === "report" && currentSessionId ? (
+          <div className="min-h-0 flex-1 overflow-hidden md:h-dvh md:flex-none">
+            <ReportPage
+              key={currentSessionId}
+              sessionId={currentSessionId}
+              documentName={currentFileName}
+              findings={findings}
+              loading={findingsLoading}
+              user={user}
+              fallbackAssessedAt={currentChat?.latestTimestamp ?? null}
+              onClose={() => setPage("chat")}
+            />
+          </div>
         ) : (
           <main
             className={cn(
@@ -581,101 +626,10 @@ export default function App({ user, onLogout }: AppProps) {
             )}
           >
             {!file ? (
-              <div className="h-full overflow-y-auto">
-                <div className="flex min-h-full flex-col items-center justify-center gap-10 py-4 md:gap-14">
-                  <motion.section
-                    initial={{ opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.35, ease: "easeOut" }}
-                    className="flex w-full max-w-3xl flex-col items-center text-center"
-                  >
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-slate-50 sm:text-4xl md:text-5xl">
-                      Hi, {user.full_name ?? user.username ?? ""}!
-                    </h1>
-
-                    <Card className="mt-4 w-full max-w-3xl rounded-2xl border border-slate-200 shadow-sm">
-                      <CardContent className="space-y-4 p-2 text-center">
-                        <p className="text-center text-base text-muted-foreground md:text-lg">
-                          Welcome to Cheshire. Please upload a PDF document to start the evaluation.
-                        </p>
-
-                        <CardAction className="flex w-full items-center justify-center">
-                          <Button
-                            asChild
-                            className="mx-auto block w-40"
-                          >
-                            <label className="flex cursor-pointer items-center justify-center gap-2">
-                              <Upload className="h-4 w-4" />
-                              Upload
-                              <input
-                                type="file"
-                                accept=".pdf"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const f = e.target.files?.[0]
-                                  if (f) handleFileUpload(f)
-                                  e.target.value = ""
-                                }}
-                              />
-                            </label>
-                          </Button>
-                        </CardAction>
-                      </CardContent>
-                    </Card>
-                  </motion.section>
-
-                  <motion.section
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, delay: 0.08, ease: "easeOut" }}
-                    className="flex w-full max-w-6xl flex-col items-center justify-center gap-8 md:flex-row md:gap-10"
-                  >
-                    <div className="flex flex-col items-center gap-6 md:flex-row md:gap-8">
-                      <img
-                        src="/cheshire-black.png"
-                        alt="Cheshire Logo"
-                        className="h-32 w-32 object-contain dark:invert md:h-52 md:w-52"
-                      />
-
-                      <div className="max-w-md text-center md:text-left">
-                        <h2 className="mb-2 text-xl font-bold text-slate-800 dark:text-slate-100">
-                          About Cheshire
-                        </h2>
-                        <p className="text-sm leading-relaxed text-muted-foreground md:text-justify md:text-base">
-                          Cheshire is an assessment tool designed to identify vulnerabilities
-                          in your Technical Document Specification (TDS) using AI analysis.
-                          It streamlines the review process by highlighting potential security
-                          gaps and ensuring your documentation adheres to industry standards.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="hidden h-56 w-px bg-slate-100 md:block" />
-
-                    <div className="w-full max-w-sm">
-                      <h3 className="mb-4 text-center text-lg font-semibold uppercase tracking-wider text-slate-400 md:mb-6 md:text-left">
-                        Features
-                      </h3>
-
-                      <div className="grid gap-5 md:gap-6">
-                        {[
-                          ["01", "Document Review", "A preview of your uploaded technical document."],
-                          ["02", "Document Findings", "Automatically find security risks and get clear suggestions on how to fix them."],
-                          ["03", "Chatbot", "Discuss findings directly with the AI."],
-                        ].map(([number, title, description]) => (
-                          <div key={number} className="flex gap-4">
-                            <div className="font-bold text-slate-400">{number}</div>
-                            <div>
-                              <h4 className="font-semibold text-slate-800 dark:text-slate-100">{title}</h4>
-                              <p className="text-sm text-muted-foreground md:text-base">{description}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </motion.section>
-                </div>
-              </div>
+              <WelcomeScreen
+                userName={user.full_name ?? user.username ?? ""}
+                onUpload={handleFileUpload}
+              />
             ) : isMobile ? (
               // ── Mobile: Document / Chat tabs (both stay mounted to keep state) ──
               <Card className="size-full min-w-0 gap-0 overflow-hidden rounded-none border-0 py-0 shadow-none ring-0">

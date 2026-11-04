@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Wrench, CircleUserRound, X, Sun, Moon, Monitor } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/lib/theme";
 import type { Chat } from "@/ChatPage";
@@ -143,16 +148,26 @@ function AccountPanel({
   chats: Chat[]
   onDeleteAllChats: () => Promise<void>
 }) {
-  const [confirm, setConfirm] = useState<null | "sessions">(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmText, setConfirmText] = useState("")
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  const canDelete = confirmText === "DELETE" && !deleting
+
+  const openConfirm = () => {
+    setConfirmText("")
+    setDeleteError(null)
+    setConfirmOpen(true)
+  }
+
   const handleDeleteAll = async () => {
+    if (!canDelete) return
     setDeleting(true)
     setDeleteError(null)
     try {
       await onDeleteAllChats()
-      setConfirm(null)
+      setConfirmOpen(false)
       onClose()
     } catch {
       setDeleteError("Failed to delete some sessions. Please try again.")
@@ -171,13 +186,6 @@ function AccountPanel({
         <SectionHeading><span className="text-destructive">Danger Zone</span></SectionHeading>
         <p className="text-xs text-muted-foreground">These actions are permanent and cannot be undone.</p>
 
-        {deleteError && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
-            {deleteError}
-          </div>
-        )}
-
-        {/* Delete sessions */}
         <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-sm font-medium">Delete all sessions</p>
@@ -186,39 +194,68 @@ function AccountPanel({
             </p>
           </div>
 
-          {confirm === "sessions" ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">Are you sure?</span>
-              <Button
-                size="xs"
-                variant="destructive"
-                onClick={handleDeleteAll}
-                disabled={deleting}
-              >
-                {deleting ? "Deleting…" : "Yes, delete all"}
-              </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => setConfirm(null)}
-                disabled={deleting}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              size="sm"
-              variant="destructive"
-              className="self-start sm:self-auto"
-              onClick={() => setConfirm("sessions")}
-              disabled={chats.length === 0}
-            >
-              Delete
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="destructive"
+            className="self-start sm:self-auto"
+            onClick={openConfirm}
+            disabled={chats.length === 0}
+          >
+            Delete
+          </Button>
         </div>
       </section>
+
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => { if (!deleting) setConfirmOpen(open) }}
+      >
+        <DialogContent className="z-60">
+          <DialogHeader>
+            <DialogTitle>Delete all sessions?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete all {chats.length} document{chats.length !== 1 ? "s" : ""} and
+              their chat history. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            id="delete-all-form"
+            onSubmit={(e) => { e.preventDefault(); handleDeleteAll() }}
+            className="space-y-2"
+          >
+            <label htmlFor="confirm-delete" className="text-sm">
+              Type <span className="font-mono font-semibold text-destructive">DELETE</span> to confirm
+            </label>
+            <Input
+              id="confirm-delete"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="DELETE"
+              autoComplete="off"
+              autoFocus
+              disabled={deleting}
+            />
+            {deleteError && (
+              <p className="text-sm text-destructive">{deleteError}</p>
+            )}
+          </form>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="delete-all-form"
+              variant="destructive"
+              disabled={!canDelete}
+            >
+              {deleting ? "Deleting…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -297,7 +334,7 @@ export function SettingsModal({ open, onClose, chats = [], onDeleteAllChats }: S
           )}
         </div>
       </div>
-    </div>
+    </div>  
   )
 }
 

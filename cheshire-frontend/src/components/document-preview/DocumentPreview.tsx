@@ -17,6 +17,7 @@ import {
   Square,
   Ban,
   RotateCw,
+  ClipboardList,
 } from "lucide-react";
 import {
   Popover,
@@ -39,6 +40,7 @@ import type { EvaluationProgress, ProgressEvent } from "@/lib/helpers/evaluate_d
 import { PdfPageItem } from "./PdfPageItem";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import { AiDisclaimer } from "@/components/ui/ai-disclaimer";
 
 // ─── pdfjs worker ────────────────────────────────────────────────────────────
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -67,9 +69,10 @@ interface DocumentPreviewProps {
   onRerunAnalysis?: () => void;
   progress?: EvaluationProgress | null;
   progressEvents?: ProgressEvent[];
+  onOpenReport?: () => void;
 }
 
-export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis, progress = null, progressEvents = [] }: DocumentPreviewProps) {
+export function DocumentPreview({ src, findings, fileName, findingsLoading = false, chatOpen = false, onToggleChat, onCancelAnalysis, onRerunAnalysis, progress = null, progressEvents = [], onOpenReport }: DocumentPreviewProps) {
   const isMobile = useIsMobile();
 
   const [numPages, setNumPages]             = useState<number>(0);
@@ -505,46 +508,72 @@ export function DocumentPreview({ src, findings, fileName, findingsLoading = fal
                 </button>
               </div>
             ) :(
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
-                    <ShieldAlert className={`h-3.5 w-3.5 ${findings.length ? TONES[dominantTone(findings)].text : "text-muted-foreground"}`} />
-                    <span className="text-xs text-muted-foreground">Total Findings</span>
-                    <span className="text-sm font-semibold text-foreground">{findings.length}</span>
+              <>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="inline-flex items-center gap-2 rounded-full border px-3 py-1 bg-background shadow-sm hover:bg-muted transition-colors">
+                      <ShieldAlert className={`h-3.5 w-3.5 ${findings.length ? TONES[dominantTone(findings)].text : "text-muted-foreground"}`} />
+                      <span className="text-xs text-muted-foreground">Total Findings</span>
+                      <span className="text-sm font-semibold text-foreground">{findings.length}</span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    container={portalEl}
+                    className="w-90 p-0 border bg -background shadow-md scroll-transparent"
+                    align="start"
+                  >
+                    <div className="px-3 py-2 border-b bg-muted/40">
+                      <div className="text-sm font-semibold">Findings</div>
+                      <div className="text-xs text-muted-foreground">Jump directly to a finding</div>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      {Object.entries(groupedFindings).map(([page, pf]) => (
+                        <div key={page} className="mb-2">
+                          <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">{page === "Document-wide" ? page : `Page ${page}`}</div>
+                          {pf.map((finding, idx) => (
+                            <button
+                              key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
+                              onClick={() =>
+                                isUnanchored(finding) ? handleDocLevelSelect(finding) : scrollToPageNumber(finding.page_no)
+                              }
+                              className="w-full px-3 py-2 text-left hover:bg-muted transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="size-2 shrink-0 rounded-full" style={{ background: toneColor(getTone(finding)) }} />
+                                <span className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t px-3 py-2 space-y-2">
+                      {onOpenReport && (
+                        <button
+                          type="button"
+                          onClick={onOpenReport}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-xs font-medium hover:bg-muted transition-colors"
+                        >
+                          <ClipboardList className="h-3.5 w-3.5" />
+                          View full report
+                        </button>
+                      )}
+                      <AiDisclaimer />
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {onOpenReport && (
+                  <button
+                    type="button"
+                    onClick={onOpenReport}
+                    title="Open the full compliance assessment report"
+                    className="btn-gradient inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium shadow-sm"
+                  >
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    View report
                   </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  container={portalEl}
-                  className="w-90 p-0 border bg -background shadow-md scroll-transparent"
-                  align="start"
-                >
-                  <div className="px-3 py-2 border-b bg-muted/40">
-                    <div className="text-sm font-semibold">Findings</div>
-                    <div className="text-xs text-muted-foreground">Jump directly to a finding</div>
-                  </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {Object.entries(groupedFindings).map(([page, pf]) => (
-                      <div key={page} className="mb-2">
-                        <div className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase">{page === "Document-wide" ? page : `Page ${page}`}</div>
-                        {pf.map((finding, idx) => (
-                          <button
-                            key={`${finding.page_no}-${finding.bbox.l}-${finding.bbox.t}-${idx}`}
-                            onClick={() =>
-                              isUnanchored(finding) ? handleDocLevelSelect(finding) : scrollToPageNumber(finding.page_no)
-                            }
-                            className="w-full px-3 py-2 text-left hover:bg-muted transition-colors"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="size-2 shrink-0 rounded-full" style={{ background: toneColor(getTone(finding)) }} />
-                              <span className="text-sm font-medium truncate">{finding.title || `Finding ${idx + 1}`}</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
+                )}
+              </>
             )}
             {!findingsLoading && (
               <DocumentLevelFindings
