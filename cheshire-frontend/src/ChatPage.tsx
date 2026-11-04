@@ -288,7 +288,7 @@ export default function ChatPage({
                                   className="cursor-pointer"
                                 >
                                   <ClipboardList className="mr-2 h-4 w-4" />
-                                  Assessment report
+                                  View assessment report
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                               </>

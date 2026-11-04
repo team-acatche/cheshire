@@ -528,6 +528,11 @@ export default function App({ user, onLogout }: AppProps) {
       onRerunAnalysis={currentChat?.status === "cancelled" ? () => handleRerunChat(currentChat) : undefined}
       progress={progress}
       progressEvents={progressEvents}
+      onOpenReport={
+        currentChat?.status === "done" && !findingsLoading
+          ? () => handleOpenReport(currentChat)
+          : undefined
+      }
     />
   )
 
